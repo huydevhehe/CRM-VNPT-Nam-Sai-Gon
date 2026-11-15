@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 const { initDatabase, run } = await import("../../database/db.js");
 const { KpiService, ghttDeadline } = await import("./kpi.service.js");
+const { DEFAULT_KPI_FORMULAS } = await import("./kpi-formula.js");
 
 await initDatabase();
 
@@ -171,4 +172,110 @@ test("upsertTargets validates range and staff existence", async () => {
   );
   assert.equal(saved.length, 1);
   assert.equal(saved[0].targetRate, 0.85);
+});
+
+async function insertDebt(
+  id: string,
+  staffName: string,
+  immediate: number,
+  cumulative: number,
+  collected: number
+): Promise<void> {
+  await run(
+    `INSERT INTO debts (id, staff_name, service_group, payment_code, subscriber_code, customer_name, immediate_debt, cumulative_debt, collected_amount, status, month)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, staffName, "BRCĐ", "PC", "SUB", "KH", immediate, cumulative, collected, "Nợ cước", "2026-10"]
+  );
+}
+
+test("thu luy ke uses collected / (immediate + cumulative) with default target 85%", async () => {
+  const suffix = `${Date.now()}-luyke`;
+  const staffName = `AM KPI LuyKe ${suffix}`;
+  await createTestStaff(staffName);
+  await insertDebt(`DEBT-KPI-${suffix}`, staffName, 60_000_000, 40_000_000, 85_000_000);
+
+  const service = new KpiService();
+  const rows = await service.getPerformance("2026-10", { role: "Admin", name: "Admin" });
+  const row = rows.find((r) => r.staffName === staffName);
+  assert.ok(row, "phải có dòng cho nhân viên test");
+  assert.equal(row!.thuLuyKe.numerator, 85_000_000);
+  assert.equal(row!.thuLuyKe.denominator, 100_000_000);
+  assert.equal(row!.thuLuyKe.actualRate, 0.85);
+  assert.equal(row!.thuLuyKe.targetRate, 0.85);
+  assert.equal(row!.thuLuyKe.completion, 1);
+  assert.equal(row!.thuLuyKe.score, 4);
+  // thu ngay không bị ảnh hưởng bởi nợ lũy kế
+  assert.equal(row!.thuNgay.denominator, 60_000_000);
+});
+
+test("thu luy ke completion follows explicit per-staff target", async () => {
+  const suffix = `${Date.now()}-luyke-target`;
+  const staffName = `AM KPI LuyKeTarget ${suffix}`;
+  await createTestStaff(staffName);
+  await insertDebt(`DEBT-KPI-${suffix}`, staffName, 0, 100_000_000, 50_000_000);
+
+  const service = new KpiService();
+  await service.upsertTargets("2026-10", [{ staffName, kpiKey: "thu_luy_ke", targetRate: 0.5 }], "Admin");
+
+  const rows = await service.getPerformance("2026-10", { role: "Admin", name: "Admin" });
+  const row = rows.find((r) => r.staffName === staffName);
+  assert.ok(row);
+  assert.equal(row!.thuLuyKe.actualRate, 0.5);
+  assert.equal(row!.thuLuyKe.targetRate, 0.5);
+  assert.equal(row!.thuLuyKe.completion, 1);
+  assert.equal(row!.thuLuyKe.score, 4);
+});
+
+test("thu luy ke gives null rate and score when there is no debt", async () => {
+  const suffix = `${Date.now()}-luyke-zero`;
+  const staffName = `AM KPI LuyKeZero ${suffix}`;
+  await createTestStaff(staffName);
+
+  const service = new KpiService();
+  const rows = await service.getPerformance("2026-10", { role: "Admin", name: "Admin" });
+  const row = rows.find((r) => r.staffName === staffName);
+  assert.ok(row);
+  assert.equal(row!.thuLuyKe.denominator, 0);
+  assert.equal(row!.thuLuyKe.actualRate, null);
+  assert.equal(row!.thuLuyKe.completion, null);
+  assert.equal(row!.thuLuyKe.score, null);
+});
+
+test("thu luy ke respects AM scope", async () => {
+  const suffix = `${Date.now()}-luyke-scope`;
+  const staffNameA = `AM KPI LuyKeScopeA ${suffix}`;
+  const staffNameB = `AM KPI LuyKeScopeB ${suffix}`;
+  await createTestStaff(staffNameA);
+  await createTestStaff(staffNameB);
+  await insertDebt(`DEBT-KPI-${suffix}-a`, staffNameA, 10_000_000, 10_000_000, 10_000_000);
+  await insertDebt(`DEBT-KPI-${suffix}-b`, staffNameB, 30_000_000, 10_000_000, 10_000_000);
+
+  const service = new KpiService();
+  const rows = await service.getPerformance("2026-10", { role: "AM", name: staffNameA });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].staffName, staffNameA);
+  assert.equal(rows[0].thuLuyKe.denominator, 20_000_000);
+  assert.equal(rows[0].thuLuyKe.actualRate, 0.5);
+});
+
+test("getFormulas adds default thu_luy_ke without touching rows already saved", async () => {
+  const service = new KpiService();
+  const custom = [
+    { from: null, fromInclusive: false, to: 1.0, toInclusive: false, a: 10, b: -9 },
+    { from: 1.0, fromInclusive: true, to: null, toInclusive: false, a: 0, b: 5 },
+  ];
+  await service.saveFormula("ghtt_t1", custom, "Admin");
+  try {
+    await run("DELETE FROM kpi_formulas WHERE kpi_key = 'thu_luy_ke'");
+    const formulas = await service.getFormulas();
+    assert.deepEqual(formulas.ghtt_t1, custom);
+    assert.deepEqual(formulas.thu_luy_ke, DEFAULT_KPI_FORMULAS.thu_luy_ke);
+
+    const saved = await service.saveFormula("thu_luy_ke", custom, "Admin");
+    assert.deepEqual(saved, custom);
+    assert.deepEqual((await service.getFormulas()).thu_luy_ke, custom);
+    assert.deepEqual(await service.resetFormula("thu_luy_ke"), DEFAULT_KPI_FORMULAS.thu_luy_ke);
+  } finally {
+    await service.resetFormula("ghtt_t1");
+  }
 });

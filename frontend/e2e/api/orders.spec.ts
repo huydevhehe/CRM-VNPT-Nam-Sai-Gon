@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { ADMIN, API_URL, apiLogin, bearer } from "./helpers";
+import { ADMIN, API_URL, apiLogin, bearer, createCustomerForOrder, type TestCustomer } from "./helpers";
 
 test.describe("Orders API (Đơn hàng)", () => {
   test.describe.configure({ mode: "serial" });
@@ -8,10 +8,15 @@ test.describe("Orders API (Đơn hàng)", () => {
   let amKhoaToken: string;
   let amTuanToken: string;
   let amKhoaName: string;
+  let customer: TestCustomer;
 
   test.beforeAll(async ({ request }) => {
     // 1. Login as admin
     adminToken = await apiLogin(request, ADMIN.username, ADMIN.password);
+    customer = await createCustomerForOrder(request, adminToken, {
+      name: `KH Đơn Hàng E2E ${Date.now()}`,
+      identityCode: "0319653211",
+    });
 
     // 2. Ensure staff AM Khoa and AM Tuấn exist
     const suffix = Date.now();
@@ -49,7 +54,7 @@ test.describe("Orders API (Đơn hàng)", () => {
       headers: bearer(adminToken),
       data: {
         transactionCode: `GD_TEST_${suffix}`,
-        customerName: `Khách Hàng Test ${suffix}`,
+        customerId: customer.id,
         subscriberCodes: [`TB_${suffix}`],
         totalValue: 5940000,
         channel: "Trực tiếp",
@@ -87,7 +92,7 @@ test.describe("Orders API (Đơn hàng)", () => {
       headers: bearer(adminToken),
       data: {
         transactionCode: `GD_KHOA_${suffix}`,
-        customerName: `Khách Hàng Của Khoa ${suffix}`,
+        customerId: customer.id,
         subscriberCodes: [`TB_KHOA_${suffix}`],
         totalValue: 2000000,
         channel: "Trực tiếp",
@@ -117,7 +122,7 @@ test.describe("Orders API (Đơn hàng)", () => {
       headers: bearer(adminToken),
       data: {
         transactionCode: `GD_EDIT_${suffix}`,
-        customerName: `Khách Hàng Edit ${suffix}`,
+        customerId: customer.id,
         subscriberCodes: [`TB_EDIT_${suffix}`],
         totalValue: 3000000,
         channel: "Trực tiếp",
@@ -149,7 +154,7 @@ test.describe("Orders API (Đơn hàng)", () => {
       headers: bearer(adminToken),
       data: {
         transactionCode: `GD_EXPORT_${suffix}`,
-        customerName: `Khách Hàng Xuất Đề Nghị ${suffix}`,
+        customerId: customer.id,
         subscriberCodes: [`TB_EXP_${suffix}`],
         totalValue: 5940000,
         channel: "Trực tiếp",
@@ -197,4 +202,108 @@ test.describe("Orders API (Đơn hàng)", () => {
     const foundLog = logsJson.data.find((l: any) => l.contractId === order.id && l.docNumber === "706");
     expect(foundLog).toBeDefined();
   });
+  test("create order requires a customer from the system", async ({ request }) => {
+    const suffix = Date.now();
+    const base = {
+      subscriberCodes: [`TB_REQ_${suffix}`],
+      totalValue: 1000000,
+      channel: "Trực tiếp",
+    };
+
+    const missing = await request.post(`${API_URL}/contracts`, {
+      headers: bearer(adminToken),
+      data: { ...base, transactionCode: `GD_NOCUST_${suffix}`, customerName: "Chỉ có tên tự do" },
+    });
+    expect(missing.status()).toBe(400);
+    expect((await missing.json()).message).toContain("Vui lòng chọn Khách hàng");
+
+    const unknown = await request.post(`${API_URL}/contracts`, {
+      headers: bearer(adminToken),
+      data: { ...base, transactionCode: `GD_BADCUST_${suffix}`, customerId: `KH-KHONG-CO-${suffix}` },
+    });
+    expect(unknown.status()).toBe(400);
+    expect((await unknown.json()).message).toBe("Khách hàng không tồn tại");
+  });
+
+  test("create order takes customer name and tax code from the selected customer", async ({ request }) => {
+    const suffix = Date.now();
+    const res = await request.post(`${API_URL}/contracts`, {
+      headers: bearer(adminToken),
+      data: {
+        transactionCode: `GD_DERIVE_${suffix}`,
+        customerId: customer.id,
+        customerName: "Tên nhập tay phải bị bỏ qua",
+        subscriberCodes: [`TB_DER_${suffix}`],
+        totalValue: 1000000,
+        channel: "Trực tiếp",
+      },
+    });
+    expect(res.status()).toBe(201);
+    const order = (await res.json()).data;
+    expect(order.customerId).toBe(customer.id);
+    expect(order.customerName).toBe(customer.name);
+    expect(order.taxCode).toBe("0319653211");
+  });
+
+  test("AM can only create orders for customers they manage", async ({ request }) => {
+    const suffix = Date.now();
+    const own = await createCustomerForOrder(request, adminToken, {
+      name: `KH Của Khoa ${suffix}`,
+      amStaff: amKhoaName,
+      amCaringStaff: amKhoaName,
+    });
+    const orderBody = (customerId: string, code: string) => ({
+      transactionCode: code,
+      customerId,
+      amStaff: amKhoaName,
+      subscriberCodes: [`TB_SC_${suffix}`],
+      totalValue: 1000000,
+      channel: "Trực tiếp",
+    });
+
+    const outside = await request.post(`${API_URL}/contracts`, {
+      headers: bearer(amKhoaToken),
+      data: orderBody(customer.id, `GD_OUT_${suffix}`),
+    });
+    expect(outside.status()).toBe(400);
+    expect((await outside.json()).message).toContain("khách hàng mình đang phụ trách");
+
+    const inside = await request.post(`${API_URL}/contracts`, {
+      headers: bearer(amKhoaToken),
+      data: orderBody(own.id, `GD_IN_${suffix}`),
+    });
+    expect(inside.status()).toBe(201);
+    expect((await inside.json()).data.customerId).toBe(own.id);
+  });
+
+  test("editing an order cannot remove its customer", async ({ request }) => {
+    const suffix = Date.now();
+    const createRes = await request.post(`${API_URL}/contracts`, {
+      headers: bearer(adminToken),
+      data: {
+        transactionCode: `GD_KEEP_${suffix}`,
+        customerId: customer.id,
+        subscriberCodes: [`TB_KEEP_${suffix}`],
+        totalValue: 1000000,
+        channel: "Trực tiếp",
+      },
+    });
+    expect(createRes.status()).toBe(201);
+    const created = (await createRes.json()).data;
+
+    const clearRes = await request.patch(`${API_URL}/contracts/${created.id}`, {
+      headers: bearer(adminToken),
+      data: { customerId: "" },
+    });
+    expect(clearRes.status()).toBe(400);
+    expect((await clearRes.json()).message).toContain("Vui lòng chọn Khách hàng");
+
+    const keepRes = await request.patch(`${API_URL}/contracts/${created.id}`, {
+      headers: bearer(adminToken),
+      data: { packageName: "Gói giữ khách" },
+    });
+    expect(keepRes.status()).toBe(200);
+    expect((await keepRes.json()).data.customerId).toBe(customer.id);
+  });
+
 });

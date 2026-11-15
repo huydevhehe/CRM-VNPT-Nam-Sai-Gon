@@ -2,6 +2,7 @@ import { query, run } from "../../database/db.js";
 import { todayVn } from "../../utils/date-vn.js";
 import { sendMail, type SendMailResult } from "../notification/email.service.js";
 import { ReminderSettingsService } from "./reminder-settings.service.js";
+import { ReminderTemplateService, renderEmail } from "./reminder-template.service.js";
 
 export interface DueItem {
   source: "service" | "file";
@@ -133,31 +134,6 @@ async function logResult(entry: {
   );
 }
 
-function formatDateVn(dateStr: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
-  if (!match) return dateStr;
-  return `${match[3]}/${match[2]}/${match[1]}`;
-}
-
-function buildEmailContent(item: DueItem): { subject: string; text: string; html: string } {
-  const subject = `[VNPT NSG] Dịch vụ ${item.title} của ${item.customerName} hết hạn ngày ${formatDateVn(item.expiryDate)} (còn ${item.daysBefore} ngày)`;
-  const text = [
-    `Dịch vụ: ${item.title}`,
-    `Khách hàng: ${item.customerName}`,
-    `Mã thuê bao: ${item.subscriberCode || "(không có)"}`,
-    `AM phụ trách: ${item.staffName || "(chưa gán)"}`,
-    `Ngày hết hạn: ${formatDateVn(item.expiryDate)} (còn ${item.daysBefore} ngày)`,
-  ].join("\n");
-  const html = `
-    <p>Dịch vụ: <strong>${item.title}</strong></p>
-    <p>Khách hàng: ${item.customerName}</p>
-    <p>Mã thuê bao: ${item.subscriberCode || "(không có)"}</p>
-    <p>AM phụ trách: ${item.staffName || "(chưa gán)"}</p>
-    <p>Ngày hết hạn: <strong>${formatDateVn(item.expiryDate)}</strong> (còn ${item.daysBefore} ngày)</p>
-  `;
-  return { subject, text, html };
-}
-
 export const ReminderRunner = {
   /** Thu thập toàn bộ mục đến hạn hôm nay (chưa lọc mục đã gửi) từ 2 nguồn: services và reminder_items (file). */
   async collectDue(today: string): Promise<DueItem[]> {
@@ -255,6 +231,7 @@ export const ReminderRunner = {
     const send: SendFn = opts?.send ?? ((msg) => sendMail(msg));
 
     const dueItems = await this.collectDue(today);
+    const template = await ReminderTemplateService.getEffective();
     const result: RunResult = { sent: 0, failed: 0, skipped: 0 };
 
     for (const item of dueItems) {
@@ -274,7 +251,7 @@ export const ReminderRunner = {
         continue;
       }
 
-      const { subject, text, html } = buildEmailContent(item);
+      const { subject, text, html } = renderEmail(template, item);
       try {
         const sendResult = await send({ to: item.recipients, subject, text, html });
         if (sendResult.sent) {

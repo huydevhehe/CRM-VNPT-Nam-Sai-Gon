@@ -506,3 +506,166 @@ test("assign lead to suspended staff returns 400 and transfer customer to inacti
 });
 
 
+
+async function createCodeTestStaff(code: string, suffix: number | string, tag: string) {
+  const service = new StaffService();
+  return service.create({
+    code,
+    name: `NV Doi Ma ${tag} ${suffix}`,
+    role: "AM",
+    territory: "Phường Tân Phong",
+    email: `${tag}_${suffix}@vnpt.vn`,
+    password: "Password@Old1",
+    mustChangePassword: false,
+  });
+}
+
+async function rejectsWith(promise: Promise<unknown>, status: number, message?: string) {
+  await assert.rejects(promise, (err: any) => {
+    assert.ok(err instanceof HttpError);
+    assert.equal(err.status, status);
+    if (message) assert.equal(err.message, message);
+    return true;
+  });
+}
+
+test("update code đổi mã: staff + users đồng bộ, giữ users.id, đăng nhập bằng tên mới + mật khẩu cũ", async () => {
+  const service = new StaffService();
+  const authService = new AuthService();
+  const suffix = Date.now();
+  const oldCode = `NV-CODE-OLD-${suffix}`;
+  const newCode = `NV-CODE-NEW-${suffix}`;
+  const staff = await createCodeTestStaff(oldCode, suffix, "codeok");
+  const [before] = await query<{ id: string }>("SELECT id FROM users WHERE username = ?", [oldCode]);
+
+  const updated = await service.update(staff.id, { code: ` ${newCode} ` }, "Admin Test");
+  assert.equal(updated.code, newCode);
+  assert.equal(updated.username, newCode);
+
+  const staffRows = await query<{ code: string }>("SELECT code FROM staff WHERE id = ?", [staff.id]);
+  assert.equal(staffRows[0].code, newCode);
+
+  const oldUsers = await query("SELECT id FROM users WHERE username = ?", [oldCode]);
+  assert.equal(oldUsers.length, 0);
+  const newUsers = await query<{ id: string }>("SELECT id FROM users WHERE username = ?", [newCode]);
+  assert.equal(newUsers.length, 1);
+  assert.equal(newUsers[0].id, before.id);
+
+  await rejectsWith(authService.login(oldCode, "Password@Old1"), 401);
+  const login = await authService.login(newCode, "Password@Old1");
+  assert.equal(login.user.id, before.id);
+
+  const logs = await query<{ user: string; details: string }>(
+    `SELECT "user", details FROM audit_logs WHERE action = 'Đổi mã/tên đăng nhập nhân viên' AND details LIKE ?`,
+    [`%${oldCode}%`]
+  );
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0].user, "Admin Test");
+  assert.ok(logs[0].details.includes(newCode));
+});
+
+test("update code: token cũ (mang tên đăng nhập cũ) bị requireAuth từ chối", async () => {
+  const { requireAuth } = await import("../../middleware/require-auth.js");
+  const service = new StaffService();
+  const authService = new AuthService();
+  const suffix = Date.now();
+  const oldCode = `NV-CODE-TOK-${suffix}`;
+  const staff = await createCodeTestStaff(oldCode, suffix, "codetok");
+  const { token } = await authService.login(oldCode, "Password@Old1");
+
+  const callRequireAuth = async () => {
+    let statusCode = 0;
+    let nextCalled = false;
+    const res: any = {
+      status(code: number) {
+        statusCode = code;
+        return this;
+      },
+      json() {
+        return this;
+      },
+    };
+    await requireAuth({ headers: { authorization: `Bearer ${token}` } } as any, res, () => {
+      nextCalled = true;
+    });
+    return { statusCode, nextCalled };
+  };
+
+  assert.deepEqual(await callRequireAuth(), { statusCode: 0, nextCalled: true });
+  await service.update(staff.id, { code: `NV-CODE-TOK2-${suffix}` }, "Admin Test");
+  assert.deepEqual(await callRequireAuth(), { statusCode: 401, nextCalled: false });
+});
+
+test("update code trùng staff.code khác (kể cả khác hoa/thường) → 409", async () => {
+  const service = new StaffService();
+  const suffix = Date.now();
+  const a = await createCodeTestStaff(`NV-CODE-DA-${suffix}`, suffix, "dupa");
+  await createCodeTestStaff(`NV-CODE-DB-${suffix}`, suffix, "dupb");
+
+  await rejectsWith(service.update(a.id, { code: `NV-CODE-DB-${suffix}` }), 409, "Mã nhân viên đã tồn tại");
+  await rejectsWith(
+    service.update(a.id, { code: `nv-code-db-${suffix}`.toLowerCase() }),
+    409,
+    "Mã nhân viên đã tồn tại"
+  );
+
+  const [row] = await query<{ code: string }>("SELECT code FROM staff WHERE id = ?", [a.id]);
+  assert.equal(row.code, `NV-CODE-DA-${suffix}`);
+});
+
+test("update code trùng users.username khác (kể cả khác hoa/thường) → 409 và không đổi gì", async () => {
+  const service = new StaffService();
+  const suffix = Date.now();
+  const oldCode = `NV-CODE-UA-${suffix}`;
+  const a = await createCodeTestStaff(oldCode, suffix, "usera");
+
+  await rejectsWith(
+    service.update(a.id, { code: "admin" }),
+    409,
+    "Tên đăng nhập trùng với mã nhân viên đã tồn tại"
+  );
+  await rejectsWith(
+    service.update(a.id, { code: "ADMIN" }),
+    409,
+    "Tên đăng nhập trùng với mã nhân viên đã tồn tại"
+  );
+
+  const [row] = await query<{ code: string }>("SELECT code FROM staff WHERE id = ?", [a.id]);
+  assert.equal(row.code, oldCode);
+  const users = await query("SELECT id FROM users WHERE username = ?", [oldCode]);
+  assert.equal(users.length, 1);
+});
+
+test("update code sai định dạng (rỗng, khoảng trắng, quá ngắn/dài, ký tự lạ) → 400", async () => {
+  const service = new StaffService();
+  const suffix = Date.now();
+  const a = await createCodeTestStaff(`NV-CODE-BAD-${suffix}`, suffix, "bad");
+
+  await rejectsWith(service.update(a.id, { code: "   " }), 400, "Mã nhân viên không được để trống");
+  for (const bad of ["ab", "NV CODE", "NV/CODE", "NV-ĐẶC-BIỆT", "x".repeat(51), "a@b.c"]) {
+    await rejectsWith(service.update(a.id, { code: bad }), 400);
+  }
+
+  const [row] = await query<{ code: string }>("SELECT code FROM staff WHERE id = ?", [a.id]);
+  assert.equal(row.code, `NV-CODE-BAD-${suffix}`);
+});
+
+test("update code chỉ đổi hoa/thường của chính mình được phép; gửi lại đúng mã cũ không đổi gì", async () => {
+  const service = new StaffService();
+  const authService = new AuthService();
+  const suffix = Date.now();
+  const oldCode = `NV-CODE-CASE-${suffix}`;
+  const staff = await createCodeTestStaff(oldCode, suffix, "case");
+
+  const same = await service.update(staff.id, { code: oldCode, note: "giữ nguyên mã" });
+  assert.equal(same.code, oldCode);
+  const noLog = await query(
+    `SELECT id FROM audit_logs WHERE action = 'Đổi mã/tên đăng nhập nhân viên' AND details LIKE ?`,
+    [`%${oldCode}%`]
+  );
+  assert.equal(noLog.length, 0);
+
+  const lowered = await service.update(staff.id, { code: oldCode.toLowerCase() });
+  assert.equal(lowered.code, oldCode.toLowerCase());
+  await authService.login(oldCode.toLowerCase(), "Password@Old1");
+});

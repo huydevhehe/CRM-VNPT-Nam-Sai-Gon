@@ -35,7 +35,7 @@ export interface ServiceRecordDto {
 export class ServiceServiceError extends Error {
   constructor(
     message: string,
-    public readonly status: 400 | 404
+    public readonly status: 400 | 403 | 404
   ) {
     super(message);
   }
@@ -135,7 +135,7 @@ export class ServiceService {
     return rows.map(toServiceRecord);
   }
 
-  async create(input: CreateServiceInput): Promise<ServiceRecordDto> {
+  async create(input: CreateServiceInput, scope: string | null = null): Promise<ServiceRecordDto> {
     if (!isValidServiceGroup(input.serviceGroup)) {
       throw new ServiceServiceError("Nhóm dịch vụ không hợp lệ", 400);
     }
@@ -158,8 +158,17 @@ export class ServiceService {
     }
     const customer = customerRows[0];
 
+    if (scope !== null) {
+      if (customer.am_caring_staff !== scope && customer.am_staff !== scope) {
+        throw new ServiceServiceError("Bạn chỉ được thêm dịch vụ cho khách hàng do mình phụ trách", 403);
+      }
+      if (input.staffName && input.staffName !== scope) {
+        throw new ServiceServiceError("Bạn chỉ được gán dịch vụ cho chính mình", 403);
+      }
+    }
+
     const id = `SRV-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const staffName = input.staffName || customer.am_caring_staff || customer.am_staff || "";
+    const staffName = scope ?? (input.staffName || customer.am_caring_staff || customer.am_staff || "");
 
     await run(
       `INSERT INTO services (
@@ -187,12 +196,34 @@ export class ServiceService {
     return toServiceRecord(rows[0]);
   }
 
-  async update(id: string, patch: Partial<CreateServiceInput>): Promise<ServiceRecordDto> {
+  async update(
+    id: string,
+    patch: Partial<CreateServiceInput>,
+    scope: string | null = null
+  ): Promise<ServiceRecordDto> {
     const existingRows = await query<ServiceRow>("SELECT * FROM services WHERE id = ?", [id]);
     if (existingRows.length === 0) {
       throw new ServiceServiceError("Không tìm thấy dịch vụ", 404);
     }
     const existing = existingRows[0];
+
+    if (scope !== null) {
+      if (existing.staff_name !== scope) {
+        throw new ServiceServiceError("Bạn chỉ được sửa dịch vụ do mình phụ trách", 403);
+      }
+      if (patch.staffName !== undefined && patch.staffName !== scope) {
+        throw new ServiceServiceError("Bạn chỉ được gán dịch vụ cho chính mình", 403);
+      }
+      if (patch.customerId !== undefined && patch.customerId !== existing.customer_id) {
+        const target = await query<{ am_staff: string | null; am_caring_staff: string | null }>(
+          "SELECT am_staff, am_caring_staff FROM customers WHERE id = ?",
+          [patch.customerId]
+        );
+        if (!target.length || (target[0].am_caring_staff !== scope && target[0].am_staff !== scope)) {
+          throw new ServiceServiceError("Bạn chỉ được chuyển dịch vụ sang khách hàng do mình phụ trách", 403);
+        }
+      }
+    }
 
     if (patch.serviceGroup !== undefined && !isValidServiceGroup(patch.serviceGroup)) {
       throw new ServiceServiceError("Nhóm dịch vụ không hợp lệ", 400);

@@ -47,11 +47,13 @@ test.describe("Admin sửa số tiền hoa hồng trên UI", () => {
     await expect(page.getByText(testNote)).toBeVisible();
   });
 
-  test("AM vào /admin/commissions không thấy nút Sửa số tiền", async ({ page }) => {
+  test("AM không thấy menu Hoa hồng, vào thẳng /admin/commissions bị chặn", async ({ page }) => {
     await loginAs(page, "am");
-    await page.goto("/admin/commissions");
+    await expect(page.locator("aside").getByRole("link", { name: "Hoa hồng" })).toHaveCount(0);
 
-    await expect(page.locator("table")).toBeVisible({ timeout: 15_000 });
+    await page.goto("/admin/commissions");
+    await expect(page.getByTestId("forbidden-page")).toBeVisible();
+    await expect(page.locator("table")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Sửa số tiền" })).toHaveCount(0);
   });
 

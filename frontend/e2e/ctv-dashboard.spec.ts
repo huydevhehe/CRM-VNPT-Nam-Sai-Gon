@@ -1,5 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ADMIN, API_URL, apiLogin, bearer, createApprovedCtv } from "./api/helpers";
+import {
+  ADMIN,
+  API_URL,
+  apiLogin,
+  bearer,
+  createApprovedCtv,
+  createCustomerForOrder,
+} from "./api/helpers";
 
 const STAFF = "Nguyễn Thị Tình";
 const CONTRACT_VALUE = 12000000;
@@ -68,11 +75,12 @@ test.describe("Dashboard CTV chạy dữ liệu thật", () => {
 
     contractCode = `GD-UI-${uniq()}`;
     const first = leads.find((l) => l.customerName === leadNames[0])!;
+    const customer = await createCustomerForOrder(request, adminToken, { name: leadNames[0] });
     const created = await request.post(`${API_URL}/contracts`, {
       headers: bearer(adminToken),
       data: {
         transactionCode: contractCode,
-        customerName: leadNames[0],
+        customerId: customer.id,
         subscriberCodes: ["0901234567"],
         totalValue: CONTRACT_VALUE,
         channel: "CTV giới thiệu",

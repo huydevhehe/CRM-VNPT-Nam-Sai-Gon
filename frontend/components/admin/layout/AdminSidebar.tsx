@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth/auth-context";
+import { canAccessAdminPath } from "@/lib/auth/access";
 import {
   LayoutDashboard,
   Receipt,
@@ -61,7 +62,6 @@ const NAV_SECTIONS = [
         name: "Hoa hồng",
         href: "/admin/commissions",
         icon: Percent,
-        badge: "Admin",
       },
     ],
   },
@@ -92,13 +92,11 @@ const NAV_SECTIONS = [
         name: "Cấu hình KPI",
         href: "/admin/kpi-settings",
         icon: Settings2,
-        badge: "Admin",
       },
       {
         name: "Nhắc hết hạn (Email)",
         href: "/admin/reminders",
         icon: MailWarning,
-        badge: "Admin",
       },
     ],
   },
@@ -124,7 +122,6 @@ const NAV_SECTIONS = [
         name: "Cộng tác viên",
         href: "/admin/ctv-accounts",
         icon: UserRoundCheck,
-        badge: "Admin",
       },
       {
         name: "Công việc / Nhắc việc",
@@ -140,7 +137,6 @@ const NAV_SECTIONS = [
         name: "Cài đặt hệ thống",
         href: "/admin/system-settings",
         icon: Settings,
-        badge: "Admin",
       },
     ],
   },
@@ -149,7 +145,7 @@ const NAV_SECTIONS = [
 export default function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
   const pathname = usePathname();
   const { user } = useAuth();
-  const isAdmin = user?.role === "Admin";
+  const role = user?.role;
 
   return (
     <>
@@ -200,7 +196,7 @@ export default function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
               </div>
               <nav className="space-y-1">
                 {section.items
-                  .filter((item) => !("adminOnly" in item && item.adminOnly) || isAdmin)
+                  .filter((item) => canAccessAdminPath(role, item.href))
                   .map((item) => {
                   const isActive =
                     pathname === item.href ||
@@ -225,11 +221,6 @@ export default function AdminSidebar({ isOpen, onClose }: AdminSidebarProps) {
                         }`}
                       />
                       <span className="truncate">{item.name}</span>
-                      {item.badge && (
-                        <span className="ml-auto rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-                          {item.badge}
-                        </span>
-                      )}
                     </Link>
                   );
                 })}

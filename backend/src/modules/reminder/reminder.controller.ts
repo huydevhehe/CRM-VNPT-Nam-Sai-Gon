@@ -3,6 +3,7 @@ import multer from "multer";
 import { ReminderSettingsService } from "./reminder-settings.service.js";
 import { ReminderRunner } from "./reminder-runner.js";
 import { ReminderImportService } from "./reminder-import.service.js";
+import { ReminderTemplateService, TemplateValidationError } from "./reminder-template.service.js";
 import { query } from "../../database/db.js";
 import { todayVn } from "../../utils/date-vn.js";
 
@@ -64,6 +65,64 @@ reminderRouter.put("/settings", async (req: Request, res: Response) => {
     res.json({ success: true, data: view });
   } catch (error: any) {
     res.status(400).json({ success: false, message: error.message });
+  }
+});
+
+function sendTemplateError(res: Response, error: unknown) {
+  const message = error instanceof Error ? error.message : "Lỗi không xác định";
+  res.status(error instanceof TemplateValidationError ? 400 : 500).json({ success: false, message });
+}
+
+// GET /api/reminders/template — mẫu đang áp dụng + mẫu mặc định + danh sách biến.
+reminderRouter.get("/template", async (_req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: await ReminderTemplateService.getView() });
+  } catch (error) {
+    sendTemplateError(res, error);
+  }
+});
+
+// PUT /api/reminders/template — lưu mẫu (400 nếu rỗng/quá dài/biến không hợp lệ).
+reminderRouter.put("/template", async (req: Request, res: Response) => {
+  try {
+    const { subject, body } = req.body ?? {};
+    res.json({ success: true, data: await ReminderTemplateService.save({ subject, body }) });
+  } catch (error) {
+    sendTemplateError(res, error);
+  }
+});
+
+// POST /api/reminders/template/preview — render với dữ liệu mẫu (mẫu đang soạn hoặc mẫu đã lưu).
+reminderRouter.post("/template/preview", async (req: Request, res: Response) => {
+  try {
+    const { subject, body } = req.body ?? {};
+    res.json({ success: true, data: await ReminderTemplateService.preview({ subject, body }) });
+  } catch (error) {
+    sendTemplateError(res, error);
+  }
+});
+
+// POST /api/reminders/template/reset — khôi phục mẫu mặc định.
+reminderRouter.post("/template/reset", async (_req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: await ReminderTemplateService.reset() });
+  } catch (error) {
+    sendTemplateError(res, error);
+  }
+});
+
+// POST /api/reminders/template/test — gửi thử mẫu (dữ liệu mẫu) tới 1 email qua SMTP đã lưu.
+reminderRouter.post("/template/test", async (req: Request, res: Response) => {
+  try {
+    const { to, subject, body } = req.body ?? {};
+    const result = await ReminderTemplateService.sendTest(to, { subject, body });
+    if (!result.sent) {
+      res.status(400).json({ success: false, message: result.error || "Gửi thử thất bại" });
+      return;
+    }
+    res.json({ success: true, data: { sent: true } });
+  } catch (error) {
+    sendTemplateError(res, error);
   }
 });
 

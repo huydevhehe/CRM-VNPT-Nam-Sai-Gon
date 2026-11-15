@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, FormEvent, useMemo } from "react";
+import Link from "next/link";
 import {
   FileText,
   Plus,
@@ -12,10 +13,14 @@ import {
   Edit2,
   DollarSign,
   Download,
+  UploadCloud,
+  Search,
 } from "lucide-react";
+import { useAuth } from "@/lib/auth/auth-context";
 import KpiCard from "@/components/admin/shared/KpiCard";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
 import StatusSelect from "@/components/admin/shared/StatusSelect";
+import ContractImportWizard from "@/components/admin/contract/ContractImportWizard";
 import {
   getContracts,
   createContract,
@@ -45,6 +50,11 @@ const CHANNEL_OPTIONS: readonly string[] = LEAD_CHANNELS;
 const SERVICE_GROUPS = ["BRCĐ", "CNTT", "Di động"] as const;
 const PAYMENT_METHODS = ["Trả trước", "Trả hàng tháng"] as const;
 
+const CUSTOMER_REQUIRED_MESSAGE =
+  "Vui lòng chọn Khách hàng. Đơn hàng bắt buộc phải gắn với một khách hàng trong hệ thống";
+const ORDER_WITHOUT_CUSTOMER_MESSAGE =
+  "Đơn hàng chưa gắn khách hàng. Vui lòng cập nhật khách hàng cho đơn trước khi xuất Đề nghị thanh toán";
+
 const DEPLOYMENT_STATUSES: ContractRecord["deploymentStatus"][] = [
   "Chưa triển khai",
   "Đang triển khai",
@@ -66,7 +76,6 @@ const DOCUMENT_STATUSES: ContractRecord["documentStatus"][] = [
 
 interface OrderFormState {
   transactionCode: string;
-  customerName: string;
   subscriberCodes: string;
   totalValue: string;
   channel: string;
@@ -78,14 +87,12 @@ interface OrderFormState {
   packageName: string;
   paymentMethod: string;
   customerId: string;
-  taxCode: string;
   contractNumber: string;
   signedDate: string;
 }
 
 const EMPTY_FORM: OrderFormState = {
   transactionCode: "",
-  customerName: "",
   subscriberCodes: "",
   totalValue: "",
   channel: CHANNEL_OPTIONS[0],
@@ -97,21 +104,27 @@ const EMPTY_FORM: OrderFormState = {
   packageName: "",
   paymentMethod: PAYMENT_METHODS[0],
   customerId: "",
-  taxCode: "",
   contractNumber: "",
   signedDate: "",
 };
 
 export default function ContractsPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "Admin";
+
   const [data, setData] = useState<ContractRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [showForm, setShowForm] = useState(false);
+  const [showImportWizard, setShowImportWizard] = useState(false);
   const [form, setForm] = useState<OrderFormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
+  const [leadCustomerHint, setLeadCustomerHint] = useState<string | null>(null);
 
   // Payment Modal state
   const [payingOrder, setPayingOrder] = useState<ContractRecord | null>(null);
@@ -129,6 +142,7 @@ export default function ContractsPage() {
   const [exportMissingFields, setExportMissingFields] = useState<string[]>([]);
   const [loadingExportPreview, setLoadingExportPreview] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [exportBlocked, setExportBlocked] = useState<string | null>(null);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
 
   const [leads, setLeads] = useState<LeadRecord[]>([]);
@@ -146,6 +160,39 @@ export default function ContractsPage() {
   const [filterChannel, setFilterChannel] = useState<string>("ALL");
 
   const ctvNameById = new Map(ctvOptions.map((c) => [c.id, c.name]));
+
+  const editingOrder = editingId ? (data.find((d) => d.id === editingId) ?? null) : null;
+
+  // Admin chọn được mọi khách; AM chỉ chọn khách mình phụ trách (khớp quy tắc backend).
+  const selectableCustomers = useMemo(() => {
+    if (isAdmin) return customers;
+    const me = (user?.name ?? "").trim();
+    return customers.filter(
+      (c) => me !== "" && (c.amStaff?.trim() === me || c.amCaringStaff?.trim() === me)
+    );
+  }, [customers, isAdmin, user?.name]);
+
+  const selectedCustomer = form.customerId
+    ? (customers.find((c) => c.id === form.customerId) ?? null)
+    : null;
+  const sameAsEditing = Boolean(editingOrder && editingOrder.customerId === form.customerId);
+  const selectedCustomerName =
+    selectedCustomer?.name ?? (sameAsEditing ? (editingOrder?.customerName ?? "") : "");
+  const selectedCustomerTaxCode =
+    selectedCustomer?.identityCode ?? (sameAsEditing ? (editingOrder?.taxCode ?? "") : "");
+
+  const customerMatches = useMemo(() => {
+    const q = customerQuery.trim().toLowerCase();
+    const pool = q
+      ? selectableCustomers.filter(
+          (c) =>
+            c.name.toLowerCase().includes(q) ||
+            (c.identityCode ?? "").toLowerCase().includes(q) ||
+            (c.phone ?? "").toLowerCase().includes(q)
+        )
+      : selectableCustomers;
+    return pool.slice(0, 8);
+  }, [customerQuery, selectableCustomers]);
 
   // Lead đã chốt thành công mà chưa gắn đơn hàng nào
   const linkableLeads = leads.filter(
@@ -215,12 +262,22 @@ export default function ContractsPage() {
     const lead = linkableLeads.find((l) => l.id === leadId);
     if (!lead) {
       setForm({ ...form, leadId: "" });
+      setLeadCustomerHint(null);
       return;
     }
+    const leadName = lead.customerName.trim().toLowerCase();
+    const sameName = selectableCustomers.filter((c) => c.name.trim().toLowerCase() === leadName);
+    const matched = sameName.length === 1 ? sameName[0] : null;
+    setLeadCustomerHint(
+      matched
+        ? null
+        : `Lead "${lead.customerName}" chưa có khách hàng tương ứng trong hệ thống (hoặc có nhiều khách trùng tên). Vui lòng chọn hoặc tạo khách hàng trước khi lưu đơn.`
+    );
+    setCustomerQuery("");
     setForm({
       ...form,
       leadId,
-      customerName: lead.customerName,
+      customerId: matched ? matched.id : "",
       totalValue: String(lead.expectedValue),
       channel: lead.channel,
       territoryId: lead.territoryId || "",
@@ -229,23 +286,25 @@ export default function ContractsPage() {
   }
 
   function handleSelectCustomer(customerId: string) {
-    const cust = customers.find((c) => c.id === customerId);
-    if (!cust) {
-      setForm({ ...form, customerId: "", taxCode: "" });
-      return;
-    }
-    setForm({
-      ...form,
-      customerId,
-      customerName: cust.name,
-      taxCode: cust.identityCode || "",
-    });
+    setForm({ ...form, customerId });
+    setCustomerQuery("");
+    setCustomerPickerOpen(false);
+    setFormError(null);
+  }
+
+  function handleClearCustomer() {
+    setForm({ ...form, customerId: "" });
+    setCustomerQuery("");
+    setCustomerPickerOpen(true);
   }
 
   function handleOpenCreate() {
     setEditingId(null);
     setForm(EMPTY_FORM);
     setFormError(null);
+    setCustomerQuery("");
+    setCustomerPickerOpen(false);
+    setLeadCustomerHint(null);
     setShowForm(true);
   }
 
@@ -321,6 +380,13 @@ export default function ContractsPage() {
     setExportDocNumber("");
     setExportMissingFields([]);
     setExportError(null);
+    setExportBlocked(null);
+
+    if (!order.customerId) {
+      setExportBlocked(ORDER_WITHOUT_CUSTOMER_MESSAGE);
+      return;
+    }
+
     setLoadingExportPreview(true);
 
     try {
@@ -328,7 +394,9 @@ export default function ContractsPage() {
       setExportDocNumber(preview.suggestedDocNumber || "1");
       setExportMissingFields(preview.missingFields || []);
     } catch (err) {
-      setExportError(err instanceof Error ? err.message : "Không thể tải thông tin đề nghị thanh toán");
+      setExportBlocked(
+        err instanceof Error ? err.message : "Không thể tải thông tin đề nghị thanh toán"
+      );
     } finally {
       setLoadingExportPreview(false);
     }
@@ -380,7 +448,6 @@ export default function ContractsPage() {
     setEditingId(order.id);
     setForm({
       transactionCode: order.transactionCode,
-      customerName: order.customerName,
       subscriberCodes: order.subscriberCodes.join(", "),
       totalValue: String(order.totalValue),
       channel: order.channel,
@@ -392,17 +459,26 @@ export default function ContractsPage() {
       packageName: order.packageName || "",
       paymentMethod: order.paymentMethod || PAYMENT_METHODS[0],
       customerId: order.customerId || "",
-      taxCode: order.taxCode || "",
       contractNumber: order.contractNumber || "",
       signedDate: order.signedDate || "",
     });
     setFormError(null);
+    setCustomerQuery("");
+    setCustomerPickerOpen(false);
+    setLeadCustomerHint(null);
     setShowForm(true);
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setFormError(null);
+
+    if (!form.customerId) {
+      setFormError(CUSTOMER_REQUIRED_MESSAGE);
+      setCustomerPickerOpen(true);
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -413,19 +489,17 @@ export default function ContractsPage() {
 
       if (editingId) {
         const updated = await updateContractInfo(editingId, {
-          customerName: form.customerName,
           subscriberCodes,
           totalValue: Number(form.totalValue),
           channel: form.channel,
           leadId: form.leadId || null,
           territoryId: form.territoryId || null,
-          amStaff: form.amStaff || null,
+          amStaff: isAdmin ? form.amStaff || null : (user?.name ?? null),
           serviceGroup: form.serviceGroup || null,
           serviceName: form.serviceName || null,
           packageName: form.packageName || null,
           paymentMethod: form.paymentMethod || null,
-          customerId: form.customerId || null,
-          taxCode: form.taxCode || null,
+          customerId: form.customerId,
           contractNumber: form.contractNumber || null,
           signedDate: form.signedDate || null,
         });
@@ -435,19 +509,17 @@ export default function ContractsPage() {
       } else {
         const created = await createContract({
           transactionCode: form.transactionCode,
-          customerName: form.customerName,
           subscriberCodes,
           totalValue: Number(form.totalValue),
           channel: form.channel,
           leadId: form.leadId || null,
           territoryId: form.territoryId || null,
-          amStaff: form.amStaff || null,
+          amStaff: isAdmin ? form.amStaff || null : (user?.name ?? null),
           serviceGroup: form.serviceGroup || null,
           serviceName: form.serviceName || null,
           packageName: form.packageName || null,
           paymentMethod: form.paymentMethod || null,
-          customerId: form.customerId || null,
-          taxCode: form.taxCode || null,
+          customerId: form.customerId,
           contractNumber: form.contractNumber || null,
           signedDate: form.signedDate || null,
         });
@@ -509,7 +581,13 @@ export default function ContractsPage() {
         <div>
           <span className="font-bold text-slate-900 block">{item.customerName}</span>
           {item.taxCode && (
-            <span className="text-[11px] text-slate-500 font-mono">MST: {item.taxCode}</span>
+            <span className="text-[11px] text-slate-500 font-mono block">MST: {item.taxCode}</span>
+          )}
+          {!item.customerId && (
+            <span className="mt-0.5 inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+              <AlertTriangle className="h-3 w-3" />
+              Chưa gắn khách hàng
+            </span>
           )}
         </div>
       ),
@@ -669,13 +747,24 @@ export default function ContractsPage() {
             Quản lý theo mã giao dịch nguồn, AM tiếp thị, nhóm dịch vụ và tình trạng thanh toán
           </p>
         </div>
-        <button
-          onClick={handleOpenCreate}
-          className="flex h-9 items-center gap-1.5 rounded-xl bg-vnpt px-3.5 text-xs font-bold text-white shadow-xs hover:bg-vnpt-dark"
-        >
-          <Plus className="h-4 w-4" />
-          <span className="btn-label">Tạo đơn hàng</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <button
+              onClick={() => setShowImportWizard(true)}
+              className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-600 shadow-xs hover:bg-slate-50"
+            >
+              <UploadCloud className="h-4 w-4" />
+              <span className="btn-label">Nhập hợp đồng (Excel)</span>
+            </button>
+          )}
+          <button
+            onClick={handleOpenCreate}
+            className="flex h-9 items-center gap-1.5 rounded-xl bg-vnpt px-3.5 text-xs font-bold text-white shadow-xs hover:bg-vnpt-dark"
+          >
+            <Plus className="h-4 w-4" />
+            <span className="btn-label">Tạo đơn hàng</span>
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -901,48 +990,95 @@ export default function ContractsPage() {
                   />
                 </div>
 
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-600">
-                    Chọn Khách hàng (tùy chọn)
-                  </label>
-                  <select
-                    value={form.customerId}
-                    onChange={(e) => handleSelectCustomer(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
-                  >
-                    <option value="">— Nhập tên tự do bên dưới —</option>
-                    {customers.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} {c.identityCode ? `(${c.identityCode})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-600">
-                    Tên khách hàng <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    required
-                    value={form.customerName}
-                    onChange={(e) => setForm({ ...form, customerName: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-600">
-                    Mã số thuế / CCCD
-                  </label>
-                  <input
-                    value={form.taxCode}
-                    onChange={(e) => setForm({ ...form, taxCode: e.target.value })}
-                    placeholder="VD: 0319653211"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
-                  />
-                </div>
+              <div className="rounded-xl border border-slate-200 p-3">
+                <label className="mb-1 block text-xs font-semibold text-slate-600">
+                  Khách hàng <span className="text-rose-500">*</span>
+                </label>
+
+                {editingOrder && !editingOrder.customerId && !form.customerId && (
+                  <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    Đơn hàng này chưa gắn khách hàng. Vui lòng chọn khách hàng để lưu thay đổi.
+                  </p>
+                )}
+                {leadCustomerHint && !form.customerId && (
+                  <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    {leadCustomerHint}{" "}
+                    <Link
+                      href="/admin/customers"
+                      target="_blank"
+                      className="font-semibold text-vnpt underline"
+                    >
+                      Mở trang Khách hàng
+                    </Link>
+                  </p>
+                )}
+
+                {form.customerId ? (
+                  <div
+                    data-testid="selected-customer"
+                    className="flex items-start justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-slate-900">
+                        {selectedCustomerName || form.customerId}
+                      </p>
+                      <p className="font-mono text-[11px] text-slate-600">
+                        MST/CCCD: {selectedCustomerTaxCode || "—"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleClearCustomer}
+                      className="shrink-0 text-xs font-bold text-vnpt hover:underline"
+                    >
+                      Đổi khách hàng
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <input
+                      value={customerQuery}
+                      onChange={(e) => {
+                        setCustomerQuery(e.target.value);
+                        setCustomerPickerOpen(true);
+                      }}
+                      onFocus={() => setCustomerPickerOpen(true)}
+                      placeholder="Tìm khách hàng theo tên, MST/CCCD hoặc số điện thoại..."
+                      aria-label="Tìm khách hàng"
+                      className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm focus:border-vnpt focus:outline-none"
+                    />
+                    {customerPickerOpen && (
+                      <div className="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+                        {customerMatches.length === 0 ? (
+                          <p className="px-3 py-3 text-xs text-slate-500">
+                            Không tìm thấy khách hàng phù hợp
+                            {!isAdmin ? " trong danh sách khách bạn phụ trách" : ""}.
+                          </p>
+                        ) : (
+                          customerMatches.map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => handleSelectCustomer(c.id)}
+                              className="block w-full border-b border-slate-100 px-3 py-2 text-left last:border-b-0 hover:bg-slate-50"
+                            >
+                              <span className="block text-sm font-semibold text-slate-900">{c.name}</span>
+                              <span className="block font-mono text-[11px] text-slate-500">
+                                MST/CCCD: {c.identityCode || "—"}
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Tên khách hàng và MST được lấy tự động từ khách hàng đã chọn.
+                </p>
               </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -1008,12 +1144,13 @@ export default function ContractsPage() {
                     AM tiếp thị phụ trách
                   </label>
                   <select
-                    value={form.amStaff}
+                    value={isAdmin ? form.amStaff : (user?.name ?? "")}
                     onChange={(e) => setForm({ ...form, amStaff: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
+                    disabled={!isAdmin}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none disabled:bg-slate-50 disabled:text-slate-500"
                   >
-                    <option value="">— Chưa gán AM —</option>
-                    {staffList.map((s) => (
+                    {isAdmin && <option value="">— Chưa gán AM —</option>}
+                    {(isAdmin ? staffList : staffList.filter((s) => s.name === user?.name)).map((s) => (
                       <option key={s.id} value={s.name}>
                         {s.name} ({s.code})
                       </option>
@@ -1334,6 +1471,37 @@ export default function ContractsPage() {
 
             {loadingExportPreview ? (
               <div className="py-8 text-center text-xs text-slate-400">Đang chuẩn bị dữ liệu văn bản...</div>
+            ) : exportBlocked ? (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    Không thể xuất Đề nghị thanh toán
+                  </div>
+                  <p className="mt-1">{exportBlocked}</p>
+                </div>
+                <div className="flex justify-end gap-2 pt-2 border-t">
+                  <button
+                    type="button"
+                    onClick={() => setExportingOrder(null)}
+                    className="rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                  >
+                    Đóng
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const order = exportingOrder;
+                      setExportingOrder(null);
+                      handleOpenEdit(order);
+                    }}
+                    className="flex items-center gap-1.5 rounded-xl bg-vnpt px-4 py-2 text-xs font-bold text-white hover:bg-vnpt-dark"
+                  >
+                    <Edit2 className="h-4 w-4" />
+                    <span>Chỉnh sửa đơn hàng</span>
+                  </button>
+                </div>
+              </div>
             ) : (
               <form onSubmit={handleDownloadDocx} className="space-y-4">
                 {/* Missing fields warning */}
@@ -1395,6 +1563,16 @@ export default function ContractsPage() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Nhập hợp đồng từ Excel */}
+      {showImportWizard && (
+        <ContractImportWizard
+          onClose={() => setShowImportWizard(false)}
+          onImported={() => {
+            getContracts().then(setData).catch(() => {});
+          }}
+        />
       )}
     </div>
   );

@@ -12,7 +12,7 @@ import {
 export class LeadServiceError extends Error {
   constructor(
     message: string,
-    public readonly status: 400 | 404
+    public readonly status: 400 | 403 | 404
   ) {
     super(message);
   }
@@ -131,9 +131,17 @@ export class LeadService {
     this.random = options?.random ?? Math.random;
   }
 
-  async getAll(): Promise<LeadRecordDto[]> {
-    const rows = await query<LeadRow>(`${LEAD_SELECT} ORDER BY l.created_at DESC`);
+  /** `ownerName` có giá trị: chỉ trả Lead do nhân viên đó phụ trách. */
+  async getAll(ownerName?: string): Promise<LeadRecordDto[]> {
+    const rows =
+      ownerName === undefined
+        ? await query<LeadRow>(`${LEAD_SELECT} ORDER BY l.created_at DESC`)
+        : await query<LeadRow>(`${LEAD_SELECT} WHERE l.staff_name = ? ORDER BY l.created_at DESC`, [ownerName]);
     return rows.map(toLeadRecord);
+  }
+
+  async getById(id: string): Promise<LeadRecordDto | null> {
+    return findLeadById(id);
   }
 
   async getCtvOptions(): Promise<CtvOptionDto[]> {

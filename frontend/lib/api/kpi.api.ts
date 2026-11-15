@@ -37,6 +37,7 @@ export interface StaffKpiRow {
   thuNgay: KpiCell;
   ghttT: KpiCell;
   ghttT1: KpiCell;
+  thuLuyKe: KpiCell;
 }
 
 /** `GET /api/kpi/performance?month=YYYY-MM`. AM chỉ nhận dòng của chính mình. */

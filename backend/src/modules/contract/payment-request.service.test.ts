@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import PizZip from "pizzip";
 import { initDatabase, query, run } from "../../database/db.js";
 import { applySchemaExtensions } from "../../database/schema-extensions.js";
-import { PaymentRequestService } from "./payment-request.service.js";
+import {
+  PaymentRequestService,
+  PaymentRequestBlockedError,
+  ORDER_WITHOUT_CUSTOMER_MESSAGE,
+} from "./payment-request.service.js";
 
 await initDatabase();
 await applySchemaExtensions();
@@ -17,6 +21,13 @@ async function resetTestData() {
   await run("DELETE FROM payment_request_exports");
 }
 
+async function insertCustomer(id: string, name: string, identityCode: string | null = null) {
+  await run(
+    "INSERT INTO customers (id, name, identity_code, type, customer_group) VALUES (?, ?, ?, ?, ?)",
+    [id, name, identityCode, "Doanh nghiệp", "Tự phát triển"]
+  );
+}
+
 test("buildData fills customer, AM and amount fields correctly", async () => {
   await resetTestData();
   await run(
@@ -26,12 +37,13 @@ test("buildData fills customer, AM and amount fields correctly", async () => {
   );
 
   const contractId = "HD-TEST-DOCX";
+  await insertCustomer("C-DOCX", "TRƯỜNG TIỂU HỌC NAM SÀI GÒN", "0319653211");
   await run(
     `INSERT INTO contracts (
       id, transaction_code, customer_name, subscriber_codes, total_value, channel,
       am_staff, service_group, service_name, package_name, payment_method,
-      tax_code, contract_number, signed_date, deployment_status, payment_status, document_status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      tax_code, contract_number, signed_date, deployment_status, payment_status, document_status, customer_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       contractId,
       "GD-26001",
@@ -50,6 +62,7 @@ test("buildData fills customer, AM and amount fields correctly", async () => {
       "Hoàn tất",
       "Chưa thanh toán",
       "Soạn thảo",
+      "C-DOCX",
     ]
   );
 
@@ -63,14 +76,15 @@ test("buildData fills customer, AM and amount fields correctly", async () => {
   assert.equal(data.missingFields.length, 0);
 });
 
-test("buildData lists missing fields for legacy order without failing", async () => {
+test("buildData lists missing fields for incomplete order without failing", async () => {
   await resetTestData();
   const contractId = "HD-LEGACY";
+  await insertCustomer("C-OLD", "Khách Hàng Cũ");
   await run(
     `INSERT INTO contracts (
       id, transaction_code, customer_name, subscriber_codes, total_value, channel,
-      deployment_status, payment_status, document_status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      deployment_status, payment_status, document_status, customer_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       contractId,
       "GD-OLD",
@@ -81,6 +95,7 @@ test("buildData lists missing fields for legacy order without failing", async ()
       "Hoàn tất",
       "Chưa thanh toán",
       "Soạn thảo",
+      "C-OLD",
     ]
   );
 
@@ -93,12 +108,13 @@ test("buildData lists missing fields for legacy order without failing", async ()
 test("render produces docx without leftover unrendered tags", async () => {
   await resetTestData();
   const contractId = "HD-RENDER";
+  await insertCustomer("C-RENDER", "CÔNG TY RENDER TEST", "0319653211");
   await run(
     `INSERT INTO contracts (
       id, transaction_code, customer_name, subscriber_codes, total_value, channel,
       am_staff, service_group, service_name, package_name, payment_method,
-      tax_code, signed_date, deployment_status, payment_status, document_status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      tax_code, signed_date, deployment_status, payment_status, document_status, customer_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       contractId,
       "GD-RENDER-1",
@@ -116,6 +132,7 @@ test("render produces docx without leftover unrendered tags", async () => {
       "Hoàn tất",
       "Chưa thanh toán",
       "Soạn thảo",
+      "C-RENDER",
     ]
   );
 
@@ -154,4 +171,40 @@ test("suggestNextDocNumber returns max + 1 within year", async () => {
 
   const otherYear = await service.suggestNextDocNumber(2027);
   assert.equal(otherYear, "");
+});
+
+test("buildData blocks orders that are not linked to a customer", async () => {
+  await resetTestData();
+  const contractId = "HD-NO-CUSTOMER";
+  await run(
+    `INSERT INTO contracts (
+      id, transaction_code, customer_name, subscriber_codes, total_value, channel,
+      deployment_status, payment_status, document_status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [contractId, "GD-NO-CUST", "Khách Chưa Gắn", JSON.stringify(["TB-X"]), 1000000, "Trực tiếp", "Hoàn tất", "Chưa thanh toán", "Soạn thảo"]
+  );
+
+  await assert.rejects(service.buildData(contractId, "1"), (err: unknown) => {
+    assert.ok(err instanceof PaymentRequestBlockedError);
+    assert.equal((err as Error).message, ORDER_WITHOUT_CUSTOMER_MESSAGE);
+    assert.match((err as Error).message, /chưa gắn khách hàng/);
+    return true;
+  });
+
+  const exports = await query("SELECT id FROM payment_request_exports");
+  assert.equal(exports.length, 0);
+});
+
+test("buildData blocks orders whose linked customer no longer exists", async () => {
+  await resetTestData();
+  const contractId = "HD-DANGLING";
+  await run(
+    `INSERT INTO contracts (
+      id, transaction_code, customer_name, subscriber_codes, total_value, channel,
+      deployment_status, payment_status, document_status, customer_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [contractId, "GD-DANGLING", "Khách Đã Xóa", JSON.stringify(["TB-X"]), 1000000, "Trực tiếp", "Hoàn tất", "Chưa thanh toán", "Soạn thảo", "C-DA-XOA"]
+  );
+
+  await assert.rejects(service.buildData(contractId, "1"), PaymentRequestBlockedError);
 });

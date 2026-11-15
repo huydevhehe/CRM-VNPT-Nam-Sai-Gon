@@ -3,6 +3,8 @@ import { requireAuth } from "../../middleware/require-auth.js";
 import { requireAdmin } from "../../middleware/require-role.js";
 import { CommissionService } from "./commission.service.js";
 
+// Toàn bộ /api/commissions chỉ dành cho Admin (server.ts gắn requireAdmin); các
+// route ghi tiền vẫn giữ requireAdmin riêng để không phụ thuộc cách mount.
 export const commissionRouter = Router();
 const commissionService = new CommissionService();
 
@@ -28,7 +30,7 @@ commissionRouter.get("/summary", async (_req: Request, res: Response) => {
 });
 
 // PATCH /api/commissions/:id/status
-commissionRouter.patch("/:id/status", requireAuth, async (req: Request, res: Response) => {
+commissionRouter.patch("/:id/status", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { status } = req.body;

@@ -139,3 +139,58 @@ export function updateReminderBatch(
 export function deleteReminderBatch(batchId: string): Promise<void> {
   return apiFetch<void>(`/reminders/files/${batchId}`, { method: "DELETE" });
 }
+
+export interface ReminderTemplateVariable {
+  key: string;
+  label: string;
+  sample: string;
+}
+
+export interface ReminderTemplate {
+  subject: string;
+  body: string;
+  isDefault: boolean;
+  defaultSubject: string;
+  defaultBody: string;
+  variables: ReminderTemplateVariable[];
+}
+
+export interface ReminderTemplatePreview {
+  subject: string;
+  text: string;
+  html: string;
+}
+
+export interface ReminderTemplateDraft {
+  subject: string;
+  body: string;
+}
+
+export function getReminderTemplate(): Promise<ReminderTemplate> {
+  return apiFetch<ReminderTemplate>("/reminders/template");
+}
+
+export function saveReminderTemplate(draft: ReminderTemplateDraft): Promise<ReminderTemplate> {
+  return apiFetch<ReminderTemplate>("/reminders/template", {
+    method: "PUT",
+    body: JSON.stringify(draft),
+  });
+}
+
+export function previewReminderTemplate(draft: ReminderTemplateDraft): Promise<ReminderTemplatePreview> {
+  return apiFetch<ReminderTemplatePreview>("/reminders/template/preview", {
+    method: "POST",
+    body: JSON.stringify(draft),
+  });
+}
+
+export function resetReminderTemplate(): Promise<ReminderTemplate> {
+  return apiFetch<ReminderTemplate>("/reminders/template/reset", { method: "POST" });
+}
+
+export function sendReminderTemplateTest(to: string, draft: ReminderTemplateDraft): Promise<{ sent: boolean }> {
+  return apiFetch<{ sent: boolean }>("/reminders/template/test", {
+    method: "POST",
+    body: JSON.stringify({ to, ...draft }),
+  });
+}

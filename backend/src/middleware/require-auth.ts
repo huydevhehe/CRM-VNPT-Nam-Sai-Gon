@@ -27,16 +27,20 @@ const ACCOUNT_INVALID_MESSAGE = "Tài khoản không còn hiệu lực";
  */
 async function loadAccountState(
   userId: string
-): Promise<{ active: boolean; role: string | null }> {
-  const rows = await query<{ status: string | null; role: string | null }>(
-    "SELECT status, role FROM users WHERE id = ?",
+): Promise<{ active: boolean; role: string | null; username: string | null }> {
+  const rows = await query<{ status: string | null; role: string | null; username: string | null }>(
+    "SELECT status, role, username FROM users WHERE id = ?",
     [userId]
   );
   if (!rows.length) {
-    return { active: false, role: null };
+    return { active: false, role: null, username: null };
   }
   const status = rows[0].status;
-  return { active: !status || status === USER_STATUS.ACTIVE, role: rows[0].role };
+  return {
+    active: !status || status === USER_STATUS.ACTIVE,
+    role: rows[0].role,
+    username: rows[0].username,
+  };
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -48,9 +52,14 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
   const token = authHeader.slice("Bearer ".length);
 
-  let decoded: { sub: string; role: string; name?: string };
+  let decoded: { sub: string; role: string; name?: string; usr?: string };
   try {
-    decoded = jwt.verify(token, config.jwtSecret) as { sub: string; role: string; name?: string };
+    decoded = jwt.verify(token, config.jwtSecret) as {
+      sub: string;
+      role: string;
+      name?: string;
+      usr?: string;
+    };
   } catch (error: any) {
     if (error?.name === "TokenExpiredError") {
       res.status(401).json({ success: false, message: "Token đã hết hạn" });
@@ -64,7 +73,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     return;
   }
 
-  let state: { active: boolean; role: string | null };
+  let state: { active: boolean; role: string | null; username: string | null };
   try {
     state = await loadAccountState(decoded.sub);
   } catch (error) {
@@ -75,6 +84,16 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
   if (!state.active || !state.role) {
     res.status(401).json({ success: false, message: ACCOUNT_INVALID_MESSAGE });
+    return;
+  }
+
+  // Tên đăng nhập bị đổi (Admin đổi mã nhân viên) sau khi token phát hành:
+  // buộc đăng nhập lại bằng tên mới.
+  if (decoded.usr !== undefined && decoded.usr !== state.username) {
+    res.status(401).json({
+      success: false,
+      message: "Tên đăng nhập đã thay đổi, vui lòng đăng nhập lại",
+    });
     return;
   }
 

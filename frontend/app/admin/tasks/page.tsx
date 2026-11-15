@@ -7,6 +7,7 @@ import DataTable, { Column } from "@/components/admin/shared/DataTable";
 import StatusSelect from "@/components/admin/shared/StatusSelect";
 import { TableFilter } from "@/lib/table-filters";
 import { getTasks, createTask, updateTaskStatus } from "@/lib/api/tasks.api";
+import { useAuth } from "@/lib/auth/auth-context";
 import { TaskRecord, TaskPriority, TaskStatus } from "@/lib/crm/types/crm.types";
 
 const PRIORITY_OPTIONS: TaskPriority[] = ["Thấp", "Vừa", "Cao"];
@@ -31,6 +32,8 @@ const EMPTY_FORM: TaskFormState = {
 };
 
 export default function TasksPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "Admin";
   const [data, setData] = useState<TaskRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +85,7 @@ export default function TasksPage() {
       const created = await createTask({
         title: form.title,
         relatedTarget: form.relatedTarget,
-        assignee: form.assignee,
+        assignee: isAdmin ? form.assignee : (user?.name ?? ""),
         dueDate: form.dueDate,
         priority: form.priority,
         status: "Mới",
@@ -309,9 +312,10 @@ export default function TasksPage() {
                   </label>
                   <input
                     required
-                    value={form.assignee}
+                    value={isAdmin ? form.assignee : (user?.name ?? "")}
                     onChange={(e) => setForm({ ...form, assignee: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
+                    readOnly={!isAdmin}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none read-only:bg-slate-50 read-only:text-slate-500"
                   />
                 </div>
                 <div>
