@@ -1,27 +1,7 @@
-import {
-  BookOpen,
-  Download,
-  FileArchive,
-  FileCode,
-  FileCog,
-  FileText,
-  Presentation,
-  ScrollText,
-  ShieldCheck,
-  Usb,
-  type LucideIcon,
-} from "lucide-react";
+export { default } from "@/components/plugin-cong-cu/DownloadCatalogView";
 
-import { SMARTCA_BASE_URL, TOOL_GROUPS, type ToolFile } from "@/content/plugin-tools";
 
-const GROUP_ICONS: Record<string, LucideIcon> = {
-  "plugin-ky-so": ShieldCheck,
-  "driver-token": Usb,
-  "huong-dan": BookOpen,
-  "tich-hop": FileCode,
-  "quy-che": ScrollText,
-};
-
+/*
 const KIND_ICONS: Record<ToolFile["kind"], LucideIcon> = {
   exe: FileCog,
   pkg: FileCog,
@@ -40,7 +20,8 @@ const KIND_BADGES: Record<ToolFile["kind"], string> = {
   pptx: "bg-orange-50 text-orange-700",
 };
 
-export default function DownloadCatalog() {
+/*
+function _UnusedLegacyDownloadCatalog() {
   return (
     <section id="danh-muc-tai-ve" className="scroll-mt-24 py-12">
       <div className="mx-auto max-w-7xl px-6">
@@ -130,3 +111,4 @@ export default function DownloadCatalog() {
     </section>
   );
 }
+*/

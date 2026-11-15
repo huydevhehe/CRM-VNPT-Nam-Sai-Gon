@@ -96,6 +96,24 @@ h3 {
   line-height: 1.2;
 }
 
+/* Icon nổi trên hero trang chủ — bồng bềnh nhẹ, lệch pha giữa các icon. */
+@keyframes vnpt-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.animate-float {
+  animation: vnpt-float 4s ease-in-out infinite;
+}
+.animate-float-slow {
+  animation: vnpt-float 5.5s ease-in-out infinite;
+  animation-delay: 0.6s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-float, .animate-float-slow {
+    animation: none;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

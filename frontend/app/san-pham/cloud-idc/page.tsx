@@ -1,261 +1,278 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
-  Boxes,
   Building2,
+  CheckCircle2,
   ClipboardList,
-  Clock,
-  Cloud,
   Cpu,
-  CreditCard,
   Database,
-  FlaskConical,
+  FileCheck2,
   Globe,
   HardDrive,
   Headset,
-  LifeBuoy,
+  Layers,
+  Link2,
+  Lock,
+  MessageCircle,
   Network,
+  Phone,
+  RefreshCw,
   Rocket,
+  Search,
   Server,
   Shield,
   ShieldCheck,
+  Star,
+  Zap,
 } from "lucide-react";
 import Breadcrumb from "@/components/layout/Breadcrumb";
-import LeadForm from "@/components/sections/LeadForm";
-import PricingTable from "@/components/product/PricingTable";
-import { getCategoryProducts } from "@/content/category-products";
-import type { Pricing } from "@/lib/types";
+import FaqAccordion from "./FaqAccordion";
+import CloudLeadForm from "./CloudLeadForm";
 
 export const metadata: Metadata = {
-  title: "VNPT Cloud & Data Center — VNPT Nam Sài Gòn",
+  title: "VNPT Smart Cloud — VNPT Nam Sài Gòn",
 };
 
-const HERO_ICONS = [
-  { icon: Server, label: "Cloud Server" },
-  { icon: HardDrive, label: "Bare Metal" },
-  { icon: Database, label: "Storage" },
-  { icon: Cloud, label: "Backup" },
-  { icon: Building2, label: "Data Center" },
-];
-
 const HERO_BADGES = [
-  { icon: Shield, label: "Bảo mật đa lớp", style: { top: "12%", left: "8%" } },
-  { icon: Globe, label: "Hạ tầng Việt Nam", style: { top: "48%", left: "4%" } },
-  { icon: Network, label: "Kết nối toàn quốc", style: { top: "82%", left: "14%" } },
+  { icon: CheckCircle2, label: "Hạ tầng Data Center hiện đại" },
+  { icon: CheckCircle2, label: "Bảo mật, an toàn dữ liệu" },
+  { icon: CheckCircle2, label: "Sẵn sàng mở rộng linh hoạt" },
+  { icon: CheckCircle2, label: "Hỗ trợ kỹ thuật 24/7" },
 ];
 
-// 4 dịch vụ có sản phẩm thật trong data cào (sourceId "cloud"), 2 dịch vụ còn lại
-// (Bare Metal, Data Center & Colocation) chưa có sản phẩm cào tương ứng nên trỏ về /lien-he.
-const DICH_VU_CARDS = [
-  {
-    icon: Server,
-    title: "Cloud Server",
-    desc: "Máy chủ ảo linh hoạt, hiệu năng cao",
-    price: "Giá từ 180.000đ/ tháng",
-    slug: "cloud-vnpt-cloud-server",
-  },
-  {
-    icon: HardDrive,
-    title: "Cloud Storage",
-    desc: "Lưu trữ dữ liệu an toàn, dung lượng mở rộng linh hoạt",
-    price: "Giá từ 500đ/ GB/ tháng",
-    slug: "cloud-vnpt-cloud-object-storage",
-  },
-  {
-    icon: Cloud,
-    title: "Cloud Backup",
-    desc: "Sao lưu dữ liệu tự động định kỳ, phục hồi nhanh chóng",
-    price: "Giá từ 250đ/ GB/ tháng",
-    slug: "cloud-vnpt-cloud-backup",
-  },
-  {
-    icon: Boxes,
-    title: "Kubernetes Service",
-    desc: "Nền tảng container mạnh mẽ, tự động mở rộng",
-    price: "Giá từ 1.200.000đ/ tháng",
-    slug: "cloud-vnpt-kubernetes-service",
-  },
-  {
-    icon: Server,
-    title: "Bare Metal Server",
-    desc: "Máy chủ vật lý riêng, hiệu năng cao",
-    price: "Giá từ 2.200.000đ/ tháng",
-    slug: null,
-  },
-  {
-    icon: Building2,
-    title: "Data Center & Colocation",
-    desc: "Đặt máy chủ tại IDC VNPT đạt chuẩn quốc tế",
-    price: "Giá liên hệ",
-    slug: null,
-  },
+const HE_SINH_THAI = [
+  { icon: Server, title: "Cloud Server", desc: "Máy chủ ảo linh hoạt, hiệu năng cao" },
+  { icon: Layers, title: "Cloud Storage", desc: "Lưu trữ dữ liệu an toàn, quy mô lớn" },
+  { icon: RefreshCw, title: "Cloud Backup", desc: "Sao lưu, khôi phục dữ liệu nhanh chóng" },
+  { icon: Lock, title: "Private Cloud / VPC", desc: "Hạ tầng Cloud riêng, kiểm soát toàn diện" },
+  { icon: Database, title: "Cloud Database", desc: "Cơ sở dữ liệu ổn định, bảo mật cao" },
+  { icon: Cpu, title: "Cloud GPU", desc: "Xử lý AI, đồ họa, tính toán chuyên sâu" },
 ];
 
-const TAI_SAO = [
-  { icon: Clock, value: "99.99%", label: "Uptime SLA" },
-  { icon: Building2, value: "03", label: "Data Center Tier III tại Việt Nam" },
-  { icon: ShieldCheck, value: "Bảo mật", label: "đạt chuẩn ISO 27001" },
-  { icon: Globe, value: "Hạ tầng", label: "đặt tại Việt Nam, kết nối tốc độ cao" },
-  { icon: Headset, value: "Hỗ trợ 24/7", label: "Đội ngũ chuyên sâu" },
-  { icon: CreditCard, value: "Thanh toán", label: "linh hoạt theo tháng/quý/năm" },
+type CloudServerPlan = {
+  name: string;
+  popular?: boolean;
+  specs: string[];
+  price: string;
+};
+
+const CLOUD_SERVER_PLANS: CloudServerPlan[] = [
+  { name: "SMC 4", specs: ["4 vCPU", "4 GB RAM", "40 GB SSD NVMe"], price: "549.000đ" },
+  { name: "SMC 5", popular: true, specs: ["4 vCPU", "8 GB RAM", "40 GB SSD NVMe"], price: "549.000đ" },
+  { name: "SMC 7", specs: ["8 vCPU", "8 GB RAM", "80 GB SSD NVMe"], price: "1.120.000đ" },
+  { name: "SMC 8", specs: ["8 vCPU", "16 GB RAM", "100 GB SSD NVMe"], price: "1.660.000đ" },
 ];
 
-const GIAI_PHAP_NHU_CAU = [
-  { icon: Globe, title: "Website & Hosting", desc: "Cloud Server – SSL – Backup – CDN" },
-  { icon: Building2, title: "Doanh nghiệp", desc: "Cloud – Storage – Backup – DR Site" },
-  { icon: Database, title: "ERP / CRM", desc: "Kubernetes – Database – Backup" },
-  { icon: Cpu, title: "AI & Big Data", desc: "GPU Cloud – Object Storage – Analytics" },
+const CLOUD_STORAGE_TAGS = [
+  { icon: Layers, label: "Dung lượng linh hoạt" },
+  { icon: ShieldCheck, label: "Bảo mật đa lớp" },
+  { icon: Globe, label: "Truy cập mọi nơi" },
 ];
 
-const CLOUD_SERVER_PRICING: Pricing[] = [
+const CLOUD_BACKUP_TAGS = [
+  { icon: ClipboardList, label: "Sao lưu định kỳ" },
+  { icon: RefreshCw, label: "Khôi phục nhanh chóng" },
+  { icon: ShieldCheck, label: "An toàn & đáng tin cậy" },
+];
+
+const KET_NOI_HA_TANG = [
   {
-    columns: ["Gói cấu hình", "vCPU", "RAM", "SSD", "Băng thông", "Giá từ (VNĐ/tháng)"],
-    rows: [
-      ["Basic", "2 vCPU", "4 GB", "50 GB", "Không giới hạn", "180.000"],
-      ["Standard", "4 vCPU", "8 GB", "100 GB", "Không giới hạn", "350.000"],
-      ["Premium", "8 vCPU", "16 GB", "200 GB", "Không giới hạn", "700.000"],
-      ["Business", "16 vCPU", "32 GB", "400 GB", "Không giới hạn", "1.300.000"],
-    ],
-    note: "Giá tham khảo, chưa bao gồm VAT. Liên hệ để được tư vấn cấu hình phù hợp.",
+    icon: Network,
+    title: "MetroNet",
+    desc: "Kết nối mạng nội bộ giữa các địa điểm trong cùng khu vực đô thị.",
+  },
+  {
+    icon: Globe,
+    title: "MegaWAN",
+    desc: "Mạng riêng doanh nghiệp (MPLS VPN), kết nối nhiều chi nhánh toàn quốc.",
+  },
+  {
+    icon: Link2,
+    title: "Leased Line",
+    desc: "Đường truyền Internet chuyên biệt, băng thông lớn, ổn định và an toàn.",
   },
 ];
 
-const BANG_GIA_TABS = ["Cloud Server", "Cloud Storage", "Backup", "Data Center"];
-
-const TU_VAN_CHECKS = [
-  "Khảo sát & tư vấn miễn phí",
-  "Thiết kế kiến trúc phù hợp",
-  "Triển khai nhanh chóng",
-  "Hỗ trợ kỹ thuật 24/7",
-];
-
-// Chưa có logo thật của khách hàng — hiển thị dạng wordmark chữ, không dùng ảnh có bản quyền.
-const KHACH_HANG = [
-  {
-    name: "BECAMEX",
-    org: "Tổng công ty Becamex IDC",
-    result: "Triển khai Cloud Server & Backup – Giảm 40% chi phí hạ tầng",
-  },
-  {
-    name: "HÒA PHÁT",
-    org: "Tập đoàn Hòa Phát",
-    result: "Triển khai Private Cloud – Tối ưu hiệu suất hệ thống",
-  },
-  {
-    name: "VIETTEL",
-    org: "Viettel Post",
-    result: "Triển khai Kubernetes Service – Tăng khả năng mở rộng 300%",
-  },
-  {
-    name: "FPT",
-    org: "FPT Software",
-    result: "Triển khai Data Center – Đảm bảo an toàn dữ liệu",
-  },
-  {
-    name: "VINFAST",
-    org: "VinFast",
-    result: "Triển khai Cloud & Storage – Đáp ứng mở rộng toàn cầu",
-  },
-];
-
-const DATA_CENTER_CHECKS = [
-  "Tier III – Uptime 99.982%",
-  "ISO 27001 – ISO 20000",
-  "Hạ tầng toàn quốc – Kết nối MetroNet",
-  "Giám sát 24/7 – NOC đạt chuẩn quốc tế",
-];
-
-const IDC_GALLERY = [
-  { name: "VNPT IDC Hòa Lạc", note: "Hà Nội" },
-  { name: "VNPT IDC Tân Thuận", note: "TP. Hồ Chí Minh" },
-  { name: "VNPT IDC Đà Nẵng", note: "Đà Nẵng" },
+const VI_SAO = [
+  { icon: Shield, title: "Hạ tầng Data Center", sub: "chuẩn quốc tế" },
+  { icon: Zap, title: "Hiệu năng cao,", sub: "ổn định (SLA)" },
+  { icon: Layers, title: "Linh hoạt mở rộng,", sub: "tối ưu chi phí" },
+  { icon: Headset, title: "Hỗ trợ kỹ thuật", sub: "24/7 từ VNPT" },
 ];
 
 const QUY_TRINH = [
-  { icon: ClipboardList, title: "Khảo sát nhu cầu", desc: "Tiếp nhận yêu cầu & phân tích nhu cầu" },
-  { icon: Headset, title: "Tư vấn giải pháp", desc: "Đề xuất giải pháp, báo giá chi tiết" },
-  { icon: FlaskConical, title: "Demo & Test", desc: "Trải nghiệm dịch vụ miễn phí" },
-  { icon: Rocket, title: "Triển khai", desc: "Tiến hành triển khai theo kế hoạch" },
-  { icon: LifeBuoy, title: "Vận hành & hỗ trợ", desc: "Giám sát & hỗ trợ đảm bảo 24/7" },
+  { icon: ClipboardList, title: "Tiếp nhận", sub: "nhu cầu" },
+  { icon: Search, title: "Tư vấn &", sub: "đề xuất giải pháp" },
+  { icon: FileCheck2, title: "Báo giá &", sub: "ký hợp đồng" },
+  { icon: Rocket, title: "Triển khai, cấu hình", sub: "& bàn giao" },
 ];
 
-const BOTTOM_STATS = [
-  { icon: Server, value: "10.000+", label: "Máy chủ đang hoạt động" },
-  { icon: Building2, value: "5.000+", label: "Doanh nghiệp tin dùng" },
-  { icon: Clock, value: "15+", label: "Năm kinh nghiệm" },
-  { icon: Headset, value: "24/7", label: "Hỗ trợ kỹ thuật" },
+const FAQ = [
+  {
+    q: "VNPT Smart Cloud khác VPS truyền thống như thế nào?",
+    a: "VNPT Smart Cloud sử dụng hạ tầng ảo hóa hiện đại, tự động mở rộng tài nguyên, đặt tại Data Center đạt chuẩn quốc tế, đảm bảo hiệu năng và độ ổn định cao hơn VPS truyền thống.",
+  },
+  {
+    q: "Có thể nâng cấp CPU, RAM và SSD không?",
+    a: "Có. Bạn có thể nâng cấp cấu hình (CPU, RAM, SSD) bất kỳ lúc nào theo nhu cầu sử dụng mà không gián đoạn dịch vụ.",
+  },
+  {
+    q: "Có thể sử dụng Windows Server hoặc Linux không?",
+    a: "Có. VNPT Smart Cloud hỗ trợ đầy đủ các hệ điều hành phổ biến như Windows Server, CentOS, Ubuntu, Debian...",
+  },
+  {
+    q: "Giá thuê Cloud Server đã bao gồm IP và băng thông chưa?",
+    a: "Giá thuê đã bao gồm 1 địa chỉ IP public và băng thông theo gói. Liên hệ để được tư vấn chi tiết theo nhu cầu sử dụng.",
+  },
 ];
+
+function SectionHeading({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <div className="mb-6">
+      <h2 className="flex items-center gap-3 text-xl font-bold text-slate-800 sm:text-2xl">
+        <span className="h-6 w-1.5 shrink-0 rounded-full bg-vnpt" />
+        {title}
+      </h2>
+      {subtitle && <p className="mt-2 max-w-3xl text-sm text-slate-500">{subtitle}</p>}
+    </div>
+  );
+}
+
+function CloudHeroArt() {
+  return (
+    <div className="relative mx-auto flex h-64 w-full max-w-md items-center justify-center sm:h-80">
+      <div className="absolute h-56 w-56 rounded-full bg-vnpt-neon/30 blur-3xl sm:h-72 sm:w-72" />
+      <svg viewBox="0 0 320 260" className="relative h-full w-full">
+        <defs>
+          <linearGradient id="cloudFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#1f6fd6" stopOpacity="0.55" />
+            <stop offset="100%" stopColor="#0a66c2" stopOpacity="0.25" />
+          </linearGradient>
+          <radialGradient id="platformGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.55" />
+            <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
+          </radialGradient>
+        </defs>
+
+        {/* platform glow */}
+        <ellipse cx="160" cy="228" rx="110" ry="16" fill="url(#platformGlow)" />
+        <ellipse cx="160" cy="228" rx="78" ry="6" fill="#38bdf8" opacity="0.5" />
+
+        {/* satellite dish on top of cloud */}
+        <g stroke="#bfe0ff" strokeWidth="2.5" fill="none" strokeLinecap="round">
+          <path d="M150 58 L150 40" />
+          <path d="M136 50 a16 16 0 0 1 28 0" />
+        </g>
+        <circle cx="150" cy="40" r="4" fill="#bfe0ff" />
+
+        {/* cloud shape */}
+        <path
+          d="M96 112 a30 30 0 0 1 20-45 38 38 0 0 1 73-8 28 28 0 0 1 34 44 26 26 0 0 1-4 52 H112 a24 24 0 0 1-16-43z"
+          fill="url(#cloudFill)"
+          stroke="#8fc4ff"
+          strokeWidth="2"
+        />
+
+        {/* badge inside cloud */}
+        <g>
+          <rect x="118" y="96" width="84" height="44" rx="8" fill="#063d78" opacity="0.85" />
+          <text x="160" y="113" textAnchor="middle" fontSize="9" fontWeight="700" fill="#ffffff">
+            VNPT
+          </text>
+          <text x="160" y="126" textAnchor="middle" fontSize="8" fill="#bfe0ff">
+            Smart Cloud
+          </text>
+        </g>
+
+        {/* server towers */}
+        {[108, 160, 212].map((x, i) => (
+          <g key={x}>
+            <rect
+              x={x - 22}
+              y={150 + (i === 1 ? -8 : 0)}
+              width="44"
+              height={66 + (i === 1 ? 8 : 0)}
+              rx="4"
+              fill="#0c2f5c"
+              stroke="#3b82c7"
+              strokeWidth="1.5"
+            />
+            {[0, 1, 2, 3].map((row) => (
+              <rect
+                key={row}
+                x={x - 16}
+                y={160 + (i === 1 ? -8 : 0) + row * 14}
+                width="32"
+                height="6"
+                rx="2"
+                fill={row % 2 === 0 ? "#60d4ff" : "#1b4d85"}
+              />
+            ))}
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
 
 export default function CloudIdcPage() {
-  const products = getCategoryProducts("cloud-idc");
-
   return (
     <div>
-      {/* HERO */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-vnpt-darker via-vnpt-dark to-vnpt px-6 py-10 text-white">
+      {/* BREADCRUMB */}
+      <div className="border-b border-slate-100 bg-white px-6 py-3">
         <div className="mx-auto max-w-7xl">
           <Breadcrumb
             items={[
               { label: "Trang chủ", href: "/" },
-              { label: "Sản phẩm", href: "/san-pham" },
-              { label: "Cloud & Data Center" },
+              { label: "Dịch vụ VNPT", href: "/san-pham" },
+              { label: "VNPT Smart Cloud" },
             ]}
           />
-          <div className="mt-4 grid items-center gap-10 lg:grid-cols-2">
+        </div>
+      </div>
+
+      {/* HERO */}
+      <section className="relative overflow-hidden bg-gradient-to-br from-vnpt-darker via-vnpt-dark to-vnpt px-6 py-10 text-white sm:py-14">
+        <div className="mx-auto max-w-7xl">
+          <div className="grid items-center gap-8 lg:grid-cols-[1.3fr_1fr_0.85fr]">
+            {/* left content */}
             <div>
-              <h1 className="leading-tight">
-                VNPT CLOUD
-                <br />& DATA CENTER
+              <h1 className="text-2xl font-extrabold leading-tight text-white sm:whitespace-nowrap sm:text-3xl">
+                VNPT Smart Cloud
               </h1>
-              <p className="mt-3 font-semibold text-vnpt-accent">HẠ TẦNG SỐ MẠNH MẼ</p>
-              <p className="text-white/85">AN TOÀN – LINH HOẠT – SẴN SÀNG MỞ RỘNG</p>
-
-              <div className="mt-6 grid grid-cols-3 gap-4 sm:grid-cols-5">
-                {HERO_ICONS.map((h) => (
-                  <div key={h.label} className="flex flex-col items-center gap-1.5 text-center">
-                    <h.icon size={24} />
-                    <span className="text-xs text-white/80">{h.label}</span>
-                  </div>
-                ))}
-              </div>
-
+              <p className="mt-3 max-w-md text-sm text-white/80 sm:text-base">
+                Hệ sinh thái điện toán đám mây và Data Center của VNPT an toàn, linh hoạt, hiệu quả
+                cho doanh nghiệp số.
+              </p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <Link
                   href="#dang-ky-tu-van"
-                  className="rounded-md bg-white px-5 py-3 text-sm font-semibold text-vnpt hover:bg-white/90"
+                  className="flex items-center gap-2 rounded-md bg-white px-5 py-3 text-sm font-semibold text-vnpt transition hover:bg-white/90"
                 >
-                  TƯ VẤN GIẢI PHÁP
+                  Nhận tư vấn giải pháp <ArrowRight size={16} />
                 </Link>
                 <Link
                   href="#bang-gia"
-                  className="rounded-md border border-white/60 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10"
+                  className="flex items-center gap-2 rounded-md border border-white/60 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
                 >
-                  NHẬN BÁO GIÁ
+                  Xem bảng giá <ArrowRight size={16} />
                 </Link>
               </div>
             </div>
 
-            <div className="relative hidden h-80 overflow-hidden rounded-2xl lg:block">
-              <Image
-                src="/images/hero/hero-city-night.jpg"
-                alt="VNPT Cloud & Data Center"
-                fill
-                sizes="(max-width: 1024px) 0px, 50vw"
-                quality={90}
-                className="object-cover"
-                priority
-              />
-              <div className="absolute inset-0 bg-vnpt/50 mix-blend-multiply" />
-              <div className="absolute inset-0 bg-gradient-to-t from-vnpt-darker/80 via-transparent to-vnpt-dark/30" />
+            {/* illustration */}
+            <CloudHeroArt />
+
+            {/* badges */}
+            <div className="flex flex-col gap-3">
               {HERO_BADGES.map((b) => (
                 <div
                   key={b.label}
-                  style={b.style}
-                  className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-vnpt shadow-lg"
+                  className="flex items-center gap-2 whitespace-nowrap rounded-full bg-white/95 px-4 py-2.5 text-xs font-semibold text-slate-700 shadow-lg"
                 >
-                  <b.icon size={14} /> {b.label}
+                  <b.icon size={15} className="shrink-0 text-emerald-500" />
+                  {b.label}
                 </div>
               ))}
             </div>
@@ -263,276 +280,267 @@ export default function CloudIdcPage() {
         </div>
       </section>
 
-      {/* DỊCH VỤ */}
+      {/* HỆ SINH THÁI */}
       <section className="mx-auto max-w-7xl px-6 py-10">
-        <h2 className="mb-6 text-center text-slate-800">
-          DỊCH VỤ CLOUD &amp; DATA CENTER
-        </h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {DICH_VU_CARDS.map((d) => {
-            const exists = d.slug ? products.some((p) => p.slug === d.slug) : false;
-            const href = exists ? `/san-pham/cloud-idc/${d.slug}` : "/lien-he";
-            return (
-              <div
-                key={d.title}
-                className="flex flex-col rounded-xl border border-slate-100 p-5 text-center shadow-sm transition hover:shadow-md"
-              >
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-vnpt-light text-vnpt">
-                  <d.icon size={24} />
-                </div>
-                <h3 className="mt-3 font-semibold text-slate-800">{d.title}</h3>
-                <p className="mt-1 text-sm text-slate-500">{d.desc}</p>
-                <p className="mt-2 text-sm font-semibold text-vnpt">{d.price}</p>
-                <Link
-                  href={href}
-                  className="mt-3 text-sm font-semibold text-vnpt hover:underline"
-                >
-                  {exists ? "Xem chi tiết →" : "Liên hệ tư vấn →"}
-                </Link>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* TẠI SAO CHỌN VNPT CLOUD */}
-      <section className="bg-vnpt-light px-6 py-10">
-        <div className="mx-auto max-w-7xl">
-          <h2 className="mb-6 text-center text-slate-800">
-            TẠI SAO CHỌN VNPT CLOUD
-          </h2>
-          <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-6">
-            {TAI_SAO.map((t) => (
-              <div key={t.label} className="flex flex-col items-center gap-1.5 text-center">
-                <t.icon size={26} className="text-vnpt" />
-                <span className="text-sm font-bold text-slate-800">{t.value}</span>
-                <span className="text-xs text-slate-500">{t.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* KIẾN TRÚC + GIẢI PHÁP THEO NHU CẦU */}
-      <section className="mx-auto max-w-7xl px-6 py-10">
-        <div className="grid gap-8 lg:grid-cols-2">
-          {/* Kiến trúc hệ sinh thái cloud */}
-          <div className="rounded-xl border border-slate-100 p-6 shadow-sm">
-            <h2 className="mb-6 text-center text-lg font-bold text-slate-800">
-              KIẾN TRÚC HỆ SINH THÁI CLOUD
-            </h2>
-            <div className="flex flex-wrap items-center justify-center gap-3 text-center text-xs text-slate-600">
-              <div className="flex flex-col items-center gap-1">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-vnpt-light text-vnpt">
-                  <Globe size={22} />
-                </div>
-                Internet
-              </div>
-              <ArrowRight className="text-vnpt" size={18} />
-              <div className="flex flex-col items-center gap-1">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-vnpt-light text-vnpt">
-                  <Network size={22} />
-                </div>
-                Load Balancer
-              </div>
-              <ArrowRight className="text-vnpt" size={18} />
-              <div className="flex flex-col items-center gap-1">
-                <div className="grid grid-cols-3 gap-1.5">
-                  {[Server, Database, HardDrive].map((Icon, i) => (
-                    <div
-                      key={i}
-                      className="flex h-10 w-10 items-center justify-center rounded-lg bg-vnpt text-white"
-                    >
-                      <Icon size={16} />
-                    </div>
-                  ))}
-                </div>
-                <span className="mt-1 block">
-                  Cloud Server · Database · Storage
-                </span>
-              </div>
-              <ArrowRight className="text-vnpt" size={18} />
-              <div className="flex flex-col items-center gap-1">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-vnpt-light text-vnpt">
-                  <Cloud size={22} />
-                </div>
-                Backup
-              </div>
-            </div>
-            <div className="mt-6 flex justify-center">
-              <div className="flex items-center gap-2 rounded-lg bg-vnpt-darker px-5 py-3 text-sm font-semibold text-white">
-                <Building2 size={18} /> Data Center VNPT
-              </div>
-            </div>
-          </div>
-
-          {/* Giải pháp theo nhu cầu */}
-          <div className="rounded-xl border border-slate-100 p-6 shadow-sm">
-            <h2 className="mb-6 text-center text-lg font-bold text-slate-800">
-              GIẢI PHÁP THEO NHU CẦU
-            </h2>
-            <div className="space-y-3">
-              {GIAI_PHAP_NHU_CAU.map((g) => (
-                <div
-                  key={g.title}
-                  className="flex items-center gap-3 rounded-lg border border-slate-100 p-3 transition hover:border-vnpt"
-                >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-vnpt-light text-vnpt">
-                    <g.icon size={20} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold text-slate-800">{g.title}</div>
-                    <div className="text-xs text-slate-500">{g.desc}</div>
-                  </div>
-                  <ArrowRight size={16} className="shrink-0 text-slate-300" />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* BẢNG GIÁ THAM KHẢO */}
-      <section id="bang-gia" className="mx-auto max-w-7xl scroll-mt-20 px-6 py-10">
-        <h2 className="mb-6 text-center text-slate-800">
-          BẢNG GIÁ THAM KHẢO
-        </h2>
-        <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
-          <div>
-            <div className="flex flex-wrap gap-2">
-              {BANG_GIA_TABS.map((tab, i) => (
-                <span
-                  key={tab}
-                  className={`rounded-md px-4 py-2 text-sm font-semibold ${
-                    i === 0
-                      ? "bg-vnpt text-white"
-                      : "border border-slate-200 text-slate-600"
-                  }`}
-                >
-                  {tab}
-                </span>
-              ))}
-            </div>
-            <div className="mt-4">
-              <PricingTable pricing={CLOUD_SERVER_PRICING} />
-            </div>
-            <div className="mt-3 text-right">
-              <Link href="/san-pham/cloud-idc/cloud-vnpt-cloud-server" className="text-sm font-semibold text-vnpt hover:underline">
-                Xem tất cả cấu hình →
-              </Link>
-            </div>
-          </div>
-
-          <div className="rounded-xl bg-vnpt-light p-6">
-            <h3 className="font-bold text-slate-800">TƯ VẤN GIẢI PHÁP PHÙ HỢP</h3>
-            <p className="mt-1 text-sm text-slate-600">
-              Đội ngũ chuyên gia VNPT sẵn sàng tư vấn giải pháp tối ưu cho doanh nghiệp.
-            </p>
-            <ul className="mt-4 space-y-2">
-              {TU_VAN_CHECKS.map((c) => (
-                <li key={c} className="flex items-center gap-2 text-sm text-slate-700">
-                  <ShieldCheck size={16} className="shrink-0 text-vnpt" /> {c}
-                </li>
-              ))}
-            </ul>
-            <Link
-              href="#dang-ky-tu-van"
-              className="mt-5 block rounded-md bg-vnpt py-2.5 text-center text-sm font-semibold text-white hover:bg-vnpt-dark"
+        <SectionHeading
+          title="Hệ sinh thái VNPT Smart Cloud"
+          subtitle="Đa dạng dịch vụ Cloud và hạ tầng số, đáp ứng toàn diện nhu cầu từ máy chủ, lưu trữ, sao lưu đến kết nối và môi trường Cloud riêng cho doanh nghiệp."
+        />
+        <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+          {HE_SINH_THAI.map((item) => (
+            <div
+              key={item.title}
+              className="flex flex-col items-center gap-2 rounded-xl border border-slate-100 p-5 text-center shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
             >
-              ĐĂNG KÝ TƯ VẤN NGAY
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* KHÁCH HÀNG TIÊU BIỂU */}
-      <section className="mx-auto max-w-7xl px-6 py-10">
-        <h2 className="mb-6 text-slate-800">KHÁCH HÀNG TIÊU BIỂU</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {KHACH_HANG.map((k) => (
-            <div key={k.name} className="rounded-xl border border-slate-100 p-4 text-center shadow-sm">
-              <div className="text-lg font-black tracking-tight text-slate-800">{k.name}</div>
-              <div className="mt-2 text-sm font-semibold text-slate-700">{k.org}</div>
-              <p className="mt-1 text-xs text-slate-500">{k.result}</p>
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-vnpt-light text-vnpt">
+                <item.icon size={24} />
+              </div>
+              <h3 className="mt-1 text-sm font-bold text-slate-800">{item.title}</h3>
+              <p className="text-xs text-slate-500">{item.desc}</p>
             </div>
           ))}
         </div>
       </section>
 
-      {/* DATA CENTER VNPT */}
-      <section className="bg-vnpt-darker px-6 py-10 text-white">
-        <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1.4fr_1fr]">
-          <div>
-            <h2>DATA CENTER VNPT</h2>
-            <p className="mt-1 text-white/70">
-              Hệ thống Data Center hiện đại, đạt chuẩn quốc tế
-            </p>
-            <ul className="mt-4 space-y-2">
-              {DATA_CENTER_CHECKS.map((c) => (
-                <li key={c} className="flex items-center gap-2 text-sm text-white/85">
-                  <ShieldCheck size={16} className="shrink-0 text-vnpt-accent" /> {c}
-                </li>
-              ))}
-            </ul>
-
-            <div className="mt-6 grid grid-cols-3 gap-3">
-              {IDC_GALLERY.map((g) => (
-                <div key={g.name} className="overflow-hidden rounded-xl bg-white/10">
-                  <div className="flex h-24 items-center justify-center">
-                    <Building2 size={32} className="text-white/60" />
-                  </div>
-                  <div className="p-2 text-center">
-                    <div className="text-xs font-semibold">{g.name}</div>
-                    <div className="text-[11px] text-white/60">{g.note}</div>
-                  </div>
-                </div>
-              ))}
+      {/* BẢNG GIÁ CLOUD SERVER */}
+      <section id="bang-gia" className="mx-auto max-w-7xl scroll-mt-20 px-6 py-10">
+        <SectionHeading
+          title="Bảng giá Cloud Server tiêu biểu"
+          subtitle="Các gói máy chủ ảo VNPT Cloud được thiết kế tối ưu cho nhiều nhu cầu từ website, ứng dụng đến hệ thống doanh nghiệp."
+        />
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {CLOUD_SERVER_PLANS.map((plan) => (
+            <div
+              key={plan.name}
+              className={`relative flex flex-col rounded-xl border p-5 ${
+                plan.popular ? "border-vnpt shadow-lg shadow-vnpt/10" : "border-slate-100 shadow-sm"
+              }`}
+            >
+              {plan.popular && (
+                <span className="absolute -top-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-vnpt-accent px-3 py-1 text-xs font-semibold text-white shadow">
+                  <Star size={12} className="fill-white" /> Phổ biến
+                </span>
+              )}
+              <div className="flex items-center gap-2">
+                <Server size={20} className="text-vnpt" />
+                <h3 className="text-lg font-bold text-slate-800">{plan.name}</h3>
+              </div>
+              <ul className="mt-4 space-y-2">
+                {plan.specs.map((s) => (
+                  <li key={s} className="flex items-center gap-2 text-sm text-slate-600">
+                    <CheckCircle2 size={15} className="shrink-0 text-emerald-500" /> {s}
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-4">
+                <span className="text-xl font-extrabold text-red-600">{plan.price}</span>
+                <span className="text-sm text-slate-400"> /tháng</span>
+              </div>
+              <Link
+                href="/san-pham/cloud-idc/cloud-vnpt-cloud-server"
+                className={`mt-4 flex items-center justify-center gap-1.5 rounded-md py-2.5 text-sm font-semibold transition ${
+                  plan.popular
+                    ? "bg-vnpt text-white hover:bg-vnpt-dark"
+                    : "border border-vnpt text-vnpt hover:bg-vnpt-light"
+                }`}
+              >
+                Đăng ký ngay <ArrowRight size={15} />
+              </Link>
             </div>
-          </div>
+          ))}
+        </div>
+        <div className="mt-6 text-center">
+          <Link
+            href="/san-pham/cloud-idc/cloud-vnpt-cloud-server"
+            className="inline-flex items-center gap-1.5 rounded-md border border-vnpt px-5 py-2.5 text-sm font-semibold text-vnpt hover:bg-vnpt-light"
+          >
+            Xem tất cả cấu hình Cloud Server <ArrowRight size={15} />
+          </Link>
+        </div>
+      </section>
 
-          <div id="dang-ky-tu-van" className="scroll-mt-24">
-            <LeadForm
-              title="Đăng ký tư vấn Cloud & Data Center"
-              interestOptions={["Cloud & IDC"]}
-              showCompany
-            />
+      {/* CLOUD STORAGE */}
+      <section className="mx-auto max-w-7xl px-6 pb-6">
+        <div className="flex flex-col gap-5 rounded-xl bg-vnpt-light p-6 lg:flex-row lg:items-center">
+          <div className="flex shrink-0 items-center justify-center lg:w-28">
+            <Layers size={48} className="text-vnpt" />
           </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-bold text-vnpt">Cloud Storage</h3>
+            <p className="mt-1 text-sm text-slate-600">
+              Lưu trữ dữ liệu an toàn, linh hoạt, đáp ứng nhu cầu lưu trữ lớn và truy cập mọi lúc,
+              mọi nơi.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-5">
+            {CLOUD_STORAGE_TAGS.map((t) => (
+              <div key={t.label} className="flex flex-col items-center gap-1 text-center text-xs font-semibold text-slate-600">
+                <t.icon size={20} className="text-vnpt" />
+                <span className="max-w-[80px]">{t.label}</span>
+              </div>
+            ))}
+          </div>
+          <Link
+            href="#dang-ky-tu-van"
+            className="flex shrink-0 items-center justify-center gap-1.5 rounded-md bg-vnpt px-5 py-2.5 text-sm font-semibold text-white hover:bg-vnpt-dark"
+          >
+            Nhận báo giá <ArrowRight size={15} />
+          </Link>
+        </div>
+      </section>
+
+      {/* CLOUD BACKUP */}
+      <section className="mx-auto max-w-7xl px-6 pb-10">
+        <div className="flex flex-col gap-5 rounded-xl bg-vnpt-light p-6 lg:flex-row lg:items-center">
+          <div className="flex shrink-0 items-center justify-center lg:w-28">
+            <ShieldCheck size={48} className="text-vnpt" />
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-bold text-vnpt">Cloud Backup</h3>
+            <p className="mt-1 text-sm text-slate-600">
+              Sao lưu dữ liệu tự động, định kỳ, giúp doanh nghiệp bảo vệ và phục hồi dữ liệu nhanh
+              chóng.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-5">
+            {CLOUD_BACKUP_TAGS.map((t) => (
+              <div key={t.label} className="flex flex-col items-center gap-1 text-center text-xs font-semibold text-slate-600">
+                <t.icon size={20} className="text-vnpt" />
+                <span className="max-w-[80px]">{t.label}</span>
+              </div>
+            ))}
+          </div>
+          <Link
+            href="#dang-ky-tu-van"
+            className="flex shrink-0 items-center justify-center gap-1.5 rounded-md bg-vnpt px-5 py-2.5 text-sm font-semibold text-white hover:bg-vnpt-dark"
+          >
+            Nhận báo giá <ArrowRight size={15} />
+          </Link>
+        </div>
+      </section>
+
+      {/* KẾT NỐI HẠ TẦNG CLOUD */}
+      <section className="mx-auto max-w-7xl px-6 py-10">
+        <SectionHeading title="Giải pháp kết nối hạ tầng Cloud" />
+        <div className="grid gap-5 sm:grid-cols-3">
+          {KET_NOI_HA_TANG.map((k) => (
+            <div key={k.title} className="rounded-xl border border-slate-100 p-5 shadow-sm">
+              <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-vnpt-light text-vnpt">
+                <k.icon size={22} />
+              </div>
+              <h3 className="mt-3 font-bold text-slate-800">{k.title}</h3>
+              <p className="mt-1 text-sm text-slate-500">{k.desc}</p>
+              <Link
+                href="#dang-ky-tu-van"
+                className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-vnpt hover:underline"
+              >
+                Nhận báo giá <ArrowRight size={14} />
+              </Link>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* VÌ SAO CHỌN */}
+      <section className="mx-auto max-w-7xl px-6 py-10">
+        <SectionHeading title="Vì sao chọn VNPT Smart Cloud?" />
+        <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
+          {VI_SAO.map((v) => (
+            <div
+              key={v.title}
+              className="flex flex-col items-center gap-2 rounded-xl border border-slate-100 p-5 text-center shadow-sm"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-vnpt-light text-vnpt">
+                <v.icon size={22} />
+              </div>
+              <div className="text-sm font-semibold text-slate-800">
+                {v.title}
+                <br />
+                {v.sub}
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 
       {/* QUY TRÌNH TRIỂN KHAI */}
       <section className="mx-auto max-w-7xl px-6 py-10">
-        <h2 className="mb-6 text-center text-slate-800">
-          QUY TRÌNH TRIỂN KHAI
-        </h2>
-        <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-5">
+        <SectionHeading title="Quy trình triển khai dịch vụ" />
+        <div className="flex flex-col items-center gap-6 sm:flex-row sm:justify-between">
           {QUY_TRINH.map((q, i) => (
-            <div key={q.title} className="flex flex-col items-center gap-2 text-center">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-vnpt text-sm font-bold text-white">
-                {i + 1}
+            <div key={q.title} className="flex flex-1 items-center">
+              <div className="flex flex-col items-center gap-2 text-center">
+                <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-vnpt-light text-vnpt">
+                  <q.icon size={24} />
+                  <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-vnpt text-[11px] font-bold text-white">
+                    {i + 1}
+                  </span>
+                </div>
+                <div className="text-sm font-semibold leading-tight text-slate-800">
+                  {q.title}
+                  <br />
+                  {q.sub}
+                </div>
               </div>
-              <q.icon size={22} className="text-vnpt" />
-              <div className="text-sm font-semibold text-slate-800">{q.title}</div>
-              <div className="text-xs text-slate-500">{q.desc}</div>
+              {i < QUY_TRINH.length - 1 && (
+                <ArrowRight className="mx-2 hidden shrink-0 text-slate-300 sm:block" size={20} />
+              )}
             </div>
           ))}
         </div>
       </section>
 
-      {/* STAT BAR */}
-      <div className="bg-vnpt">
-        <div className="mx-auto grid max-w-7xl grid-cols-2 gap-6 px-6 py-8 text-center text-white md:grid-cols-4">
-          {BOTTOM_STATS.map((s) => (
-            <div key={s.label} className="flex items-center justify-center gap-2">
-              <s.icon size={22} className="shrink-0" />
-              <div className="text-left">
-                <div className="text-lg font-bold">{s.value}</div>
-                <div className="text-xs text-white/80">{s.label}</div>
-              </div>
-            </div>
-          ))}
+      {/* FORM ĐĂNG KÝ TƯ VẤN */}
+      <CloudLeadForm />
+
+      {/* FAQ */}
+      <section className="mx-auto max-w-7xl px-6 py-10">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="flex items-center gap-3 text-xl font-bold text-slate-800 sm:text-2xl">
+            <span className="h-6 w-1.5 shrink-0 rounded-full bg-vnpt" />
+            Câu hỏi thường gặp (FAQ)
+          </h2>
+          <Link href="/lien-he" className="hidden shrink-0 text-sm font-semibold text-vnpt hover:underline sm:inline">
+            Xem tất cả câu hỏi →
+          </Link>
         </div>
-      </div>
+        <FaqAccordion items={FAQ} />
+      </section>
+
+      {/* CTA BANNER CUỐI */}
+      <section className="bg-vnpt-darker px-6 py-8 text-white">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-5 sm:flex-row">
+          <div className="flex items-center gap-4 text-center sm:text-left">
+            <div className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/10 sm:flex">
+              <Headset size={22} />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-white">
+                Triển khai VNPT Smart Cloud cho doanh nghiệp của bạn!
+              </h3>
+              <p className="mt-1 text-sm text-white/70">
+                Hạ tầng mạnh mẽ – Dữ liệu an toàn – Vận hành linh hoạt – Đồng hành cùng chuyển đổi số
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center justify-center gap-3">
+            <a
+              href="tel:0838999333"
+              className="flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-vnpt hover:bg-white/90"
+            >
+              <Phone size={16} /> 0838 999 333
+            </a>
+            <a
+              href="https://zalo.me"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 rounded-full border border-white/60 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/10"
+            >
+              <MessageCircle size={16} /> Tư vấn qua Zalo
+            </a>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
