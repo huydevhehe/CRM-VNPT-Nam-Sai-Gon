@@ -74,6 +74,7 @@ export interface StaffRecordDto {
 }
 
 export interface StaffUpdateInput {
+  code?: string;
   name?: string;
   role?: string;
   territory?: string;
@@ -142,6 +143,7 @@ const STAFF_ROLES = [ROLES.AM, ROLES.AM_BAN_CHAM, ROLES.ADMIN] as const;
 const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 72;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const STAFF_CODE_PATTERN = /^[A-Za-z0-9._-]{3,50}$/;
 
 export class StaffService {
   async getAll(params?: { status?: string; month?: string }): Promise<StaffRecordDto[]> {
@@ -316,6 +318,41 @@ export class StaffService {
     const fields: string[] = [];
     const values: any[] = [];
 
+    const oldCode = existing[0].code;
+    let newCode: string | null = null;
+    if (patch.code !== undefined) {
+      const code = typeof patch.code === "string" ? patch.code.trim() : "";
+      if (!code) {
+        throw new HttpError(400, "Mã nhân viên không được để trống");
+      }
+      if (code !== oldCode) {
+        if (!STAFF_CODE_PATTERN.test(code)) {
+          throw new HttpError(
+            400,
+            "Mã nhân viên phải từ 3 đến 50 ký tự, chỉ gồm chữ, số, dấu chấm, gạch dưới, gạch ngang (không có khoảng trắng)"
+          );
+        }
+        const dupStaff = await query<{ id: string }>(
+          "SELECT id FROM staff WHERE LOWER(code) = LOWER(?) AND id <> ?",
+          [code, id]
+        );
+        if (dupStaff.length) {
+          throw new HttpError(409, "Mã nhân viên đã tồn tại");
+        }
+        const dupUser = await query<{ id: string }>(
+          `SELECT id FROM users WHERE LOWER(username) = LOWER(?)
+             AND NOT (username = ? AND role IN (?, ?, ?))`,
+          [code, oldCode, ...STAFF_ROLES]
+        );
+        if (dupUser.length) {
+          throw new HttpError(409, "Tên đăng nhập trùng với mã nhân viên đã tồn tại");
+        }
+        newCode = code;
+        fields.push("code = ?");
+        values.push(code);
+      }
+    }
+
     const oldName = existing[0].name;
     let isRename = false;
     let finalNewName = oldName;
@@ -412,47 +449,70 @@ export class StaffService {
       throw new HttpError(400, "Không có dữ liệu cần cập nhật");
     }
 
-    await transaction(async (tx) => {
-      values.push(id);
-      await tx.run(`UPDATE staff SET ${fields.join(", ")} WHERE id = ?`, values);
+    try {
+      await transaction(async (tx) => {
+        values.push(id);
+        await tx.run(`UPDATE staff SET ${fields.join(", ")} WHERE id = ?`, values);
 
-      if (isRename) {
-        for (const [table, column] of STAFF_NAME_REFERENCES) {
-          await tx.run(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`, [finalNewName, oldName]);
+        if (isRename) {
+          for (const [table, column] of STAFF_NAME_REFERENCES) {
+            await tx.run(`UPDATE ${table} SET ${column} = ? WHERE ${column} = ?`, [finalNewName, oldName]);
+          }
+          await tx.run(
+            'INSERT INTO audit_logs (id, "user", action, details) VALUES (?, ?, ?, ?)',
+            [
+              `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              actor || "Admin",
+              "Đổi tên nhân viên",
+              `Đổi tên nhân viên từ "${oldName}" thành "${finalNewName}" (mã: ${existing[0].code})`,
+            ]
+          );
         }
-        await tx.run(
-          'INSERT INTO audit_logs (id, "user", action, details) VALUES (?, ?, ?, ?)',
-          [
-            `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            actor || "Admin",
-            "Đổi tên nhân viên",
-            `Đổi tên nhân viên từ "${oldName}" thành "${finalNewName}" (mã: ${existing[0].code})`,
-          ]
-        );
-      }
 
-      // Đồng bộ sang tài khoản đăng nhập (username = mã nhân viên)
-      const userFields: string[] = [];
-      const userValues: any[] = [];
-      if (patch.name !== undefined) {
-        userFields.push("name = ?");
-        userValues.push(finalNewName);
+        // Đồng bộ sang tài khoản đăng nhập (username = mã nhân viên)
+        const userFields: string[] = [];
+        const userValues: any[] = [];
+        if (newCode !== null) {
+          userFields.push("username = ?");
+          userValues.push(newCode);
+        }
+        if (patch.name !== undefined) {
+          userFields.push("name = ?");
+          userValues.push(finalNewName);
+        }
+        if (patch.role !== undefined) {
+          userFields.push("role = ?");
+          userValues.push(patch.role);
+        }
+        if (patch.email !== undefined) {
+          userFields.push("email = ?");
+          userValues.push(patch.email || null);
+        }
+        if (userFields.length) {
+          await tx.run(
+            `UPDATE users SET ${userFields.join(", ")} WHERE username = ? AND role IN (?, ?, ?)`,
+            [...userValues, oldCode, ...STAFF_ROLES]
+          );
+        }
+
+        if (newCode !== null) {
+          await tx.run(
+            'INSERT INTO audit_logs (id, "user", action, details) VALUES (?, ?, ?, ?)',
+            [
+              `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              actor || "Admin",
+              "Đổi mã/tên đăng nhập nhân viên",
+              `Đổi mã/tên đăng nhập của nhân viên ${finalNewName} từ "${oldCode}" thành "${newCode}" (người thực hiện: ${actor || "Admin"})`,
+            ]
+          );
+        }
+      });
+    } catch (error: any) {
+      if (newCode !== null && error?.code === "23505") {
+        throw new HttpError(409, "Mã nhân viên hoặc tên đăng nhập đã tồn tại");
       }
-      if (patch.role !== undefined) {
-        userFields.push("role = ?");
-        userValues.push(patch.role);
-      }
-      if (patch.email !== undefined) {
-        userFields.push("email = ?");
-        userValues.push(patch.email || null);
-      }
-      if (userFields.length) {
-        await tx.run(
-          `UPDATE users SET ${userFields.join(", ")} WHERE username = ? AND role IN (?, ?, ?)`,
-          [...userValues, existing[0].code, ...STAFF_ROLES]
-        );
-      }
-    });
+      throw error;
+    }
 
     const updated = await query<StaffRow>("SELECT * FROM staff WHERE id = ?", [id]);
     return toStaffRecord(updated[0]);

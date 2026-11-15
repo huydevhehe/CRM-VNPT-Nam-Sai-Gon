@@ -71,7 +71,9 @@ app.get("/api/health", (_req, res) => {
 app.use("/api/auth", authRouter);
 app.use("/api/public", publicRouter);
 
-// Khu vực nhân viên: phải đăng nhập và không phải CTV.
+// Khu vực nhân viên: phải đăng nhập và không phải CTV. Phạm vi dữ liệu theo
+// từng người (Lead, Công việc, Nợ, Gia hạn, KPI, Dịch vụ, Khách hàng, Đơn hàng)
+// do controller của module tự lọc theo người gọi.
 app.use("/api/debts", requireAuth, requireStaff, debtRouter);
 app.use("/api/renewals", requireAuth, requireStaff, renewalRouter);
 app.use("/api/customers", requireAuth, requireStaff, customerRouter);
@@ -81,11 +83,12 @@ app.use("/api/dashboard", requireAuth, requireStaff, dashboardRouter);
 app.use("/api/services", requireAuth, requireStaff, serviceRouter);
 app.use("/api/leads", requireAuth, requireStaff, leadRouter);
 app.use("/api/contracts", requireAuth, requireStaff, contractRouter);
-app.use("/api/commissions", requireAuth, requireStaff, commissionRouter);
+app.use("/api/commissions", requireAuth, requireAdmin, commissionRouter);
+// GET /api/staff trả bản rút gọn cho non-Admin; mọi route ghi đã requireAdmin trong router.
 app.use("/api/staff", requireAuth, requireStaff, staffRouter);
 app.use("/api/tasks", requireAuth, requireStaff, taskRouter);
-app.use("/api/reports", requireAuth, requireStaff, reportRouter);
-app.use("/api/settings", requireAuth, requireStaff, settingsRouter);
+app.use("/api/reports", requireAuth, requireAdmin, reportRouter);
+app.use("/api/settings", requireAuth, requireAdmin, settingsRouter);
 app.use("/api/kpi", requireAuth, requireStaff, kpiRouter);
 app.use("/api/reminders", requireAuth, requireAdmin, reminderRouter);
 

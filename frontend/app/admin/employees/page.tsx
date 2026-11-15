@@ -89,6 +89,7 @@ export default function EmployeesPage() {
   // Modal Sửa nhân viên
   const [editingStaff, setEditingStaff] = useState<StaffRecord | null>(null);
   const [editForm, setEditForm] = useState<{
+    code: string;
     name: string;
     staffType: StaffType;
     hrmCode: string;
@@ -101,6 +102,7 @@ export default function EmployeesPage() {
     shortName: string;
     note: string;
   }>({
+    code: "",
     name: "",
     staffType: "Chính thức",
     hrmCode: "",
@@ -187,6 +189,7 @@ export default function EmployeesPage() {
   function handleOpenEdit(staff: StaffRecord) {
     setEditingStaff(staff);
     setEditForm({
+      code: staff.code,
       name: staff.name,
       staffType: (staff.staffType as StaffType) || "Chính thức",
       hrmCode: staff.hrmCode || "",
@@ -210,6 +213,7 @@ export default function EmployeesPage() {
 
     try {
       const updated = await updateStaff(editingStaff.id, {
+        code: editForm.code.trim(),
         name: editForm.name.trim(),
         staffType: editForm.staffType,
         hrmCode: editForm.hrmCode.trim() || undefined,
@@ -1195,25 +1199,50 @@ export default function EmployeesPage() {
               </div>
 
               {/* Khối tài khoản trong form sửa: có nút Đặt lại mật khẩu */}
-              <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-4 flex items-center justify-between">
-                <div>
+              <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
                   <h4 className="text-xs font-bold uppercase tracking-wider text-vnpt">
                     Tài khoản đăng nhập
                   </h4>
-                  <p className="text-xs text-slate-600 mt-0.5">
-                    Tên đăng nhập: <span className="font-mono font-bold text-slate-800">{editingStaff.code}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleOpenReset(editingStaff);
+                    }}
+                    className="flex items-center gap-1.5 rounded-xl border border-blue-300 bg-white px-3 py-1.5 text-xs font-bold text-vnpt hover:bg-blue-50 shadow-xs"
+                  >
+                    <KeyRound className="h-3.5 w-3.5" />
+                    <span>Đặt lại mật khẩu</span>
+                  </button>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-600">
+                    Mã nhân viên / Tên đăng nhập <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    required
+                    minLength={3}
+                    maxLength={50}
+                    pattern="[A-Za-z0-9._\-]+"
+                    title="Chỉ gồm chữ, số, dấu chấm, gạch dưới, gạch ngang; không có khoảng trắng"
+                    placeholder="VD: VNPT-AM-01"
+                    value={editForm.code}
+                    onChange={(e) => setEditForm({ ...editForm, code: e.target.value })}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-sm focus:border-vnpt focus:outline-none"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    3–50 ký tự: chữ, số, dấu chấm, gạch dưới, gạch ngang; không có khoảng trắng.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleOpenReset(editingStaff);
-                  }}
-                  className="flex items-center gap-1.5 rounded-xl border border-blue-300 bg-white px-3 py-1.5 text-xs font-bold text-vnpt hover:bg-blue-50 shadow-xs"
-                >
-                  <KeyRound className="h-3.5 w-3.5" />
-                  <span>Đặt lại mật khẩu</span>
-                </button>
+                {editForm.code.trim() !== editingStaff.code && (
+                  <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                    <p>
+                      Đổi mã sẽ đổi tên đăng nhập; nhân viên phải đăng nhập lại bằng tên mới
+                      (mật khẩu giữ nguyên).
+                    </p>
+                  </div>
+                )}
               </div>
 
               {editError && (

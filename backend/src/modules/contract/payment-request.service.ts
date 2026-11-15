@@ -43,6 +43,11 @@ export interface PaymentExportRecord {
   customerName?: string;
 }
 
+export const ORDER_WITHOUT_CUSTOMER_MESSAGE =
+  "Đơn hàng chưa gắn khách hàng. Vui lòng cập nhật khách hàng cho đơn trước khi xuất Đề nghị thanh toán";
+
+export class PaymentRequestBlockedError extends Error {}
+
 function deriveShortName(fullName: string): string {
   if (!fullName) return "";
   const parts = fullName.trim().split(/\s+/);
@@ -85,21 +90,24 @@ export class PaymentRequestService {
     }
     const contract = contractRows[0];
 
+    if (!contract.customer_id) {
+      throw new PaymentRequestBlockedError(ORDER_WITHOUT_CUSTOMER_MESSAGE);
+    }
+    const custRows = await query<{ identity_code: string | null; name: string }>(
+      "SELECT identity_code, name FROM customers WHERE id = ?",
+      [contract.customer_id]
+    );
+    if (!custRows.length) {
+      throw new PaymentRequestBlockedError(ORDER_WITHOUT_CUSTOMER_MESSAGE);
+    }
+
     const missingFields: string[] = [];
 
     // Customer info
     let taxCode = contract.tax_code || "";
     let customerName = contract.customer_name || "";
-    if (contract.customer_id) {
-      const custRows = await query<{ identity_code: string | null; name: string }>(
-        "SELECT identity_code, name FROM customers WHERE id = ?",
-        [contract.customer_id]
-      );
-      if (custRows.length) {
-        if (!taxCode && custRows[0].identity_code) taxCode = custRows[0].identity_code;
-        if (!customerName) customerName = custRows[0].name;
-      }
-    }
+    if (!taxCode && custRows[0].identity_code) taxCode = custRows[0].identity_code;
+    if (!customerName) customerName = custRows[0].name;
     if (!taxCode) missingFields.push("Mã số thuế");
     if (!customerName) missingFields.push("Tên khách hàng");
 
@@ -233,7 +241,7 @@ export class PaymentRequestService {
     );
   }
 
-  async listExports(): Promise<PaymentExportRecord[]> {
+  async listExports(scope: string | null = null): Promise<PaymentExportRecord[]> {
     const rows = await query<{
       id: string;
       contract_id: string;
@@ -246,7 +254,9 @@ export class PaymentRequestService {
       `SELECT e.*, c.transaction_code, c.customer_name
        FROM payment_request_exports e
        LEFT JOIN contracts c ON c.id = e.contract_id
-       ORDER BY e.exported_at DESC`
+       ${scope === null ? "" : "WHERE c.am_staff = ?"}
+       ORDER BY e.exported_at DESC`,
+      scope === null ? [] : [scope]
     );
 
     return rows.map((r) => ({

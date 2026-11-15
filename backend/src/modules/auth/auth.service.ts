@@ -123,7 +123,7 @@ export class AuthService {
       throw new HttpError(403, "Tài khoản đã ngừng hoạt động");
     }
 
-    const token = jwt.sign({ sub: user.id, role: user.role, name: user.name }, config.jwtSecret, {
+    const token = jwt.sign({ sub: user.id, role: user.role, name: user.name, usr: user.username }, config.jwtSecret, {
       expiresIn: "8h",
     });
 

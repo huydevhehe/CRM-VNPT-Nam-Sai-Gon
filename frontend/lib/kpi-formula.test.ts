@@ -30,6 +30,13 @@ test("scoreKpi ghtt_t1 matches VNPT reference points", () => {
   assert.equal(scoreKpi(segments, 1.0), 5);
 });
 
+test("scoreKpi thu_luy_ke uses the same default frame as thu_ngay", () => {
+  const segments = DEFAULT_KPI_FORMULAS.thu_luy_ke;
+  assert.deepEqual(segments, DEFAULT_KPI_FORMULAS.thu_ngay);
+  assert.equal(scoreKpi(segments, 0.99), 2.5);
+  assert.equal(scoreKpi(segments, 1.0), 4);
+});
+
 test("scoreKpi returns null for null rate", () => {
   assert.equal(scoreKpi(DEFAULT_KPI_FORMULAS.thu_ngay, null), null);
 });

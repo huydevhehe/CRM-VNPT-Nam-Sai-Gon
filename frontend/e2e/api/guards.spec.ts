@@ -17,7 +17,7 @@ const STAFF_PATHS = [
   "/settings",
 ];
 
-const ADMIN_ONLY_PATHS = new Set(["/settings"]);
+const ADMIN_ONLY_PATHS = new Set(["/commissions", "/reports/summary", "/settings"]);
 
 test.describe("Khoá route nhân viên", () => {
   let adminToken: string;

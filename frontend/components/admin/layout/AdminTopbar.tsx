@@ -2,6 +2,15 @@
 
 import { Menu, Search, Bell, Shield } from "lucide-react";
 import { useState } from "react";
+import { useAuth } from "@/lib/auth/auth-context";
+
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  const last = parts[parts.length - 1][0];
+  const first = parts.length > 1 ? parts[0][0] : "";
+  return `${first}${last}`.toUpperCase();
+}
 
 interface AdminTopbarProps {
   onOpenMobileMenu: () => void;
@@ -16,6 +25,8 @@ export default function AdminTopbar({
 }: AdminTopbarProps) {
   const [selectedMonth, setSelectedMonth] = useState("2026-10");
   const [selectedStaff, setSelectedStaff] = useState("all");
+  const { user } = useAuth();
+  const isAdmin = user?.role === "Admin";
 
   return (
     <header className="sticky top-0 z-30 flex h-18 items-center justify-between border-b border-slate-200 bg-white/95 px-5 backdrop-blur-xs lg:px-8">
@@ -76,15 +87,15 @@ export default function AdminTopbar({
         {/* User profile */}
         <div className="flex items-center gap-2.5 pl-2">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-100 font-bold text-vnpt">
-            AD
+            {initialsOf(user?.name ?? "")}
           </div>
           <div className="hidden text-left xl:block">
             <div className="text-xs font-bold text-slate-800">
-              Quản trị hệ thống
+              {user?.name ?? ""}
             </div>
             <div className="flex items-center gap-1 text-[10px] text-slate-500">
               <Shield className="h-2.5 w-2.5 text-blue-600" />
-              <span>Admin Toàn quyền</span>
+              <span>{isAdmin ? "Admin Toàn quyền" : `${user?.role ?? ""} · Dữ liệu được giao`}</span>
             </div>
           </div>
         </div>

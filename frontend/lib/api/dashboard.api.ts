@@ -4,6 +4,7 @@ import { apiFetchRaw } from "./client";
 export interface DashboardKpis {
   collectionRateImmediate: number;
   collectionRateCumulative: number;
+  collectionRateCumulativeTarget: number;
   totalImmediateDebtRemaining: number;
   totalCumulativeDebtRemaining: number;
   renewalRateT: number;

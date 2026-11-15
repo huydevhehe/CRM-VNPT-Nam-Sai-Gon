@@ -1,11 +1,19 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
-import { ADMIN, API_URL, apiLogin, bearer, createApprovedCtv, registerCtv } from "./helpers";
+import {
+  ADMIN,
+  API_URL,
+  apiLogin,
+  bearer,
+  createApprovedCtv,
+  createCustomerForOrder,
+  registerCtv,
+} from "./helpers";
 
 const STAFF_A = "Nguyễn Thị Tình";
 const STAFF_B = "Phạm Thanh Hà";
 
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Ho_Chi_Minh" });
 }
 
 function uniq(): string {
@@ -46,11 +54,15 @@ test.describe("API Lead / Hợp đồng / Hoa hồng gắn CTV và Phường", (
   }
 
   async function postContract(request: APIRequestContext, data: Record<string, unknown>) {
+    const customer =
+      typeof data.customerId === "string"
+        ? null
+        : await createCustomerForOrder(request, token, { name: `KH HĐ API ${uniq()}` });
     return request.post(`${API_URL}/contracts`, {
       headers: bearer(token),
       data: {
         transactionCode: `GD-API-${uniq()}`,
-        customerName: `KH HĐ API ${uniq()}`,
+        ...(customer ? { customerId: customer.id } : {}),
         subscriberCodes: ["0901234567"],
         totalValue: 10000000,
         channel: "Online",

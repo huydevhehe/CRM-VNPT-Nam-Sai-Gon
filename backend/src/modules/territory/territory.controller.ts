@@ -139,7 +139,7 @@ territoryRouter.post("/:id/quarters", requireAdmin, (req: Request, res: Response
   handle(res, 201, () => territoryService.createQuarter(String(req.params.id), req.body ?? {}))
 );
 
-territoryRouter.patch("/:id/households", requireAuth, async (req: Request, res: Response) => {
+territoryRouter.patch("/:id/households", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { householdCount, quarterCount } = req.body;
@@ -157,7 +157,7 @@ territoryRouter.patch("/:id/households", requireAuth, async (req: Request, res: 
 });
 
 // PATCH /api/territories/:id/stats — cập nhật dân số, số trường theo cấp, doanh thu
-territoryRouter.patch("/:id/stats", requireAuth, async (req: Request, res: Response) => {
+territoryRouter.patch("/:id/stats", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { population, schoolMamnon, schoolTieuhoc, schoolThcs, schoolThpt, revenue } = req.body;
@@ -196,7 +196,7 @@ territoryRouter.get("/:id/contacts", requireAuth, async (req: Request, res: Resp
 });
 
 // POST /api/territories/:id/contacts — thêm đầu mối nhân sự
-territoryRouter.post("/:id/contacts", requireAuth, async (req: Request, res: Response) => {
+territoryRouter.post("/:id/contacts", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { unit, department, fullName, position, phone, amInCharge } = req.body;
@@ -213,7 +213,7 @@ territoryRouter.post("/:id/contacts", requireAuth, async (req: Request, res: Res
 });
 
 // PATCH /api/territories/contacts/:contactId — sửa đầu mối nhân sự
-territoryRouter.patch("/contacts/:contactId", requireAuth, async (req: Request, res: Response) => {
+territoryRouter.patch("/contacts/:contactId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { contactId } = req.params;
     const { unit, department, fullName, position, phone, amInCharge } = req.body;
@@ -231,7 +231,7 @@ territoryRouter.patch("/contacts/:contactId", requireAuth, async (req: Request, 
 });
 
 // DELETE /api/territories/contacts/:contactId — xóa đầu mối nhân sự
-territoryRouter.delete("/contacts/:contactId", requireAuth, async (req: Request, res: Response) => {
+territoryRouter.delete("/contacts/:contactId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { contactId } = req.params;
     const operator = req.user?.name ?? req.user?.id ?? "Admin";

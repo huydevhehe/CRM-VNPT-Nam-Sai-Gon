@@ -119,4 +119,10 @@ export const DEFAULT_KPI_FORMULAS: Record<KpiKey, KpiSegment[]> = {
     { from: 0.82, fromInclusive: true, to: 1.0, toInclusive: true, a: 22.22, b: -17.22 },
     { from: 1.0, fromInclusive: false, to: null, toInclusive: false, a: 0, b: 5 },
   ],
+  thu_luy_ke: [
+    { from: null, fromInclusive: false, to: 0.98, toInclusive: false, a: 0, b: 1 },
+    { from: 0.98, fromInclusive: true, to: 1.0, toInclusive: false, a: 150, b: -146 },
+    { from: 1.0, fromInclusive: true, to: 1.008, toInclusive: false, a: 125, b: -121 },
+    { from: 1.008, fromInclusive: true, to: null, toInclusive: false, a: 0, b: 5 },
+  ],
 };

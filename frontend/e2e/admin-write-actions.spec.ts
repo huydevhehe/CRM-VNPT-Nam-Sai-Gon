@@ -8,6 +8,7 @@ import {
 } from "@playwright/test";
 import * as path from "path";
 import { loginAs } from "./fixtures/auth";
+import { ADMIN, apiLogin, createCustomerForOrder } from "./api/helpers";
 
 const SEVERE_CONSOLE_PATTERNS = [/TypeError/i, /Cannot read/i];
 
@@ -38,17 +39,20 @@ function fieldByLabel(scope: Page | Locator, labelText: string): Locator {
 }
 
 test.describe("Hành động ghi dữ liệu trên trang Admin (Task 3-10)", () => {
-  test("[admin] tạo hợp đồng mới: giá trị âm bị chặn, giá trị hợp lệ tạo thành công", async ({
+  test("[admin] tạo hợp đồng mới: bắt buộc chọn khách hàng, giá trị âm bị chặn, giá trị hợp lệ tạo thành công", async ({
     page,
+    request,
   }) => {
     const severeConsoleErrors = trackSevereConsoleErrors(page);
-
-    await loginAs(page, "admin");
-    await page.goto("/admin/contracts");
 
     const uniqueSuffix = Date.now();
     const transactionCode = `GD-E2E-${uniqueSuffix}`;
     const customerName = `KH E2E Hợp đồng ${uniqueSuffix}`;
+    const adminToken = await apiLogin(request, ADMIN.username, ADMIN.password);
+    await createCustomerForOrder(request, adminToken, { name: customerName });
+
+    await loginAs(page, "admin");
+    await page.goto("/admin/contracts");
 
     await page.getByRole("button", { name: "Tạo đơn hàng" }).click();
     const modalHeading = page.getByRole("heading", { name: "Tạo đơn hàng" });
@@ -58,12 +62,22 @@ test.describe("Hành động ghi dữ liệu trên trang Admin (Task 3-10)", () 
       .getByRole("button", { name: "Tạo đơn hàng" });
 
     await fieldByLabel(page, "Mã giao dịch").fill(transactionCode);
-    await fieldByLabel(page, "Tên khách hàng").fill(customerName);
     await fieldByLabel(page, "Mã thuê bao (phân tách bởi dấu phẩy)").fill(
       "0909000111"
     );
 
     const totalValueInput = fieldByLabel(page, "Giá trị đơn hàng (₫)");
+    await totalValueInput.fill("1500000");
+
+    // Chưa chọn khách hàng: bị chặn với thông báo bắt buộc, modal không đóng.
+    await submitButton.click();
+    await expect(page.getByText("Vui lòng chọn Khách hàng", { exact: false }).first()).toBeVisible();
+    await expect(modalHeading).toBeVisible();
+
+    await page.getByLabel("Tìm khách hàng").fill(customerName);
+    await page.getByRole("button", { name: new RegExp(customerName) }).click();
+    await expect(page.getByTestId("selected-customer")).toContainText(customerName);
+
     await totalValueInput.fill("-1000000");
 
     await submitButton.click();
@@ -98,7 +112,7 @@ test.describe("Hành động ghi dữ liệu trên trang Admin (Task 3-10)", () 
     expect(severeConsoleErrors, severeConsoleErrors.join(" | ")).toEqual([]);
   });
 
-  test("[am] tạo nhân viên bị từ chối với lỗi 403 rõ ràng, không crash trang", async ({
+  test("[am] vào thẳng /admin/employees bị chặn bằng trang Không có quyền truy cập", async ({
     page,
   }) => {
     const severeConsoleErrors = trackSevereConsoleErrors(page);
@@ -106,35 +120,11 @@ test.describe("Hành động ghi dữ liệu trên trang Admin (Task 3-10)", () 
     await loginAs(page, "am");
     await page.goto("/admin/employees");
 
-    const uniqueSuffix = Date.now();
-
-    await page.getByRole("button", { name: "Thêm nhân viên" }).click();
+    await expect(page.getByTestId("forbidden-page")).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Thêm nhân viên" })
+      page.getByRole("heading", { name: "Không có quyền truy cập" })
     ).toBeVisible();
-
-    await fieldByLabel(page, "Mã nhân viên").fill(`NV-E2E-${uniqueSuffix}`);
-    await fieldByLabel(page, "Họ tên").fill(`NV E2E Test ${uniqueSuffix}`);
-    await fieldByLabel(page, "Email VNPT").fill(
-      `nv-e2e-${uniqueSuffix}@example.com`
-    );
-    await page.getByPlaceholder("Mật khẩu ban đầu").fill("Nv2026E2e@");
-    await page.getByPlaceholder("Nhập lại chính xác").fill("Nv2026E2e@");
-
-    await page.getByRole("button", { name: "Tạo nhân viên" }).click();
-
-    // Phải hiện lỗi 403 rõ ràng từ backend ("Không có quyền truy cập"), modal
-    // vẫn còn (chưa đóng do tạo thất bại), trang không bị crash (heading vẫn
-    // hiển thị bình thường).
-    await expect(
-      page.getByText("Không có quyền truy cập")
-    ).toBeVisible({ timeout: 10_000 });
-    await expect(
-      page.getByRole("heading", { name: "Thêm nhân viên" })
-    ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Quản lý nhân viên & Phân công" })
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Thêm nhân viên" })).toHaveCount(0);
 
     expect(severeConsoleErrors, severeConsoleErrors.join(" | ")).toEqual([]);
   });
@@ -200,7 +190,8 @@ test.describe("Hành động ghi dữ liệu trên trang Admin (Task 3-10)", () 
     await page.goto("/admin/territories");
     const territoryListToggle = page.getByRole("button", { name: /Xem danh sách phường/ });
     const firstRow = page.locator("table tbody tr").first();
-    if (!(await firstRow.isVisible().catch(() => false))) {
+    await expect(firstRow.or(territoryListToggle)).toBeVisible();
+    if (await territoryListToggle.isVisible()) {
       await territoryListToggle.click();
       await expect(firstRow).toBeVisible();
     }
@@ -224,7 +215,8 @@ test.describe("Hành động ghi dữ liệu trên trang Admin (Task 3-10)", () 
     // Reload để xác nhận backend thực sự không lưu giá trị âm.
     await page.reload();
     const firstRowAfterReload = page.locator("table tbody tr").first();
-    if (!(await firstRowAfterReload.isVisible().catch(() => false))) {
+    await expect(firstRowAfterReload.or(territoryListToggle)).toBeVisible();
+    if (await territoryListToggle.isVisible()) {
       await territoryListToggle.click();
       await expect(firstRowAfterReload).toBeVisible();
     }

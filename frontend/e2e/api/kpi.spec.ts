@@ -21,6 +21,38 @@ test.describe("API Cấu hình công thức KPI (Đợt 9 - Task 3)", () => {
     expect(body.data.thu_ngay).toBeTruthy();
     expect(body.data.ghtt_t).toBeTruthy();
     expect(body.data.ghtt_t1).toBeTruthy();
+    expect(body.data.thu_luy_ke).toBeTruthy();
+    expect(Object.keys(body.data).sort()).toEqual(["ghtt_t", "ghtt_t1", "thu_luy_ke", "thu_ngay"]);
+  });
+
+  test("Admin PUT công thức thu_luy_ke → GET trả lại đúng, reset về mặc định; AM PUT bị 403", async ({ request }) => {
+    const customSegments = [
+      { from: null, fromInclusive: false, to: 1.0, toInclusive: false, a: 10, b: -9 },
+      { from: 1.0, fromInclusive: true, to: null, toInclusive: false, a: 0, b: 5 },
+    ];
+
+    const amRes = await request.put(`${API_URL}/kpi/formulas/thu_luy_ke`, {
+      headers: bearer(amToken),
+      data: { segments: customSegments },
+    });
+    expect(amRes.status()).toBe(403);
+
+    const putRes = await request.put(`${API_URL}/kpi/formulas/thu_luy_ke`, {
+      headers: bearer(adminToken),
+      data: { segments: customSegments },
+    });
+    expect(putRes.status(), await putRes.text()).toBe(200);
+
+    const getBody = await (await request.get(`${API_URL}/kpi/formulas`, { headers: bearer(adminToken) })).json();
+    expect(getBody.data.thu_luy_ke).toEqual(customSegments);
+
+    const resetRes = await request.post(`${API_URL}/kpi/formulas/thu_luy_ke/reset`, {
+      headers: bearer(adminToken),
+    });
+    expect(resetRes.status(), await resetRes.text()).toBe(200);
+
+    const afterBody = await (await request.get(`${API_URL}/kpi/formulas`, { headers: bearer(adminToken) })).json();
+    expect(afterBody.data.thu_luy_ke.some((s: { a: number }) => s.a === 150)).toBe(true);
   });
 
   test("AM PUT /kpi/formulas/:key bị từ chối 403", async ({ request }) => {
@@ -145,5 +177,35 @@ test.describe("API Chỉ tiêu & % thực hiện KPI (Đợt 9 - Task 4)", () =>
     const row = body.data.find((r: { staffName: string }) => r.staffName === AM_STAFF_NAME);
     expect(row).toBeTruthy();
     expect(row.thuNgay.targetRate).toBe(1.0);
+  });
+
+  test("Chỉ tiêu thu_luy_ke mặc định 85% và Admin sửa được theo từng nhân viên", async ({ request }) => {
+    const defaultRes = await request.get(`${API_URL}/kpi/performance?month=${TEST_MONTH}`, {
+      headers: bearer(adminToken),
+    });
+    const defaultRow = (await defaultRes.json()).data.find(
+      (r: { staffName: string }) => r.staffName === AM_STAFF_NAME
+    );
+    expect(defaultRow.thuLuyKe.targetRate).toBe(0.85);
+
+    const amRes = await request.put(`${API_URL}/kpi/targets/${TEST_MONTH}`, {
+      headers: bearer(amToken),
+      data: { items: [{ staffName: AM_STAFF_NAME, kpiKey: "thu_luy_ke", targetRate: 0.9 }] },
+    });
+    expect(amRes.status()).toBe(403);
+
+    const putRes = await request.put(`${API_URL}/kpi/targets/${TEST_MONTH}`, {
+      headers: bearer(adminToken),
+      data: { items: [{ staffName: AM_STAFF_NAME, kpiKey: "thu_luy_ke", targetRate: 0.9 }] },
+    });
+    expect(putRes.status(), await putRes.text()).toBe(200);
+
+    const amPerf = await request.get(`${API_URL}/kpi/performance?month=${TEST_MONTH}`, {
+      headers: bearer(amToken),
+    });
+    const amBody = await amPerf.json();
+    expect(amBody.data.length).toBe(1);
+    expect(amBody.data[0].staffName).toBe(AM_STAFF_NAME);
+    expect(amBody.data[0].thuLuyKe.targetRate).toBe(0.9);
   });
 });

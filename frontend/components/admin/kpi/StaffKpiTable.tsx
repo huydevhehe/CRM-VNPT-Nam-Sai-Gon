@@ -8,12 +8,14 @@ const KPI_LABELS: Record<KpiKey, string> = {
   thu_ngay: "Thu ngay",
   ghtt_t: "GHTT tháng T",
   ghtt_t1: "GHTT tháng T+1",
+  thu_luy_ke: "Thu lũy kế",
 };
 
 const CELL_BY_KEY: Record<KpiKey, keyof StaffKpiRow> = {
   thu_ngay: "thuNgay",
   ghtt_t: "ghttT",
   ghtt_t1: "ghttT1",
+  thu_luy_ke: "thuLuyKe",
 };
 
 function formatPercent(value: number | null): string {

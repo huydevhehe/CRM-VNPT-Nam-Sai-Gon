@@ -1,5 +1,6 @@
 import { BookOpen, Download, ShieldCheck, Usb, type LucideIcon } from "lucide-react";
 
+
 type QuickAccessItem = {
   icon: LucideIcon;
   title: string;

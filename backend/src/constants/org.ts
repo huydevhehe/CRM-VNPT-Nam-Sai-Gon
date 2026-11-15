@@ -86,19 +86,21 @@ export const STAFF_NAME_REFERENCES: ReadonlyArray<readonly [table: string, colum
   ["reminder_items", "staff_name"],
 ];
 
-export const KPI_KEYS = ["thu_ngay", "ghtt_t", "ghtt_t1"] as const;
+export const KPI_KEYS = ["thu_ngay", "ghtt_t", "ghtt_t1", "thu_luy_ke"] as const;
 export type KpiKey = (typeof KPI_KEYS)[number];
 
 export const KPI_LABELS: Record<KpiKey, string> = {
   thu_ngay: "Tỷ lệ thu ngay",
   ghtt_t: "GHTT tháng T",
   ghtt_t1: "GHTT tháng T+1",
+  thu_luy_ke: "Tỷ lệ thu lũy kế",
 };
 
 /** Chỉ tiêu mặc định khi admin chưa nhập cho 1 nhân viên/tháng (thu_ngay không có mặc định). */
 export const DEFAULT_KPI_TARGETS: Partial<Record<KpiKey, number>> = {
   ghtt_t: 0.8,
   ghtt_t1: 0.9,
+  thu_luy_ke: 0.85,
 };
 
 

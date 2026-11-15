@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, ChangeEvent } from "react";
-import { X, UploadCloud, AlertTriangle, CheckCircle2, FileSpreadsheet } from "lucide-react";
+import { X, UploadCloud, AlertTriangle, CheckCircle2, FileSpreadsheet, Download } from "lucide-react";
 import { TerritoryRecord } from "@/lib/crm/types/crm.types";
 import {
   previewCustomerImport,
@@ -290,9 +290,19 @@ export default function CustomerImportWizard({
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-600">
-                  File Excel (.xlsx, .xls) <span className="text-rose-500">*</span>
-                </label>
+                <div className="mb-1 flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-slate-600">
+                    File Excel (.xlsx, .xls) <span className="text-rose-500">*</span>
+                  </label>
+                  <a
+                    href="/templates/mau-nhap-khach-hang.xlsx"
+                    download
+                    className="flex items-center gap-1 text-[11px] font-semibold text-vnpt hover:underline"
+                  >
+                    <Download className="h-3 w-3" />
+                    Tải file mẫu
+                  </a>
+                </div>
                 <input
                   type="file"
                   accept=".xlsx,.xls"

@@ -46,6 +46,7 @@ export interface StaffKpiRow {
   thuNgay: KpiCell;
   ghttT: KpiCell;
   ghttT1: KpiCell;
+  thuLuyKe: KpiCell;
 }
 
 function computeCell(
@@ -62,7 +63,7 @@ function computeCell(
 }
 
 export class KpiService {
-  /** Trả bảng công thức hiện tại của cả 3 chỉ số; chưa có dòng DB → dùng mặc định. */
+  /** Trả bảng công thức hiện tại của các chỉ số KPI; chưa có dòng DB → dùng mặc định. */
   async getFormulas(): Promise<Record<KpiKey, KpiSegment[]>> {
     const rows = await query<KpiFormulaRow>("SELECT * FROM kpi_formulas", []);
     const byKey = new Map(rows.map((r) => [r.kpi_key, r]));
@@ -233,11 +234,16 @@ export class KpiService {
 
     const rows: StaffKpiRow[] = [];
     for (const staffName of relevantNames) {
-      const debtAgg = await query<{ denom: string | number | null; numer: string | number | null }>(
-        "SELECT SUM(immediate_debt) as denom, SUM(collected_amount) as numer FROM debts WHERE month = ? AND staff_name = ?",
+      const debtAgg = await query<{
+        denom: string | number | null;
+        cumulative: string | number | null;
+        numer: string | number | null;
+      }>(
+        "SELECT SUM(immediate_debt) as denom, SUM(cumulative_debt) as cumulative, SUM(collected_amount) as numer FROM debts WHERE month = ? AND staff_name = ?",
         [month, staffName]
       );
       const immediateDebtSum = Number(debtAgg[0]?.denom ?? 0);
+      const cumulativeDebtSum = Number(debtAgg[0]?.cumulative ?? 0);
       const collectedSum = Number(debtAgg[0]?.numer ?? 0);
 
       const ghttDenomRows = await query<{ cnt: string | number }>(
@@ -263,6 +269,12 @@ export class KpiService {
         thuNgay: computeCell(collectedSum, immediateDebtSum, resolveTarget(staffName, "thu_ngay"), formulas.thu_ngay),
         ghttT: computeCell(ghttTNumer, ghttDenom, resolveTarget(staffName, "ghtt_t"), formulas.ghtt_t),
         ghttT1: computeCell(ghttT1Numer, ghttDenom, resolveTarget(staffName, "ghtt_t1"), formulas.ghtt_t1),
+        thuLuyKe: computeCell(
+          collectedSum,
+          immediateDebtSum + cumulativeDebtSum,
+          resolveTarget(staffName, "thu_luy_ke"),
+          formulas.thu_luy_ke
+        ),
       });
     }
 

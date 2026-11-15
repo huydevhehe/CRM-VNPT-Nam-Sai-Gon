@@ -4,6 +4,7 @@ import { StaffRecord, StaffType } from "@/lib/crm/types/crm.types";
 export type UpdateStaffInput = Partial<
   Pick<
     StaffRecord,
+    | "code"
     | "name"
     | "role"
     | "territory"

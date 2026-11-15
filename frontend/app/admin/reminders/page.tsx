@@ -11,6 +11,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
+import ReminderTemplateTab from "@/components/admin/reminder/ReminderTemplateTab";
 import { useAuth } from "@/lib/auth/auth-context";
 import { getServices } from "@/lib/api/services.api";
 import type { ServiceRecord } from "@/lib/crm/types/crm.types";
@@ -31,11 +32,12 @@ import {
   type ImportReminderColumns,
 } from "@/lib/api/reminders.api";
 
-type TabKey = "service" | "file" | "logs";
+type TabKey = "service" | "file" | "template" | "logs";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "service", label: "Dịch vụ sắp hết hạn" },
   { key: "file", label: "Nhắc theo file Excel" },
+  { key: "template", label: "Mẫu email" },
   { key: "logs", label: "Lịch sử gửi" },
 ];
 
@@ -89,6 +91,7 @@ export default function RemindersPage() {
 
       {tab === "service" && <ServiceReminderTab />}
       {tab === "file" && <FileReminderTab />}
+      {tab === "template" && <ReminderTemplateTab />}
       {tab === "logs" && <LogsTab />}
     </div>
   );

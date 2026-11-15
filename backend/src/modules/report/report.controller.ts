@@ -5,13 +5,10 @@ import { ReportService } from "./report.service.js";
 export const reportRouter = Router();
 const reportService = new ReportService();
 
-// GET /api/reports/audit-logs — chỉ Admin được xem Nhật ký hệ thống
-reportRouter.get("/audit-logs", requireAuth, async (req: Request, res: Response) => {
-  if (req.user?.role !== "Admin") {
-    res.status(403).json({ success: false, message: "Chỉ Admin được phép xem Nhật ký hệ thống" });
-    return;
-  }
+// Toàn bộ /api/reports chỉ dành cho Admin (server.ts gắn requireAdmin).
 
+// GET /api/reports/audit-logs — Nhật ký hệ thống
+reportRouter.get("/audit-logs", requireAuth, async (_req: Request, res: Response) => {
   try {
     const logs = await reportService.getAuditLogs();
     res.json({ success: true, data: logs });
@@ -20,7 +17,7 @@ reportRouter.get("/audit-logs", requireAuth, async (req: Request, res: Response)
   }
 });
 
-// GET /api/reports/summary — số liệu báo cáo tổng hợp, yêu cầu đăng nhập
+// GET /api/reports/summary — số liệu báo cáo tổng hợp
 reportRouter.get("/summary", requireAuth, async (_req: Request, res: Response) => {
   try {
     const summary = await reportService.getSummary();

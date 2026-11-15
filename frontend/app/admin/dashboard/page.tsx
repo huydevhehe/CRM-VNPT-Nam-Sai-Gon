@@ -33,7 +33,11 @@ import {
 function buildKpiChartData(kpis: DashboardKpis | null) {
   return [
     { name: "Thu ngay", "Thực hiện (%)": kpis?.collectionRateImmediate ?? 0, "Mục tiêu (%)": 90 },
-    { name: "Nợ lũy kế", "Thực hiện (%)": kpis?.collectionRateCumulative ?? 0, "Mục tiêu (%)": 85 },
+    {
+      name: "Thu lũy kế",
+      "Thực hiện (%)": kpis?.collectionRateCumulative ?? 0,
+      "Mục tiêu (%)": kpis?.collectionRateCumulativeTarget ?? 85,
+    },
     { name: "Gia hạn T", "Thực hiện (%)": kpis?.renewalRateT ?? 0, "Mục tiêu (%)": 70 },
     { name: "Gia hạn T-1", "Thực hiện (%)": kpis?.renewalRateT1 ?? 0, "Mục tiêu (%)": 75 },
   ];
@@ -116,9 +120,9 @@ export default function AdminDashboardPage() {
           badge="Tháng T"
         />
         <KpiCard
-          title="TỶ LỆ NỢ LŨY KẾ"
+          title="TỶ LỆ THU LŨY KẾ"
           value={loading ? "..." : `${(kpis?.collectionRateCumulative ?? 0).toFixed(1)}%`}
-          changeText="Mục tiêu: 85%"
+          changeText={`Mục tiêu: ${kpis?.collectionRateCumulativeTarget ?? 85}%`}
           isPositive={false}
           subtitle={
             loading

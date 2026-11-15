@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { ADMIN, AM, API_URL, apiLogin, bearer } from "./helpers";
+import { ADMIN, AM, API_URL, apiLogin, bearer, createCustomerForOrder } from "./helpers";
 
 test.describe("API Quản lý Nhân viên (POST /api/staff)", () => {
   test.describe.configure({ mode: "serial" });
@@ -331,11 +331,14 @@ test.describe("API Quản lý Nhân viên (POST /api/staff)", () => {
     });
     expect(createStaffRes.status()).toBe(201);
 
+    const revCustomer = await createCustomerForOrder(request, adminToken, {
+      name: `KH Doanh Thu E2E ${suffix}`,
+    });
     const createOrderRes = await request.post(`${API_URL}/contracts`, {
       headers: bearer(adminToken),
       data: {
         transactionCode: `GD_REV_${suffix}`,
-        customerName: `KH Doanh Thu E2E ${suffix}`,
+        customerId: revCustomer.id,
         subscriberCodes: [`TB_REV_${suffix}`],
         totalValue: 8000000,
         channel: "Trực tiếp",

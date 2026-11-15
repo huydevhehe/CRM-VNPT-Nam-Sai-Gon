@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { ShieldAlert } from "lucide-react";
 import AdminSidebar from "@/components/admin/layout/AdminSidebar";
 import AdminTopbar from "@/components/admin/layout/AdminTopbar";
 import { useAuth } from "@/lib/auth/auth-context";
+import { canAccessAdminPath } from "@/lib/auth/access";
 
 export default function AdminLayout({
   children,
@@ -14,6 +17,7 @@ export default function AdminLayout({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { user, loading, logout } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     if (!loading && !user) {
@@ -39,6 +43,8 @@ export default function AdminLayout({
     );
   }
 
+  const allowed = canAccessAdminPath(user.role, pathname);
+
   return (
     <div className="flex min-h-screen bg-[#f4f7fb] text-slate-800">
       {/* Sidebar Navigation */}
@@ -62,7 +68,31 @@ export default function AdminLayout({
             Đăng xuất
           </button>
         </div>
-        <main className="flex-1 p-4 lg:p-8">{children}</main>
+        <main className="flex-1 p-4 lg:p-8">
+          {allowed ? (
+            children
+          ) : (
+            <div
+              role="alert"
+              data-testid="forbidden-page"
+              className="mx-auto mt-16 max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm"
+            >
+              <ShieldAlert className="mx-auto h-10 w-10 text-amber-500" />
+              <h1 className="mt-4 text-lg font-bold text-slate-800">
+                Không có quyền truy cập
+              </h1>
+              <p className="mt-2 text-sm text-slate-500">
+                Trang này chỉ dành cho tài khoản Admin. Vui lòng liên hệ quản trị viên nếu bạn cần sử dụng chức năng này.
+              </p>
+              <Link
+                href="/admin/dashboard"
+                className="mt-5 inline-block rounded-lg bg-vnpt px-4 py-2 text-sm font-semibold text-white hover:bg-vnpt-darker"
+              >
+                Về Dashboard
+              </Link>
+            </div>
+          )}
+        </main>
       </div>
     </div>
   );

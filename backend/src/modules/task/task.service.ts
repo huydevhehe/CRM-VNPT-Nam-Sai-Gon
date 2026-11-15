@@ -51,9 +51,18 @@ function toTaskRecord(row: TaskRow): TaskRecordDto {
 }
 
 export class TaskService {
-  async getAll(): Promise<TaskRecordDto[]> {
-    const rows = await query<TaskRow>("SELECT * FROM tasks ORDER BY created_at DESC");
+  /** `assignee` có giá trị: chỉ trả công việc giao cho nhân viên đó. */
+  async getAll(assignee?: string): Promise<TaskRecordDto[]> {
+    const rows =
+      assignee === undefined
+        ? await query<TaskRow>("SELECT * FROM tasks ORDER BY created_at DESC")
+        : await query<TaskRow>("SELECT * FROM tasks WHERE assignee = ? ORDER BY created_at DESC", [assignee]);
     return rows.map(toTaskRecord);
+  }
+
+  async getById(id: string): Promise<TaskRecordDto | null> {
+    const rows = await query<TaskRow>("SELECT * FROM tasks WHERE id = ?", [id]);
+    return rows.length ? toTaskRecord(rows[0]) : null;
   }
 
   async create(data: CreateTaskInput): Promise<TaskRecordDto> {

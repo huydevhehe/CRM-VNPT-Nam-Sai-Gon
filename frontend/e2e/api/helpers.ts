@@ -106,3 +106,35 @@ export async function createApprovedCtv(
     referralCode: account.referralCode,
   };
 }
+
+export interface TestCustomer {
+  id: string;
+  name: string;
+  identityCode: string | null;
+}
+
+/**
+ * Tạo khách hàng qua API thật để gắn vào đơn hàng (Đơn hàng bắt buộc có khách hàng).
+ * Mặc định AM phụ trách là AM đăng nhập mẫu (VNPT-AM-01) để cả Admin lẫn AM đều chọn được.
+ */
+export async function createCustomerForOrder(
+  request: APIRequestContext,
+  token: string,
+  overrides: { name?: string; identityCode?: string; amStaff?: string; amCaringStaff?: string } = {}
+): Promise<TestCustomer> {
+  const name = overrides.name ?? `KH Đơn hàng ${Date.now()}-${randomSuffix()}`;
+  const res = await request.post(`${API_URL}/customers`, {
+    headers: bearer(token),
+    data: {
+      name,
+      type: "Doanh nghiệp",
+      customerGroup: "Tự phát triển",
+      identityCode: overrides.identityCode,
+      amStaff: overrides.amStaff,
+      amCaringStaff: overrides.amCaringStaff,
+    },
+  });
+  expect(res.status(), "Tạo khách hàng cho đơn hàng phải trả 201").toBe(201);
+  const data = (await res.json()).data;
+  return { id: data.id, name: data.name, identityCode: data.identity_code ?? null };
+}

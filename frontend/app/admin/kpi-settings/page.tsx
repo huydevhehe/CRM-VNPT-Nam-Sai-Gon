@@ -18,12 +18,23 @@ import {
   saveKpiTargets,
   type KpiFormulas,
   type KpiTargetItem,
+  type StaffKpiRow,
 } from "@/lib/api/kpi.api";
 
 const KPI_CARDS: { key: KpiKey; label: string }[] = [
   { key: "thu_ngay", label: "Tỷ lệ thu ngay" },
   { key: "ghtt_t", label: "GHTT tháng T" },
   { key: "ghtt_t1", label: "GHTT tháng T+1" },
+  { key: "thu_luy_ke", label: "Tỷ lệ thu lũy kế" },
+];
+
+type TargetField = "thuNgay" | "ghttT" | "ghttT1" | "thuLuyKe";
+
+const TARGET_COLUMNS: { field: TargetField; key: KpiKey; label: string; placeholder?: string }[] = [
+  { field: "thuNgay", key: "thu_ngay", label: "Thu ngay (%)", placeholder: "Chưa có chỉ tiêu" },
+  { field: "ghttT", key: "ghtt_t", label: "GHTT T (%)" },
+  { field: "ghttT1", key: "ghtt_t1", label: "GHTT T+1 (%)" },
+  { field: "thuLuyKe", key: "thu_luy_ke", label: "Thu lũy kế (%)" },
 ];
 
 /** Khoảng hiển thị trên UI theo %, chuyển sang thập phân (chia 100) khi gửi API. */
@@ -286,6 +297,21 @@ interface TargetRow {
   thuNgay: string;
   ghttT: string;
   ghttT1: string;
+  thuLuyKe: string;
+}
+
+function targetToText(rate: number | null): string {
+  return rate === null ? "" : String(rate * 100);
+}
+
+function toTargetRow(p: StaffKpiRow): TargetRow {
+  return {
+    staffName: p.staffName,
+    thuNgay: targetToText(p.thuNgay.targetRate),
+    ghttT: targetToText(p.ghttT.targetRate),
+    ghttT1: targetToText(p.ghttT1.targetRate),
+    thuLuyKe: targetToText(p.thuLuyKe.targetRate),
+  };
 }
 
 function KpiTargetsTab() {
@@ -301,14 +327,7 @@ function KpiTargetsTab() {
     setError(null);
     try {
       const performance = await getKpiPerformance(month);
-      setRows(
-        performance.map((p) => ({
-          staffName: p.staffName,
-          thuNgay: p.thuNgay.targetRate === null ? "" : String(p.thuNgay.targetRate * 100),
-          ghttT: p.ghttT.targetRate === null ? "" : String(p.ghttT.targetRate * 100),
-          ghttT1: p.ghttT1.targetRate === null ? "" : String(p.ghttT1.targetRate * 100),
-        }))
-      );
+      setRows(performance.map(toTargetRow));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Không thể tải chỉ tiêu KPI.");
     } finally {
@@ -320,7 +339,7 @@ function KpiTargetsTab() {
     load();
   }, [month]);
 
-  function updateCell(staffName: string, field: "thuNgay" | "ghttT" | "ghttT1", value: string) {
+  function updateCell(staffName: string, field: TargetField, value: string) {
     setRows((prev) => prev.map((r) => (r.staffName === staffName ? { ...r, [field]: value } : r)));
   }
 
@@ -333,12 +352,7 @@ function KpiTargetsTab() {
         current.map((row) => {
           const p = byName.get(row.staffName);
           if (!p) return row;
-          return {
-            staffName: row.staffName,
-            thuNgay: p.thuNgay.targetRate === null ? "" : String(p.thuNgay.targetRate * 100),
-            ghttT: p.ghttT.targetRate === null ? "" : String(p.ghttT.targetRate * 100),
-            ghttT1: p.ghttT1.targetRate === null ? "" : String(p.ghttT1.targetRate * 100),
-          };
+          return toTargetRow(p);
         })
       );
     } catch (err) {
@@ -353,12 +367,11 @@ function KpiTargetsTab() {
     try {
       const items: KpiTargetItem[] = [];
       for (const row of rows) {
-        (["thuNgay", "ghttT", "ghttT1"] as const).forEach((field, idx) => {
-          const raw = row[field];
-          if (raw.trim() === "") return;
-          const kpiKey: KpiKey = (["thu_ngay", "ghtt_t", "ghtt_t1"] as const)[idx];
-          items.push({ staffName: row.staffName, kpiKey, targetRate: Number(raw) / 100 });
-        });
+        for (const col of TARGET_COLUMNS) {
+          const raw = row[col.field];
+          if (raw.trim() === "") continue;
+          items.push({ staffName: row.staffName, kpiKey: col.key, targetRate: Number(raw) / 100 });
+        }
       }
       await saveKpiTargets(month, items);
       setMessage("Đã lưu chỉ tiêu.");
@@ -407,37 +420,27 @@ function KpiTargetsTab() {
             <thead className="text-[11px] font-bold uppercase text-slate-500">
               <tr>
                 <th className="px-3 py-2">Nhân viên</th>
-                <th className="px-3 py-2">Thu ngay (%)</th>
-                <th className="px-3 py-2">GHTT T (%)</th>
-                <th className="px-3 py-2">GHTT T+1 (%)</th>
+                {TARGET_COLUMNS.map((col) => (
+                  <th key={col.key} className="px-3 py-2">
+                    {col.label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((row) => (
                 <tr key={row.staffName}>
                   <td className="px-3 py-2 font-semibold text-slate-800">{row.staffName}</td>
-                  <td className="px-3 py-2">
-                    <input
-                      value={row.thuNgay}
-                      placeholder="Chưa có chỉ tiêu"
-                      onChange={(e) => updateCell(row.staffName, "thuNgay", e.target.value)}
-                      className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-xs"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      value={row.ghttT}
-                      onChange={(e) => updateCell(row.staffName, "ghttT", e.target.value)}
-                      className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-xs"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      value={row.ghttT1}
-                      onChange={(e) => updateCell(row.staffName, "ghttT1", e.target.value)}
-                      className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-xs"
-                    />
-                  </td>
+                  {TARGET_COLUMNS.map((col) => (
+                    <td key={col.key} className="px-3 py-2">
+                      <input
+                        value={row[col.field]}
+                        placeholder={col.placeholder}
+                        onChange={(e) => updateCell(row.staffName, col.field, e.target.value)}
+                        className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                      />
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
@@ -464,6 +467,7 @@ export default function KpiSettingsPage() {
     thu_ngay: 0,
     ghtt_t: 0,
     ghtt_t1: 0,
+    thu_luy_ke: 0,
   });
 
   async function load() {
@@ -495,7 +499,7 @@ export default function KpiSettingsPage() {
           <Settings2 className="h-5 w-5 text-vnpt" /> Cấu hình KPI
         </h2>
         <p className="text-xs text-slate-500">
-          Bảng công thức theo khoảng cho Tỷ lệ thu ngay và GHTT tháng T / T+1. Điểm = a × TL + b.
+          Bảng công thức theo khoảng cho Tỷ lệ thu ngay, Tỷ lệ thu lũy kế và GHTT tháng T / T+1. Điểm = a × TL + b.
           {!isAdmin && " Chỉ Admin được sửa; bạn đang xem ở chế độ chỉ đọc."}
         </p>
       </div>
@@ -532,7 +536,7 @@ export default function KpiSettingsPage() {
           Đang tải công thức KPI...
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 xl:grid-cols-4">
           {KPI_CARDS.map((card) => (
             <FormulaCard
               key={`${card.key}-${formulaVersion[card.key]}`}

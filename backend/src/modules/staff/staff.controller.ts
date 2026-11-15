@@ -1,19 +1,32 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../../middleware/require-auth.js";
 import { requireAdmin } from "../../middleware/require-role.js";
+import { ROLES } from "../../constants/org.js";
 import { StaffService } from "./staff.service.js";
 import { HttpError } from "../auth/auth.service.js";
 
 export const staffRouter = Router();
 const staffService = new StaffService();
 
-// GET /api/staff — dữ liệu nhân sự/doanh thu từng người, yêu cầu đăng nhập
+// GET /api/staff — Admin: đầy đủ hồ sơ + doanh thu. Nhân viên khác: chỉ danh
+// bạ rút gọn (phục vụ dropdown/gợi ý tên AM), không có liên hệ hay doanh thu.
 staffRouter.get("/", requireAuth, async (req: Request, res: Response) => {
   try {
     const status = req.query.status as string | undefined;
     const month = req.query.month as string | undefined;
     const staff = await staffService.getAll({ status, month });
-    res.json({ success: true, data: staff });
+    if (req.user?.role === ROLES.ADMIN) {
+      res.json({ success: true, data: staff });
+      return;
+    }
+    const brief = staff.map(({ id, code, name, role, status: staffStatus }) => ({
+      id,
+      code,
+      name,
+      role,
+      status: staffStatus,
+    }));
+    res.json({ success: true, data: brief });
   } catch (error: any) {
     const statusCode = error instanceof HttpError ? error.status : 500;
     res.status(statusCode).json({ success: false, message: error.message });
@@ -106,6 +119,7 @@ staffRouter.patch("/:id", requireAuth, requireAdmin, async (req: Request, res: R
   try {
     const { id } = req.params;
     const {
+      code,
       name,
       role,
       territory,
@@ -123,6 +137,7 @@ staffRouter.patch("/:id", requireAuth, requireAdmin, async (req: Request, res: R
     const staff = await staffService.update(
       id,
       {
+        code,
         name,
         role,
         territory,

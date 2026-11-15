@@ -1,8 +1,30 @@
 import { query } from "../../database/db.js";
 import { StaffService } from "../staff/staff.service.js";
 import { currentMonthVn } from "../../utils/date-vn.js";
+import { DEFAULT_KPI_TARGETS } from "../../constants/org.js";
 
 const staffService = new StaffService();
+
+/** Mục tiêu thu lũy kế (%) của tháng: trung bình chỉ tiêu KPI `thu_luy_ke` của các nhân viên có nợ trong tháng; nhân viên chưa nhập thì dùng mặc định. */
+async function getCumulativeCollectionTarget(month: string): Promise<number> {
+  const fallback = Number(((DEFAULT_KPI_TARGETS.thu_luy_ke ?? 0) * 100).toFixed(1));
+  const staffRows = await query<{ staff_name: string }>(
+    "SELECT DISTINCT staff_name FROM debts WHERE month = ? AND staff_name IS NOT NULL",
+    [month]
+  );
+  if (!staffRows.length) return fallback;
+
+  const targetRows = await query<{ staff_name: string; target_rate: number }>(
+    "SELECT staff_name, target_rate FROM kpi_targets WHERE month = ? AND kpi_key = 'thu_luy_ke'",
+    [month]
+  );
+  const explicit = new Map(targetRows.map((r) => [r.staff_name.trim(), Number(r.target_rate)]));
+  const total = staffRows.reduce(
+    (sum, r) => sum + (explicit.get(r.staff_name.trim()) ?? DEFAULT_KPI_TARGETS.thu_luy_ke ?? 0),
+    0
+  );
+  return Number(((total / staffRows.length) * 100).toFixed(1));
+}
 
 export class DashboardService {
   async getLiveStats(month: string = currentMonthVn()) {
@@ -30,6 +52,8 @@ export class DashboardService {
       totalImmediate > 0 ? Number(((totalCollected / totalImmediate) * 100).toFixed(1)) : 98.0;
     const collectionRateCumulative =
       totalCumulative > 0 ? Number(((totalCollected / (totalImmediate + totalCumulative)) * 100).toFixed(1)) : 78.0;
+
+    const collectionRateCumulativeTarget = await getCumulativeCollectionTarget(month);
 
     // 2. Renewal Stats
     const renewalT = await query<{ total: number; completed: number }>(
@@ -73,6 +97,7 @@ export class DashboardService {
       kpis: {
         collectionRateImmediate,
         collectionRateCumulative,
+        collectionRateCumulativeTarget,
         totalImmediateDebtRemaining: Math.max(0, totalImmediate - totalCollected),
         totalCumulativeDebtRemaining: totalCumulative,
         renewalRateT,

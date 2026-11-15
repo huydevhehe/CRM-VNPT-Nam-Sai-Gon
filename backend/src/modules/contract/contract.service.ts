@@ -65,7 +65,7 @@ export interface UpdateContractStatusInput {
 
 export interface CreateContractInput {
   transactionCode: string;
-  customerName: string;
+  customerName?: string;
   subscriberCodes: string[];
   totalValue: number;
   channel: string;
@@ -83,7 +83,6 @@ export interface CreateContractInput {
 }
 
 export interface UpdateContractInfoInput {
-  customerName?: string;
   subscriberCodes?: string[];
   totalValue?: number;
   channel?: string;
@@ -174,22 +173,97 @@ function toContractRecord(row: ContractRow): ContractRecordDto {
 
 const commissionService = new CommissionService();
 
+export const CUSTOMER_REQUIRED_MESSAGE =
+  "Vui lòng chọn Khách hàng. Đơn hàng bắt buộc phải gắn với một khách hàng trong hệ thống";
+
+export interface ContractActor {
+  role: string;
+  name?: string;
+}
+
+interface LinkedCustomer {
+  id: string;
+  name: string;
+  identity_code: string | null;
+  am_staff: string | null;
+  am_caring_staff: string | null;
+}
+
+function isAdminActor(actor: ContractActor): boolean {
+  return actor.role?.toLowerCase() === "admin";
+}
+
+async function resolveRequiredCustomer(
+  customerId: unknown,
+  actor: ContractActor | undefined,
+  enforceScope: boolean
+): Promise<LinkedCustomer> {
+  const id = typeof customerId === "string" ? customerId.trim() : "";
+  if (!id) {
+    throw new Error(CUSTOMER_REQUIRED_MESSAGE);
+  }
+
+  const rows = await query<LinkedCustomer>(
+    "SELECT id, name, identity_code, am_staff, am_caring_staff FROM customers WHERE id = ?",
+    [id]
+  );
+  if (!rows.length) {
+    throw new Error("Khách hàng không tồn tại");
+  }
+
+  const customer = rows[0];
+  if (actor && enforceScope && !isAdminActor(actor)) {
+    const actorName = (actor.name || "").trim();
+    const isOwner =
+      Boolean(actorName) &&
+      ((customer.am_staff || "").trim() === actorName ||
+        (customer.am_caring_staff || "").trim() === actorName);
+    if (!isOwner) {
+      throw new Error("Bạn chỉ được gắn đơn hàng với khách hàng mình đang phụ trách");
+    }
+  }
+  return customer;
+}
+
+export class ContractForbiddenError extends Error {}
+
 export class ContractService {
-  async getAll(): Promise<ContractRecordDto[]> {
-    const rows = await query<ContractRow>("SELECT * FROM contracts ORDER BY created_at DESC");
+  /** `scope` = tên AM (không phải Admin): chỉ lấy đơn do AM đó phụ trách. */
+  async getAll(scope: string | null = null): Promise<ContractRecordDto[]> {
+    const rows =
+      scope === null
+        ? await query<ContractRow>("SELECT * FROM contracts ORDER BY created_at DESC")
+        : await query<ContractRow>(
+            "SELECT * FROM contracts WHERE am_staff = ? ORDER BY created_at DESC",
+            [scope]
+          );
     return rows.map(toContractRecord);
   }
 
-  async create(data: CreateContractInput): Promise<ContractRecordDto> {
+  async assertCanAccess(id: string, scope: string | null): Promise<void> {
+    const rows = await query<{ am_staff: string | null }>(
+      "SELECT am_staff FROM contracts WHERE id = ?",
+      [id]
+    );
+    if (!rows.length) {
+      throw new Error("Không tìm thấy Hợp đồng");
+    }
+    if (scope !== null && rows[0].am_staff !== scope) {
+      throw new ContractForbiddenError("Không có quyền truy cập đơn hàng này");
+    }
+  }
+
+  async create(data: CreateContractInput, actor?: ContractActor): Promise<ContractRecordDto> {
     if (
       !data.transactionCode ||
-      !data.customerName ||
       !Array.isArray(data.subscriberCodes) ||
       !data.subscriberCodes.length ||
       !data.channel
     ) {
       throw new Error("Thiếu thông tin bắt buộc để tạo Hợp đồng");
     }
+
+    const customer = await resolveRequiredCustomer(data.customerId, actor, true);
 
     if (typeof data.totalValue !== "number" || Number.isNaN(data.totalValue)) {
       throw new Error("Giá trị hợp đồng phải là một số hợp lệ");
@@ -233,28 +307,26 @@ export class ContractService {
       }
     }
 
-    if (amStaff) {
+    const selfAssigned = Boolean(actor && !isAdminActor(actor));
+    if (actor && selfAssigned) {
+      const actorName = (actor.name || "").trim();
+      if (amStaff && amStaff !== actorName) {
+        throw new ContractForbiddenError("Bạn chỉ được tạo đơn hàng do chính mình phụ trách");
+      }
+      amStaff = actorName || null;
+    }
+
+    if (amStaff && !selfAssigned) {
       const staffRows = await query<{ id: string }>("SELECT id FROM staff WHERE name = ?", [amStaff]);
       if (!staffRows.length) {
         throw new Error("Nhân viên AM không tồn tại");
       }
     }
 
-    let customerId: string | null = data.customerId ? String(data.customerId) : null;
-    let taxCode: string | null = data.taxCode ? String(data.taxCode).trim() : null;
-
-    if (customerId) {
-      const customerRows = await query<{ id: string; identity_code: string | null }>(
-        "SELECT id, identity_code FROM customers WHERE id = ?",
-        [customerId]
-      );
-      if (!customerRows.length) {
-        throw new Error("Khách hàng không tồn tại");
-      }
-      if (!taxCode && customerRows[0].identity_code) {
-        taxCode = customerRows[0].identity_code;
-      }
-    }
+    const customerId = customer.id;
+    const customerName = customer.name;
+    const taxCode: string | null =
+      (data.taxCode ? String(data.taxCode).trim() : "") || customer.identity_code || null;
 
     if (data.territoryId) {
       const territory = await query("SELECT id FROM territories WHERE id = ?", [data.territoryId]);
@@ -276,7 +348,7 @@ export class ContractService {
       [
         id,
         data.transactionCode,
-        data.customerName,
+        customerName,
         JSON.stringify(data.subscriberCodes),
         data.totalValue,
         data.channel,
@@ -380,7 +452,7 @@ export class ContractService {
   async updateInfo(
     id: string,
     patch: UpdateContractInfoInput,
-    actor: { role: string; name?: string }
+    actor: ContractActor
   ): Promise<ContractRecordDto> {
     const existing = await query<ContractRow>("SELECT * FROM contracts WHERE id = ?", [id]);
     if (!existing.length) {
@@ -393,6 +465,10 @@ export class ContractService {
 
     if (!isAdmin && !isOwner) {
       throw new Error("Không có quyền chỉnh sửa đơn hàng này");
+    }
+
+    if (!isAdmin && patch.amStaff !== undefined && patch.amStaff !== actor.name) {
+      throw new ContractForbiddenError("Chỉ Admin được đổi AM phụ trách đơn hàng");
     }
 
     if (
@@ -426,23 +502,22 @@ export class ContractService {
       }
     }
 
-    let customerId = patch.customerId !== undefined ? patch.customerId : current.customer_id;
-    let taxCode = patch.taxCode !== undefined ? patch.taxCode : current.tax_code;
+    const customerChanged =
+      patch.customerId !== undefined && (patch.customerId ?? "") !== (current.customer_id ?? "");
+    const requestedCustomerId = patch.customerId !== undefined ? patch.customerId : current.customer_id;
+    const customer = await resolveRequiredCustomer(requestedCustomerId, actor, customerChanged);
+    const customerId = customer.id;
+    const nextCustomerName = customer.name;
 
-    if (customerId) {
-      const customerRows = await query<{ id: string; identity_code: string | null }>(
-        "SELECT id, identity_code FROM customers WHERE id = ?",
-        [customerId]
-      );
-      if (!customerRows.length) {
-        throw new Error("Khách hàng không tồn tại");
-      }
-      if (!taxCode && customerRows[0].identity_code) {
-        taxCode = customerRows[0].identity_code;
-      }
+    let taxCode: string | null;
+    if (patch.taxCode !== undefined) {
+      taxCode = (patch.taxCode ? String(patch.taxCode).trim() : "") || customer.identity_code || null;
+    } else if (customerChanged) {
+      taxCode = customer.identity_code || (current.customer_id ? null : current.tax_code) || null;
+    } else {
+      taxCode = current.tax_code || customer.identity_code || null;
     }
 
-    const nextCustomerName = patch.customerName ?? current.customer_name;
     const nextSubscriberCodes = patch.subscriberCodes
       ? JSON.stringify(patch.subscriberCodes)
       : current.subscriber_codes;

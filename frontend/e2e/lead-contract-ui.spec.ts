@@ -1,7 +1,14 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import * as fs from "fs";
 import { loginAs } from "./fixtures/auth";
-import { ADMIN, API_URL, apiLogin, bearer, createApprovedCtv } from "./api/helpers";
+import {
+  ADMIN,
+  API_URL,
+  apiLogin,
+  bearer,
+  createApprovedCtv,
+  createCustomerForOrder,
+} from "./api/helpers";
 
 const STAFF_B = "Phạm Thanh Hà";
 
@@ -205,6 +212,8 @@ test.describe("Lead / Hợp đồng / Hoa hồng gắn CTV và Phường trên t
       data: { status: "Chốt thành công" },
     });
     expect(won.status()).toBe(200);
+    // Đơn hàng bắt buộc có khách hàng: tạo sẵn khách trùng tên Lead để form tự khớp.
+    await createCustomerForOrder(request, token, { name: customerName });
 
     await loginAs(page, "admin");
     await page.goto("/admin/contracts");
@@ -213,8 +222,8 @@ test.describe("Lead / Hợp đồng / Hoa hồng gắn CTV và Phường trên t
     await expect(page.getByRole("heading", { name: "Tạo đơn hàng" })).toBeVisible();
 
     await fieldByLabel(page, "Chọn từ Lead chốt thành công (tùy chọn)").selectOption(lead.id);
-    // Chọn lead tự điền tên khách hàng và giá trị
-    await expect(fieldByLabel(page, "Tên khách hàng")).toHaveValue(customerName);
+    // Chọn lead tự khớp khách hàng trùng tên và điền giá trị
+    await expect(page.getByTestId("selected-customer")).toContainText(customerName);
     await expect(fieldByLabel(page, "Giá trị đơn hàng (₫)")).toHaveValue("20000000");
     await fieldByLabel(page, "Mã giao dịch").fill(transactionCode);
     await fieldByLabel(page, "Mã thuê bao (phân tách bởi dấu phẩy)").fill("0901112223");

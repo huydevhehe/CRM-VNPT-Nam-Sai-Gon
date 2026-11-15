@@ -7,13 +7,10 @@ export const settingsRouter = Router();
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// GET /api/settings — chỉ Admin được xem cấu hình SMTP/Zalo hiện tại
-settingsRouter.get("/", requireAuth, async (req: Request, res: Response) => {
-  if (req.user?.role !== "Admin") {
-    res.status(403).json({ success: false, message: "Chỉ Admin được phép xem Cài đặt hệ thống" });
-    return;
-  }
+// Toàn bộ /api/settings chỉ dành cho Admin (server.ts gắn requireAdmin).
 
+// GET /api/settings — cấu hình SMTP/Zalo hiện tại
+settingsRouter.get("/", requireAuth, async (_req: Request, res: Response) => {
   try {
     const view = await SettingsService.getView();
     res.json({ success: true, data: view });
@@ -22,13 +19,8 @@ settingsRouter.get("/", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// PUT /api/settings — chỉ Admin được cập nhật cấu hình SMTP/Zalo
+// PUT /api/settings — cập nhật cấu hình SMTP/Zalo
 settingsRouter.put("/", requireAuth, async (req: Request, res: Response) => {
-  if (req.user?.role !== "Admin") {
-    res.status(403).json({ success: false, message: "Chỉ Admin được phép cập nhật Cài đặt hệ thống" });
-    return;
-  }
-
   try {
     const {
       smtpMode,
@@ -66,15 +58,10 @@ settingsRouter.put("/", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/settings/smtp/test — chỉ Admin, gửi thử tới một email bất kỳ.
+// POST /api/settings/smtp/test — gửi thử tới một email bất kỳ.
 // Có `override` thì dùng cấu hình đang nhập trên form (chưa Lưu); không có
 // host (đã lưu hoặc override) → 400 rõ ràng, không rơi về Ethereal.
 settingsRouter.post("/smtp/test", requireAuth, async (req: Request, res: Response) => {
-  if (req.user?.role !== "Admin") {
-    res.status(403).json({ success: false, message: "Chỉ Admin được phép gửi thử email" });
-    return;
-  }
-
   try {
     const { to, override } = req.body ?? {};
     if (typeof to !== "string" || !EMAIL_PATTERN.test(to.trim())) {

@@ -17,10 +17,12 @@ function trackSevereConsoleErrors(page: Page): string[] {
 
 async function showTerritoryList(page: Page) {
   const table = page.locator("table tbody tr").first();
-  if (await table.isVisible().catch(() => false)) return;
   const toggle = page.getByRole("button", { name: /Xem danh sách phường/ });
-  await toggle.click();
-  await expect(table).toBeVisible();
+  await expect(table.or(toggle)).toBeVisible();
+  if (await toggle.isVisible()) {
+    await toggle.click();
+    await expect(table).toBeVisible();
+  }
 }
 
 async function openTanHung(page: Page) {

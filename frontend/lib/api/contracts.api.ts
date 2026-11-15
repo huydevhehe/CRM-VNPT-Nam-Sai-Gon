@@ -7,8 +7,9 @@ export type UpdateContractStatusInput = Partial<
 
 export type CreateContractInput = Pick<
   ContractRecord,
-  "transactionCode" | "customerName" | "subscriberCodes" | "totalValue" | "channel"
+  "transactionCode" | "subscriberCodes" | "totalValue" | "channel"
 > & {
+  customerId: string;
   leadId?: string | null;
   territoryId?: string | null;
   amStaff?: string | null;
@@ -16,7 +17,6 @@ export type CreateContractInput = Pick<
   serviceName?: string | null;
   packageName?: string | null;
   paymentMethod?: string | null;
-  customerId?: string | null;
   taxCode?: string | null;
   contractNumber?: string | null;
   signedDate?: string | null;

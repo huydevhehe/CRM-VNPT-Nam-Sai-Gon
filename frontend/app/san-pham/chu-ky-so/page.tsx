@@ -1,427 +1,411 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import {
-  BadgeCheck,
+  ArrowRight,
   Banknote,
-  Boxes,
-  Building2,
-  Calculator,
-  Check,
+  CheckCircle2,
   ClipboardList,
   Clock,
   Cloud,
-  CloudCog,
+  FileCheck2,
   FileSignature,
   FileText,
-  GraduationCap,
   Headset,
-  HeartPulse,
   IdCard,
   Landmark,
   Lock,
-  Mail,
   MessageCircle,
-  PenTool,
+  MoreHorizontal,
+  PackageSearch,
+  PenLine,
   Phone,
-  Play,
   Receipt,
-  Settings,
-  Ship,
+  Shield,
   ShieldCheck,
   Smartphone,
-  Store,
-  Unplug,
-  User,
-  Wifi,
+  Umbrella,
+  UserCheck2,
+  Zap,
 } from "lucide-react";
 import Breadcrumb from "@/components/layout/Breadcrumb";
-import PricingTable from "@/components/product/PricingTable";
-import LeadForm from "@/components/sections/LeadForm";
-import StatBar from "@/components/sections/StatBar";
-import { getCategoryProducts } from "@/content/category-products";
+import PricingBlock, { type PricingPackage } from "./PricingBlock";
+import FaqAccordion, { type FaqItem } from "./FaqAccordion";
+import RegisterForm from "./RegisterForm";
 
 export const metadata: Metadata = {
-  title: "Chữ ký số SmartCA — VNPT Nam Sài Gòn",
+  title: "Chữ ký số VNPT — An toàn, nhanh chóng, hiệu quả | VNPT Nam Sài Gòn",
   description:
-    "VNPT SmartCA — chữ ký số từ xa, ký mọi lúc mọi nơi, không cần USB Token. An toàn, bảo mật theo tiêu chuẩn Châu Âu, được pháp luật Việt Nam công nhận.",
+    "Chữ ký số VNPT-CA (USB Token) và VNPT SmartCA (ký số từ xa) cho cá nhân, hộ kinh doanh, doanh nghiệp. Ký mọi lúc mọi nơi, bảo mật tuyệt đối, thủ tục đơn giản.",
 };
 
-const HERO_CHECKS = [
-  "An toàn - Bảo mật theo tiêu chuẩn Châu Âu",
-  "Xác thực nhanh chóng - Ký trong 3 giây",
-  "Được pháp luật Việt Nam công nhận",
-];
-
 const HERO_BADGES = [
-  { icon: Settings, style: { top: "8%", left: "10%" } },
-  { icon: Cloud, style: { top: "6%", left: "88%" } },
-  { icon: Lock, style: { top: "48%", left: "92%" } },
-  { icon: Cloud, style: { top: "88%", left: "86%" } },
+  { icon: PenLine, label: "Ký số mọi lúc mọi nơi" },
+  { icon: Clock, label: "Bảo mật tuyệt đối" },
+  { icon: IdCard, label: "Thủ tục đơn giản" },
 ];
 
-const DANH_CHO_AI = [
-  { icon: User, label: "Cá nhân", desc: "Ký hợp đồng, giao dịch điện tử nhanh chóng" },
-  { icon: Store, label: "Hộ kinh doanh", desc: "Ký hóa đơn điện tử, tờ khai thuế" },
-  { icon: Building2, label: "Doanh nghiệp", desc: "Ký văn bản, hợp đồng, hóa đơn điện tử" },
-  { icon: Calculator, label: "Kế toán", desc: "Ký báo cáo thuế, BHXH, hóa đơn điện tử" },
-  { icon: GraduationCap, label: "Trường học", desc: "Ký hồ sơ, chứng từ điện tử" },
-  { icon: HeartPulse, label: "Bệnh viện", desc: "Ký hồ sơ, chứng từ dễ dàng, bảo mật" },
+const LOI_ICH = [
+  {
+    icon: Shield,
+    title: "An toàn, bảo mật",
+    desc: "Xác thực điện tử tin cậy, đúng quy định pháp luật.",
+  },
+  {
+    icon: Zap,
+    title: "Giao dịch nhanh chóng",
+    desc: "Ký số mọi lúc, mọi nơi trên máy tính và di động.",
+  },
+  {
+    icon: PackageSearch,
+    title: "Đa dạng đối tượng",
+    desc: "Phù hợp cho hộ kinh doanh, doanh nghiệp, tổ chức.",
+  },
+  {
+    icon: Headset,
+    title: "Hỗ trợ tận nơi",
+    desc: "Tư vấn, cài đặt và bàn giao nhanh tại TP.HCM.",
+  },
 ];
 
-const TAI_SAO_CHON = [
-  { icon: Clock, label: "Ký trong 3 giây", desc: "Xác thực nhanh chóng, tiết kiệm thời gian" },
-  { icon: Smartphone, label: "Ký trên mọi thiết bị", desc: "Điện thoại, máy tính, tablet" },
-  { icon: Unplug, label: "Không cần USB Token", desc: "Công nghệ bảo mật chuẩn Châu Âu, tiện lợi" },
-  { icon: Lock, label: "Bảo mật cao", desc: "Chỉ mình bạn có thể sử dụng" },
-  { icon: Wifi, label: "Ký mọi lúc, mọi nơi", desc: "Chỉ cần Internet là có thể ký" },
-  { icon: BadgeCheck, label: "Được pháp luật công nhận", desc: "Theo Nghị định 130/2018/NĐ-CP và eIDAS Châu Âu" },
+const VNPT_CA_PACKAGES: PricingPackage[] = [
+  {
+    name: "Gói 1 năm",
+    price: "1.250.000đ",
+    unit: "năm",
+    features: [
+      "Ký số trên các hệ thống, phần mềm",
+      "Đáp ứng đầy đủ quy định pháp luật",
+      "Hỗ trợ cài đặt, hướng dẫn sử dụng",
+    ],
+  },
+  {
+    name: "Gói 2 năm",
+    price: "2.350.000đ",
+    unit: "2 năm",
+    popular: true,
+    features: [
+      "Ký số trên các hệ thống, phần mềm",
+      "Đáp ứng đầy đủ quy định pháp luật",
+      "Hỗ trợ cài đặt, hướng dẫn sử dụng",
+    ],
+  },
+  {
+    name: "Gói 3 năm",
+    price: "3.500.000đ",
+    unit: "3 năm",
+    features: [
+      "Ký số trên các hệ thống, phần mềm",
+      "Đáp ứng đầy đủ quy định pháp luật",
+      "Hỗ trợ cài đặt, hướng dẫn sử dụng",
+    ],
+  },
 ];
 
-const SMARTCA_UNG_DUNG = [
-  { icon: Receipt, label: "Hóa đơn điện tử", desc: "Ký hóa đơn nhanh chóng" },
-  { icon: FileText, label: "Thuế điện tử", desc: "Ký tờ khai, báo cáo thuế" },
-  { icon: ShieldCheck, label: "BHXH điện tử", desc: "Ký hồ sơ BHXH, BHYT" },
-  { icon: Banknote, label: "Ngân hàng điện tử", desc: "Ký giao dịch ngân hàng" },
-  { icon: FileSignature, label: "eContract", desc: "Ký hợp đồng điện tử" },
-  { icon: Ship, label: "Hải quan điện tử", desc: "Ký tờ khai hải quan" },
-  { icon: Landmark, label: "Dịch vụ công quốc gia", desc: "Ký hồ sơ, thủ tục hành chính" },
-  { icon: Boxes, label: "Phần mềm ERP", desc: "Ký chứng từ, phê duyệt" },
-  { icon: PenTool, label: "Ký văn bản điện tử", desc: "Ký văn bản nội bộ, công văn" },
+const SMARTCA_PACKAGES: PricingPackage[] = [
+  {
+    name: "Gói 1 năm",
+    price: "100.000đ",
+    unit: "năm",
+    features: [
+      "Ký số mọi lúc, mọi nơi",
+      "Đăng ký và giao dịch BHXH",
+      "Giao dịch với cơ quan nhà nước",
+    ],
+  },
+  {
+    name: "Gói 2 năm",
+    price: "180.000đ",
+    unit: "2 năm",
+    popular: true,
+    features: [
+      "Ký số mọi lúc, mọi nơi",
+      "Đăng ký và giao dịch BHXH",
+      "Giao dịch với cơ quan nhà nước",
+    ],
+  },
+  {
+    name: "Gói 3 năm",
+    price: "270.000đ",
+    unit: "3 năm",
+    features: [
+      "Ký số mọi lúc, mọi nơi",
+      "Đăng ký và giao dịch BHXH",
+      "Giao dịch với cơ quan nhà nước",
+    ],
+  },
+];
+
+const UNG_DUNG = [
+  { icon: FileText, label: "Kê khai, nộp thuế điện tử" },
+  { icon: Umbrella, label: "Giao dịch Bảo hiểm xã hội" },
+  { icon: Landmark, label: "Thủ tục hành chính điện tử" },
+  { icon: Receipt, label: "Ký hóa đơn, hợp đồng điện tử" },
+  { icon: Banknote, label: "Giao dịch tài chính, ngân hàng" },
+  { icon: MoreHorizontal, label: "Và nhiều giao dịch khác" },
 ];
 
 const QUY_TRINH = [
-  { icon: ClipboardList, title: "Đăng ký", desc: "Cung cấp thông tin đăng ký dịch vụ" },
-  { icon: IdCard, title: "Xác thực CCCD", desc: "Xác thực danh tính bằng eKYC" },
-  { icon: CloudCog, title: "Kích hoạt SmartCA", desc: "Nhận link kích hoạt và kích hoạt dịch vụ" },
-  { icon: PenTool, title: "Sử dụng ngay", desc: "Ký số mọi lúc, mọi nơi" },
+  { icon: ClipboardList, title: "Tiếp nhận yêu cầu" },
+  { icon: PackageSearch, title: "Tư vấn và chọn gói" },
+  { icon: UserCheck2, title: "Ký hợp đồng và triển khai" },
+  { icon: CheckCircle2, title: "Bàn giao và hướng dẫn" },
 ];
 
-const HUONG_DAN = [
-  { title: "Hướng dẫn kích hoạt SmartCA" },
-  { title: "Hướng dẫn ký hóa đơn điện tử" },
-  { title: "Hướng dẫn ký hợp đồng điện tử" },
-];
-
-const KHACH_HANG_TIEU_BIEU = ["BIDV", "Vietcombank", "Hoà Phát", "Viettel", "FPT", "MobiFone"];
-
-const FAQ = [
+const FAQ: FaqItem[] = [
   {
-    q: "VNPT SmartCA có thay thế được USB Token không?",
-    a: "Có. SmartCA là chữ ký số từ xa, có giá trị pháp lý tương đương USB Token và có thể thay thế hoàn toàn trong hầu hết các giao dịch điện tử.",
+    q: "Chữ ký số VNPT dùng để làm gì?",
+    a: "Chữ ký số VNPT dùng để ký kê khai, nộp thuế điện tử, giao dịch bảo hiểm xã hội, thủ tục hành chính, hóa đơn và hợp đồng điện tử, giao dịch tài chính - ngân hàng và nhiều giao dịch điện tử khác có giá trị pháp lý tương đương chữ ký tay, con dấu.",
   },
   {
-    q: "Tôi có thể ký trên điện thoại được không?",
-    a: "Có. Bạn chỉ cần cài ứng dụng VNPT SmartCA trên điện thoại và ký trực tiếp mà không cần thiết bị phần cứng nào khác.",
+    q: "Thời hạn sử dụng chữ ký số là bao lâu?",
+    a: "VNPT cung cấp các gói chữ ký số với thời hạn 1 năm, 2 năm hoặc 3 năm, khách hàng có thể lựa chọn gói phù hợp với nhu cầu sử dụng và gia hạn dễ dàng khi hết hạn.",
   },
   {
-    q: "SmartCA có dùng để ký hóa đơn điện tử không?",
-    a: "Có. SmartCA được dùng phổ biến để ký hóa đơn điện tử, tờ khai thuế, hợp đồng điện tử và nhiều thủ tục hành chính khác.",
+    q: "SmartCA và USB Token khác nhau thế nào?",
+    a: "USB Token (VNPT-CA) là chữ ký số gắn với thiết bị phần cứng, cần cắm vào máy tính khi ký. SmartCA là chữ ký số từ xa, lưu trữ trên hệ thống bảo mật của VNPT, ký trực tiếp trên điện thoại hoặc máy tính mà không cần thiết bị USB.",
   },
   {
-    q: "Thời gian kích hoạt dịch vụ là bao lâu?",
-    a: "Sau khi đăng ký và xác thực danh tính (eKYC) thành công, dịch vụ được kích hoạt và sử dụng ngay trong ngày.",
+    q: "Có hỗ trợ cài đặt và hướng dẫn sử dụng không?",
+    a: "Có. Đội ngũ kỹ thuật VNPT Nam Sài Gòn hỗ trợ cài đặt, hướng dẫn sử dụng tận nơi và đồng hành xử lý sự cố trong suốt quá trình sử dụng dịch vụ.",
   },
-];
-
-const HO_TRO = [
-  { icon: Phone, label: "Hotline", value: "0838 999 333" },
-  { icon: MessageCircle, label: "Zalo OA", value: "VNPT Nam Sài Gòn" },
-  { icon: Mail, label: "Email", value: "kinhdoanh@vnptnamsaigon.vn" },
-  { icon: Headset, label: "Thời gian", value: "7h30 - 21h00 (T2 - CN)" },
+  {
+    q: "Hộ kinh doanh nên chọn gói nào?",
+    a: "Hộ kinh doanh thường phù hợp với gói VNPT SmartCA do chi phí thấp, đăng ký nhanh và đáp ứng tốt nhu cầu kê khai thuế, giao dịch bảo hiểm xã hội. Liên hệ VNPT để được tư vấn gói phù hợp nhất.",
+  },
+  {
+    q: "Có xuất hóa đơn cho dịch vụ chữ ký số không?",
+    a: "Có. VNPT xuất hóa đơn điện tử đầy đủ cho mọi gói dịch vụ chữ ký số, hỗ trợ khách hàng hạch toán chi phí theo đúng quy định.",
+  },
 ];
 
 export default function ChuKySoPage() {
-  const products = getCategoryProducts("chu-ky-so");
-  const smartCaCaNhan = products.find((p) => p.slug === "smartca-ca-nhan");
-  const smartCaHoKinhDoanh = products.find((p) => p.slug === "smartca-ho-kinh-doanh");
-  const smartCaDoanhNghiep = products.find((p) => p.slug === "smartca-doanh-nghiep");
-
   return (
     <div>
-      {/* HERO */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-vnpt-darker via-vnpt-dark to-vnpt">
-        <div className="mx-auto max-w-7xl px-6 py-10">
+      {/* BREADCRUMB + HERO */}
+      <section className="bg-white">
+        <div className="mx-auto max-w-7xl px-6 pt-6">
           <Breadcrumb
-            items={[
-              { label: "Trang chủ", href: "/" },
-              { label: "Sản phẩm", href: "/san-pham" },
-              { label: "Chữ ký số" },
-            ]}
+            items={[{ label: "Trang chủ", href: "/" }, { label: "Chữ ký số VNPT" }]}
           />
-          <div className="mt-4 grid items-center gap-10 lg:grid-cols-2">
-            <div className="relative z-10 text-white">
-              <h1 className="leading-tight">
-                CHỮ KÝ SỐ TỪ XA
-                <br />
-                VNPT SMARTCA
+        </div>
+
+        <div className="mx-auto max-w-7xl px-6 pb-10 pt-6">
+          <div className="grid items-center gap-10 lg:grid-cols-[1.1fr_1fr]">
+            <div>
+              <h1 className="text-3xl font-extrabold leading-tight text-slate-900 font-[family-name:var(--font-montserrat)] sm:text-4xl">
+                Chữ ký số VNPT
               </h1>
-              <p className="mt-3 text-lg font-semibold text-vnpt-accent">
-                Ký mọi lúc - Ký mọi nơi
-                <br />
-                Không cần USB Token
+              <p className="mt-1 text-lg font-bold text-vnpt-accent">
+                An toàn - Nhanh chóng - Hiệu quả
               </p>
-              <div className="mt-4 space-y-2">
-                {HERO_CHECKS.map((c) => (
-                  <div key={c} className="flex items-center gap-2 text-sm text-white/85">
-                    <Check size={16} className="shrink-0 text-vnpt-accent" /> {c}
-                  </div>
-                ))}
-              </div>
+              <p className="mt-4 max-w-xl text-sm leading-relaxed text-slate-600">
+                Giải pháp chữ ký số hàng đầu Việt Nam, giúp cá nhân, hộ kinh doanh và doanh
+                nghiệp giao dịch điện tử nhanh chóng, bảo mật, hợp pháp.
+              </p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <Link
                   href="/lien-he"
-                  className="rounded-md bg-white px-5 py-3 text-sm font-semibold text-vnpt-dark hover:bg-slate-100"
+                  className="flex items-center gap-2 rounded-lg bg-vnpt px-5 py-3 text-sm font-semibold text-white shadow-md shadow-vnpt/25 transition hover:bg-vnpt-dark"
                 >
-                  ĐĂNG KÝ NGAY
+                  <PenLine size={16} /> Đăng ký ngay
                 </Link>
                 <Link
-                  href="/lien-he"
-                  className="rounded-md border border-white/60 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10"
+                  href="https://zalo.me"
+                  className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                 >
-                  NHẬN BÁO GIÁ
+                  <MessageCircle size={16} className="text-sky-500" /> Tư vấn qua Zalo
                 </Link>
               </div>
             </div>
 
-            <div className="relative hidden h-72 overflow-hidden rounded-2xl lg:block">
-              <Image
-                src="/images/hero/hero-city-night.jpg"
-                alt="VNPT SmartCA - Chữ ký số từ xa"
-                fill
-                sizes="(max-width: 1024px) 0px, 50vw"
-                quality={90}
-                className="object-cover"
-                priority
-              />
-              <div className="absolute inset-0 bg-vnpt/50 mix-blend-multiply" />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="flex flex-col items-center gap-2 rounded-2xl bg-white/10 px-8 py-6 backdrop-blur-sm">
-                  <FileSignature size={44} className="text-white" />
-                  <span className="text-sm font-bold tracking-wide text-white">SmartCA</span>
+            <div className="relative">
+              <div className="grid grid-cols-[1fr_auto] items-center gap-6">
+                {/* Minh hoạ: laptop ký số */}
+                <div className="relative flex h-48 items-center justify-center rounded-2xl bg-gradient-to-br from-vnpt-light to-white">
+                  <div className="relative flex h-32 w-44 flex-col items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-vnpt to-vnpt-dark text-white shadow-xl shadow-vnpt/25">
+                    <div className="flex gap-2">
+                      <Shield size={22} className="text-white" />
+                      <Lock size={20} className="text-white/80" />
+                    </div>
+                    <FileSignature size={26} className="text-white" />
+                  </div>
+                  <span className="absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-vnpt-dark px-3 py-1 text-[10px] font-bold text-white">
+                    VNPT-CA
+                  </span>
+                </div>
+                {/* Minh hoạ: điện thoại SmartCA */}
+                <div className="flex h-40 w-24 flex-col items-center justify-center gap-2 rounded-2xl bg-white shadow-lg ring-1 ring-slate-100">
+                  <Smartphone size={28} className="text-vnpt" />
+                  <Cloud size={16} className="text-vnpt-accent" />
+                  <span className="text-center text-[10px] font-bold leading-tight text-slate-700">
+                    VNPT
+                    <br />
+                    SmartCA
+                  </span>
                 </div>
               </div>
-              {HERO_BADGES.map((b, i) => (
-                <div
-                  key={i}
-                  style={b.style}
-                  className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/95 p-2.5 text-vnpt shadow-lg"
-                >
-                  <b.icon size={18} />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
 
-      {/* NỘI DUNG CHÍNH + FORM SIDEBAR */}
-      <section className="mx-auto max-w-7xl px-6 py-10">
-        <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
-          <div className="space-y-12">
-            {/* DÀNH CHO AI */}
-            <div>
-              <h2 className="mb-6 text-center text-slate-800">DÀNH CHO AI?</h2>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-                {DANH_CHO_AI.map((d) => (
+              {/* 3 badge bên phải */}
+              <div className="mt-5 flex flex-col gap-2.5 sm:ml-auto sm:w-64">
+                {HERO_BADGES.map((b) => (
                   <div
-                    key={d.label}
-                    className="flex flex-col items-center gap-2 rounded-xl border border-slate-100 p-4 text-center shadow-sm"
+                    key={b.label}
+                    className="flex items-center gap-2.5 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-slate-100"
                   >
-                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-vnpt-light text-vnpt">
-                      <d.icon size={22} />
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-vnpt-light text-vnpt">
+                      <b.icon size={15} />
                     </span>
-                    <span className="text-sm font-semibold text-slate-800">{d.label}</span>
-                    <span className="text-xs text-slate-500">{d.desc}</span>
+                    {b.label}
                   </div>
                 ))}
               </div>
             </div>
-
-            {/* TẠI SAO CHỌN */}
-            <div>
-              <h2 className="mb-6 text-center text-slate-800">
-                TẠI SAO CHỌN VNPT SMARTCA?
-              </h2>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-                {TAI_SAO_CHON.map((t) => (
-                  <div key={t.label} className="flex flex-col items-center gap-2 text-center">
-                    <t.icon size={26} className="text-vnpt" />
-                    <span className="text-sm font-semibold text-slate-800">{t.label}</span>
-                    <span className="text-xs text-slate-500">{t.desc}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* SMARTCA DÙNG ĐỂ LÀM GÌ */}
-            <div>
-              <h2 className="mb-6 text-center text-slate-800">
-                SMARTCA DÙNG ĐỂ LÀM GÌ?
-              </h2>
-              <div className="rounded-2xl border border-slate-100 p-6 shadow-sm">
-                <div className="mx-auto mb-6 flex w-fit flex-col items-center gap-2 rounded-full bg-vnpt px-8 py-4 text-white">
-                  <FileSignature size={28} />
-                  <span className="text-sm font-bold">SmartCA</span>
-                </div>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                  {SMARTCA_UNG_DUNG.map((u) => (
-                    <div key={u.label} className="flex items-start gap-2 rounded-lg p-2">
-                      <u.icon size={20} className="mt-0.5 shrink-0 text-vnpt" />
-                      <div>
-                        <div className="text-sm font-semibold text-slate-800">{u.label}</div>
-                        <div className="text-xs text-slate-500">{u.desc}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* BẢNG GIÁ */}
-            <div>
-              <h2 className="mb-6 text-center text-slate-800">
-                BẢNG GIÁ VNPT SMARTCA
-              </h2>
-              <div className="grid gap-6 md:grid-cols-3">
-                {smartCaCaNhan && (
-                  <div>
-                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-vnpt">
-                      <User size={16} /> CÁ NHÂN
-                    </div>
-                    <PricingTable pricing={smartCaCaNhan.pricing} />
-                  </div>
-                )}
-                {smartCaHoKinhDoanh && (
-                  <div>
-                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-vnpt">
-                      <Store size={16} /> HỘ KINH DOANH
-                    </div>
-                    <PricingTable pricing={smartCaHoKinhDoanh.pricing} />
-                  </div>
-                )}
-                {smartCaDoanhNghiep && (
-                  <div>
-                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-vnpt">
-                      <Building2 size={16} /> DOANH NGHIỆP
-                    </div>
-                    <PricingTable pricing={smartCaDoanhNghiep.pricing} />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* QUY TRÌNH ĐĂNG KÝ */}
-            <div>
-              <h2 className="mb-6 text-center text-slate-800">
-                QUY TRÌNH ĐĂNG KÝ SMARTCA
-              </h2>
-              <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
-                {QUY_TRINH.map((q, i) => (
-                  <div key={q.title} className="relative flex flex-col items-center text-center">
-                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-vnpt text-white">
-                      <q.icon size={22} />
-                    </span>
-                    <span className="mt-2 text-sm font-semibold text-slate-800">{q.title}</span>
-                    <span className="mt-1 text-xs text-slate-500">{q.desc}</span>
-                    <span className="mt-1 text-xs font-bold text-vnpt-accent">
-                      Bước {i + 1}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* HƯỚNG DẪN SỬ DỤNG */}
-            <div>
-              <h2 className="mb-6 text-slate-800">HƯỚNG DẪN SỬ DỤNG</h2>
-              <div className="grid gap-4 sm:grid-cols-3">
-                {HUONG_DAN.map((h) => (
-                  <div key={h.title} className="overflow-hidden rounded-xl border border-slate-100 shadow-sm">
-                    <div className="relative flex h-32 items-center justify-center bg-gradient-to-br from-vnpt to-vnpt-dark">
-                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/90 text-vnpt">
-                        <Play size={20} fill="currentColor" />
-                      </span>
-                    </div>
-                    <div className="p-3 text-sm font-semibold text-slate-800">{h.title}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="lg:sticky lg:top-24 lg:h-fit">
-            <LeadForm title="Đăng ký tư vấn" subtitle="Nhanh chóng - Miễn phí" interestOptions={["Chữ ký số"]} showCompany />
           </div>
         </div>
       </section>
 
-      <StatBar
-        items={[
-          { value: "50.000+", label: "Doanh nghiệp tin dùng", icon: Building2 },
-          { value: "500.000+", label: "Người dùng trên toàn quốc", icon: User },
-          { value: "10+ năm", label: "Uy tín & kinh nghiệm", icon: BadgeCheck },
-          { value: "24/7", label: "Hỗ trợ tận tâm", icon: Headset },
-        ]}
-      />
+      {/* 4 CỘT LỢI ÍCH */}
+      <section className="border-y border-slate-100 bg-white">
+        <div className="mx-auto max-w-7xl px-6 py-8">
+          <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
+            {LOI_ICH.map((item) => (
+              <div key={item.title} className="flex items-start gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-vnpt-light text-vnpt">
+                  <item.icon size={20} />
+                </span>
+                <div>
+                  <div className="text-sm font-bold text-slate-800">{item.title}</div>
+                  <div className="mt-0.5 text-xs leading-snug text-slate-500">{item.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
-      {/* KHÁCH HÀNG TIÊU BIỂU */}
+      {/* VNPT-CA + SMARTCA */}
+      <section className="mx-auto max-w-7xl space-y-6 px-6 py-10">
+        <PricingBlock
+          icon={<PenLine size={22} />}
+          deviceIcon={<FileCheck2 size={30} />}
+          deviceLabel="VNPT-CA"
+          title="VNPT - CA (USB Token)"
+          description="Chữ ký số bằng thiết bị USB Token, phù hợp cho giao dịch trên phần mềm, hệ thống của doanh nghiệp và cơ quan nhà nước."
+          packages={VNPT_CA_PACKAGES}
+        />
+        <PricingBlock
+          icon={<Cloud size={22} />}
+          deviceIcon={<Smartphone size={30} />}
+          deviceLabel="VNPT SmartCA"
+          title="VNPT SmartCA (Ký số từ xa)"
+          description="Chữ ký số từ xa, không cần USB Token. Ký số trực tuyến nhanh chóng, linh hoạt trên mọi thiết bị."
+          packages={SMARTCA_PACKAGES}
+        />
+      </section>
+
+      {/* ỨNG DỤNG CHỮ KÝ SỐ */}
+      <section className="bg-white">
+        <div className="mx-auto max-w-7xl px-6 py-10">
+          <h2 className="flex items-center gap-2 text-lg font-extrabold text-slate-800 font-[family-name:var(--font-montserrat)]">
+            <span className="h-5 w-1 rounded-full bg-vnpt" /> Ứng dụng chữ ký số
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Đáp ứng đầy đủ các giao dịch điện tử phổ biến hiện nay.
+          </p>
+          <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+            {UNG_DUNG.map((u) => (
+              <div
+                key={u.label}
+                className="flex flex-col items-center gap-2 rounded-xl p-3 text-center"
+              >
+                <span className="flex h-14 w-14 items-center justify-center rounded-full bg-vnpt-light text-vnpt">
+                  <u.icon size={24} />
+                </span>
+                <span className="text-xs font-semibold leading-snug text-slate-700">
+                  {u.label}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* QUY TRÌNH ĐĂNG KÝ */}
+      <section className="bg-vnpt-light/40">
+        <div className="mx-auto max-w-7xl px-6 py-10">
+          <h2 className="flex items-center gap-2 text-lg font-extrabold text-slate-800 font-[family-name:var(--font-montserrat)]">
+            <ArrowRight size={18} className="text-vnpt" /> Quy trình đăng ký đơn giản
+          </h2>
+          <div className="mt-6 grid grid-cols-2 gap-6 sm:grid-cols-4">
+            {QUY_TRINH.map((step, i) => (
+              <div key={step.title} className="relative flex flex-col items-center text-center">
+                {i < QUY_TRINH.length - 1 && (
+                  <ArrowRight
+                    size={18}
+                    className="absolute -right-5 top-6 hidden text-vnpt/40 sm:block"
+                  />
+                )}
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-vnpt text-white shadow-sm">
+                  <step.icon size={22} />
+                </span>
+                <span className="mt-2 text-sm font-semibold text-slate-800">
+                  {i + 1}. {step.title}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* FORM ĐĂNG KÝ TƯ VẤN */}
       <section className="mx-auto max-w-7xl px-6 py-10">
-        <h2 className="mb-6 text-center text-lg font-bold text-slate-800">KHÁCH HÀNG TIÊU BIỂU</h2>
-        <div className="grid grid-cols-3 gap-4 sm:grid-cols-6">
-          {KHACH_HANG_TIEU_BIEU.map((k) => (
-            <div
-              key={k}
-              className="flex h-16 items-center justify-center rounded-lg border border-slate-100 px-3 text-center text-sm font-bold text-slate-500 shadow-sm"
-            >
-              {k}
-            </div>
-          ))}
-        </div>
+        <RegisterForm />
       </section>
 
-      {/* FAQ + ƯU ĐÃI + HỖ TRỢ */}
-      <section className="mx-auto max-w-7xl px-6 pb-12">
-        <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr_1fr]">
-          <div>
-            <h2 className="mb-4 text-lg font-bold text-slate-800">CÂU HỎI THƯỜNG GẶP</h2>
-            <div className="space-y-3">
-              {FAQ.map((f) => (
-                <div key={f.q} className="rounded-lg border border-slate-100 p-4">
-                  <div className="text-sm font-semibold text-slate-800">{f.q}</div>
-                  <p className="mt-1 text-sm text-slate-500">{f.a}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex flex-col justify-between rounded-xl bg-gradient-to-br from-vnpt to-vnpt-dark p-6 text-white">
-            <div>
-              <h3 className="text-sm font-semibold uppercase text-white/80">Ưu đãi đặc biệt</h3>
-              <p className="mt-2 text-2xl font-bold text-vnpt-accent">Giảm ngay 10%</p>
-              <p className="mt-1 text-sm text-white/85">khi đăng ký gói 2 năm trở lên</p>
-            </div>
-            <Link
-              href="/lien-he"
-              className="mt-4 inline-block rounded-md bg-white px-4 py-2.5 text-center text-sm font-semibold text-vnpt-dark hover:bg-slate-100"
-            >
-              ĐĂNG KÝ NGAY
+      {/* FAQ */}
+      <section className="bg-white">
+        <div className="mx-auto max-w-7xl px-6 py-10">
+          <div className="mb-5 flex items-center justify-between">
+            <h2 className="text-lg font-extrabold text-slate-800 font-[family-name:var(--font-montserrat)]">
+              Câu hỏi thường gặp
+            </h2>
+            <Link href="/lien-he" className="text-sm font-semibold text-vnpt hover:underline">
+              Xem tất cả câu hỏi
             </Link>
           </div>
+          <FaqAccordion items={FAQ} />
+        </div>
+      </section>
 
-          <div className="rounded-xl border border-slate-100 p-6 shadow-sm">
-            <h3 className="mb-3 text-sm font-semibold text-slate-800">HỖ TRỢ 24/7</h3>
-            <div className="space-y-3">
-              {HO_TRO.map((h) => (
-                <div key={h.label} className="flex items-center gap-2 text-sm">
-                  <h.icon size={16} className="shrink-0 text-vnpt" />
-                  <div>
-                    <div className="text-xs text-slate-500">{h.label}</div>
-                    <div className="font-semibold text-slate-800">{h.value}</div>
-                  </div>
-                </div>
-              ))}
+      {/* CTA BANNER CUỐI */}
+      <section className="bg-gradient-to-r from-vnpt-darker to-vnpt-dark">
+        <div className="mx-auto flex max-w-7xl flex-col items-center gap-5 px-6 py-10 text-center sm:flex-row sm:justify-between sm:text-left">
+          <div className="flex items-center gap-4">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/15 text-white">
+              <ShieldCheck size={24} />
+            </span>
+            <div>
+              <h2 className="text-lg font-extrabold text-white font-[family-name:var(--font-montserrat)]">
+                Đăng ký Chữ ký số VNPT ngay hôm nay!
+              </h2>
+              <p className="mt-1 text-sm text-white/80">
+                Giải pháp ký số an toàn, hợp pháp, hỗ trợ triển khai nhanh chóng.
+              </p>
             </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap justify-center gap-3">
+            <Link
+              href="tel:0838999333"
+              className="flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-vnpt-dark transition hover:bg-slate-100"
+            >
+              <Phone size={16} /> 0838 999 333
+            </Link>
+            <Link
+              href="https://zalo.me"
+              className="flex items-center gap-2 rounded-full border border-white/40 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10"
+            >
+              <MessageCircle size={16} /> Tư vấn qua Zalo
+            </Link>
           </div>
         </div>
       </section>

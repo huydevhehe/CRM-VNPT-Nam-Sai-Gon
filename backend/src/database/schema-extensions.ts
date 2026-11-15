@@ -174,6 +174,8 @@ export async function applySchemaExtensions(): Promise<void> {
       updated_at TEXT
     )
   `);
+  await ensureColumn("reminder_settings", "email_subject_template", "TEXT");
+  await ensureColumn("reminder_settings", "email_body_template", "TEXT");
 
   await run(`
     CREATE TABLE IF NOT EXISTS reminder_logs (

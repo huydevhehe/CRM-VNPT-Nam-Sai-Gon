@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, FormEvent, useMemo } from "react";
+import Link from "next/link";
 import { FileText, Download, AlertTriangle, X, Search, RefreshCw } from "lucide-react";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
 import {
@@ -11,6 +12,9 @@ import {
 } from "@/lib/api/contracts.api";
 import { ContractRecord } from "@/lib/crm/types/crm.types";
 import { API_BASE_URL, getToken } from "@/lib/api/client";
+
+const ORDER_WITHOUT_CUSTOMER_MESSAGE =
+  "Đơn hàng chưa gắn khách hàng. Vui lòng cập nhật khách hàng cho đơn trước khi xuất Đề nghị thanh toán";
 
 export default function PaymentRequestsPage() {
   const [contracts, setContracts] = useState<ContractRecord[]>([]);
@@ -26,6 +30,8 @@ export default function PaymentRequestsPage() {
   const [docNumber, setDocNumber] = useState("");
   const [missingFields, setMissingFields] = useState<string[]>([]);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [blockedMessage, setBlockedMessage] = useState<string | null>(null);
+  const [redownloadError, setRedownloadError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
 
   // Filter exporter
@@ -55,12 +61,18 @@ export default function PaymentRequestsPage() {
   async function handleSelectOrder(order: ContractRecord) {
     setSelectedOrder(order);
     setExportError(null);
+    setBlockedMessage(null);
+    setMissingFields([]);
+    if (!order.customerId) {
+      setBlockedMessage(ORDER_WITHOUT_CUSTOMER_MESSAGE);
+      return;
+    }
     try {
       const preview = await getPaymentRequestPreview(order.id);
       setDocNumber(preview.suggestedDocNumber || "1");
       setMissingFields(preview.missingFields || []);
     } catch (err) {
-      setExportError(err instanceof Error ? err.message : "Không thể tải xem trước");
+      setBlockedMessage(err instanceof Error ? err.message : "Không thể tải xem trước");
     }
   }
 
@@ -72,6 +84,7 @@ export default function PaymentRequestsPage() {
 
     setDownloading(true);
     setExportError(null);
+    setRedownloadError(null);
     try {
       const token = getToken();
       const url = `${API_BASE_URL}/contracts/${orderId}/payment-request?docNumber=${encodeURIComponent(
@@ -101,7 +114,9 @@ export default function PaymentRequestsPage() {
       setExportsList(updatedExports);
       setSelectedOrder(null);
     } catch (err) {
-      setExportError(err instanceof Error ? err.message : "Không thể xuất file");
+      const message = err instanceof Error ? err.message : "Không thể xuất file";
+      setExportError(message);
+      setRedownloadError(message);
     } finally {
       setDownloading(false);
     }
@@ -232,6 +247,12 @@ export default function PaymentRequestsPage() {
                 <div>
                   <span className="font-mono font-bold text-vnpt mr-2">{ord.transactionCode}</span>
                   <span className="font-medium text-slate-800">{ord.customerName}</span>
+                  {!ord.customerId && (
+                    <span className="ml-2 inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                      <AlertTriangle className="h-3 w-3" />
+                      Chưa gắn khách hàng
+                    </span>
+                  )}
                   <span className="ml-3 text-xs text-slate-500">
                     Giá trị: <b>{ord.totalValue.toLocaleString("vi-VN")} ₫</b>
                   </span>
@@ -267,6 +288,13 @@ export default function PaymentRequestsPage() {
             ))}
           </select>
         </div>
+
+        {redownloadError && !selectedOrder && (
+          <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <span>{redownloadError}</span>
+          </div>
+        )}
 
         {error ? (
           <div className="flex flex-col items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/70 px-6 py-10 text-center">
@@ -312,6 +340,32 @@ export default function PaymentRequestsPage() {
               </button>
             </div>
 
+            {blockedMessage ? (
+              <div className="space-y-4">
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    Không thể xuất Đề nghị thanh toán
+                  </div>
+                  <p className="mt-1">{blockedMessage}</p>
+                </div>
+                <div className="flex justify-end gap-2 pt-2 border-t">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOrder(null)}
+                    className="rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                  >
+                    Đóng
+                  </button>
+                  <Link
+                    href={`/admin/contracts?ma=${encodeURIComponent(selectedOrder.transactionCode)}`}
+                    className="flex items-center gap-1.5 rounded-xl bg-vnpt px-4 py-2 text-xs font-bold text-white hover:bg-vnpt-dark"
+                  >
+                    <span>Đến trang Đơn hàng để cập nhật</span>
+                  </Link>
+                </div>
+              </div>
+            ) : (
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -374,6 +428,7 @@ export default function PaymentRequestsPage() {
                 </button>
               </div>
             </form>
+            )}
           </div>
         </div>
       )}

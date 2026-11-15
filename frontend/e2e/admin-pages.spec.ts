@@ -17,6 +17,14 @@ const ADMIN_PAGES = [
   "settings",
 ] as const;
 
+// Khớp ADMIN_ONLY_PATHS ở lib/auth/access.ts: AM vào các trang này phải bị chặn.
+const ADMIN_ONLY_PAGES: ReadonlySet<string> = new Set([
+  "commissions",
+  "employees",
+  "data-transfer",
+  "settings",
+]);
+
 const ROLES: Role[] = ["admin", "am"];
 
 // URL gốc của backend thật (không đi qua Next.js) — dùng cho các request API trực
@@ -41,6 +49,15 @@ for (const role of ROLES) {
 
       await loginAs(page, role);
       await page.goto(`/admin/${path}`);
+
+      if (role === "am" && ADMIN_ONLY_PAGES.has(path)) {
+        await expect(page.getByTestId("forbidden-page")).toBeVisible();
+        expect(
+          severeConsoleErrors,
+          `Có lỗi console nghiêm trọng trên /admin/${path} (role ${role}): ${severeConsoleErrors.join(" | ")}`
+        ).toEqual([]);
+        return;
+      }
 
       // Trang phải render xong: hoặc có bảng dữ liệu, hoặc ít nhất tiêu đề trang
       // hiển thị (AdminTopbar luôn render <h1> cho mọi trang admin).

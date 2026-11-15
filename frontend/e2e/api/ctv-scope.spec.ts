@@ -1,5 +1,13 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
-import { ADMIN, AM, API_URL, apiLogin, bearer, createApprovedCtv } from "./helpers";
+import {
+  ADMIN,
+  AM,
+  API_URL,
+  apiLogin,
+  bearer,
+  createApprovedCtv,
+  createCustomerForOrder,
+} from "./helpers";
 
 const STAFF = "Nguyễn Thị Tình";
 
@@ -74,11 +82,12 @@ test.describe("API /api/ctv — dữ liệu theo từng CTV", () => {
     }
     const firstLead = leads.find((l) => l.customerName === leadNamesA[0])!;
     contractCode = `GD-CTV-${uniq()}`;
+    const customerA = await createCustomerForOrder(request, adminToken, { name: leadNamesA[0] });
     const contractRes = await request.post(`${API_URL}/contracts`, {
       headers: bearer(adminToken),
       data: {
         transactionCode: contractCode,
-        customerName: leadNamesA[0],
+        customerId: customerA.id,
         subscriberCodes: ["0901234567"],
         totalValue: CONTRACT_VALUE,
         channel: "CTV giới thiệu",
@@ -229,11 +238,12 @@ test.describe("API /api/ctv — dữ liệu theo từng CTV", () => {
 
     const value = 8000000;
     const transactionCode = `GD-CTV-SUM-${uniq()}`;
+    const customerOk = await createCustomerForOrder(request, adminToken, { name: nameOk });
     const contractRes = await request.post(`${API_URL}/contracts`, {
       headers: bearer(adminToken),
       data: {
         transactionCode,
-        customerName: nameOk,
+        customerId: customerOk.id,
         subscriberCodes: ["0901234567"],
         totalValue: value,
         channel: "CTV giới thiệu",
