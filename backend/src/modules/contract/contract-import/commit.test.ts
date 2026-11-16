@@ -15,6 +15,7 @@ function makeRow(overrides: Partial<Record<string, unknown>> = {}) {
     customerName: "",
     subscriberCodes: [],
     totalValue: null,
+    termMonths: null,
     channel: "",
     amStaff: "",
     serviceGroup: "",
@@ -285,4 +286,41 @@ test("skip does not touch the database", async () => {
     row.transactionCode,
   ]);
   assert.equal(rows.length, 0);
+});
+
+test("create and update sync one service per subscriber code", async () => {
+  const suffix = Date.now();
+  const transactionCode = `GD-IMP-SVC-${suffix}`;
+  const customerId = `C-SVC-${suffix}`;
+  const customerName = `Công ty Import Dịch vụ ${suffix}`;
+  await insertCustomer(customerId, customerName);
+
+  const createRow = makeRow({
+    transactionCode,
+    customerName,
+    subscriberCodes: ["IMP-1", "IMP-2"],
+    serviceName: "Internet Fiber",
+    signedDate: "2026-04-01",
+    termMonths: 3,
+  });
+  const created = await importService.commit({ decisions: [{ row: createRow, action: "create" }] }, "Admin Test");
+  assert.equal(created.created, 1);
+
+  let services = await query<any>(
+    "SELECT * FROM services WHERE customer_id = ? ORDER BY service_code",
+    [customerId]
+  );
+  assert.deepEqual(services.map((s) => s.service_code), ["IMP-1", "IMP-2"]);
+  assert.equal(services[0].start_date, "2026-04-01");
+  assert.equal(services[0].expiration_date, "2026-07-01");
+  const contract = await query<any>("SELECT term_months FROM contracts WHERE transaction_code = ?", [transactionCode]);
+  assert.equal(contract[0].term_months, 3);
+
+  const updateRow = makeRow({ transactionCode, customerName, subscriberCodes: ["IMP-2", "IMP-3"] });
+  const updated = await importService.commit({ decisions: [{ row: updateRow, action: "update" }] }, "Admin Test");
+  assert.equal(updated.updated, 1);
+
+  services = await query<any>("SELECT * FROM services WHERE customer_id = ? ORDER BY service_code", [customerId]);
+  assert.deepEqual(services.map((s) => s.service_code), ["IMP-2", "IMP-3"]);
+  assert.equal(services[0].expiration_date, "2026-07-01");
 });

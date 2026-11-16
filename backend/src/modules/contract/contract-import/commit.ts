@@ -8,6 +8,7 @@ import {
   type ImportCustomer,
 } from "./classify.js";
 import type { ContractImportRow } from "./parse.js";
+import { syncServicesFromContract } from "../../service/contract-service-sync.js";
 
 export type ContractCommitAction = "create" | "update" | "skip";
 
@@ -52,8 +53,8 @@ async function insertContractFromRow(
       id, transaction_code, customer_name, subscriber_codes, total_value, channel,
       deployment_status, payment_status, document_status, has_revenue,
       am_staff, service_group, service_name, package_name,
-      tax_code, contract_number, signed_date, collected_amount, customer_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      tax_code, contract_number, signed_date, collected_amount, customer_id, term_months
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       row.transactionCode,
@@ -74,8 +75,11 @@ async function insertContractFromRow(
       row.signedDate || null,
       0,
       customer.id,
+      row.termMonths ?? null,
     ]
   );
+
+  await syncServicesFromContract(id, tx);
 
   return {
     id,
@@ -142,11 +146,16 @@ async function applyUpdate(
   }
   addIfNonEmpty("contract_number", row.contractNumber);
   addIfNonEmpty("signed_date", row.signedDate);
+  if (row.termMonths !== null) {
+    sets.push("term_months = ?");
+    params.push(row.termMonths);
+  }
 
   if (sets.length === 0) return;
   sets.push("updated_at = CURRENT_TIMESTAMP");
   params.push(target.id);
   await tx.run(`UPDATE contracts SET ${sets.join(", ")} WHERE id = ?`, params);
+  await syncServicesFromContract(target.id, tx);
 }
 
 /**

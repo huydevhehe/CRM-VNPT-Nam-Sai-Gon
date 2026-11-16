@@ -1,6 +1,7 @@
 import { query, run } from "../../database/db.js";
 import { CommissionService } from "../commission/commission.service.js";
 import { SERVICE_GROUPS, PAYMENT_METHODS } from "../../constants/org.js";
+import { syncServicesFromContract } from "../service/contract-service-sync.js";
 
 export interface ContractRow {
   id: string;
@@ -25,6 +26,7 @@ export interface ContractRow {
   tax_code: string | null;
   contract_number: string | null;
   signed_date: string | null;
+  term_months: number | null;
   collected_amount: number | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -53,6 +55,7 @@ export interface ContractRecordDto {
   taxCode: string | null;
   contractNumber: string | null;
   signedDate: string | null;
+  termMonths: number | null;
   collectedAmount: number;
 }
 
@@ -80,6 +83,7 @@ export interface CreateContractInput {
   taxCode?: string | null;
   contractNumber?: string | null;
   signedDate?: string | null;
+  termMonths?: number | null;
 }
 
 export interface UpdateContractInfoInput {
@@ -97,6 +101,7 @@ export interface UpdateContractInfoInput {
   taxCode?: string | null;
   contractNumber?: string | null;
   signedDate?: string | null;
+  termMonths?: number | null;
 }
 
 export interface ContractPaymentRow {
@@ -167,11 +172,23 @@ function toContractRecord(row: ContractRow): ContractRecordDto {
     taxCode: row.tax_code ?? null,
     contractNumber: row.contract_number ?? null,
     signedDate: row.signed_date ?? null,
+    termMonths: row.term_months ?? null,
     collectedAmount: Number(row.collected_amount ?? 0),
   };
 }
 
 const commissionService = new CommissionService();
+
+const TERM_MONTHS_MESSAGE = "Thời hạn phải là số tháng nguyên, từ 1 trở lên";
+
+function parseTermMonths(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) {
+    throw new Error(TERM_MONTHS_MESSAGE);
+  }
+  return n;
+}
 
 export const CUSTOMER_REQUIRED_MESSAGE =
   "Vui lòng chọn Khách hàng. Đơn hàng bắt buộc phải gắn với một khách hàng trong hệ thống";
@@ -264,6 +281,7 @@ export class ContractService {
     }
 
     const customer = await resolveRequiredCustomer(data.customerId, actor, true);
+    const termMonths = parseTermMonths(data.termMonths);
 
     if (typeof data.totalValue !== "number" || Number.isNaN(data.totalValue)) {
       throw new Error("Giá trị hợp đồng phải là một số hợp lệ");
@@ -343,8 +361,8 @@ export class ContractService {
         deployment_status, payment_status, document_status, has_revenue,
         lead_id, territory_id, referred_by_ctv_id,
         am_staff, service_group, service_name, package_name, payment_method,
-        customer_id, tax_code, contract_number, signed_date, collected_amount
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        customer_id, tax_code, contract_number, signed_date, collected_amount, term_months
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         data.transactionCode,
@@ -369,8 +387,11 @@ export class ContractService {
         data.contractNumber ?? null,
         data.signedDate ?? null,
         0,
+        termMonths,
       ]
     );
+
+    await syncServicesFromContract(id);
 
     const created = await query<ContractRow>("SELECT * FROM contracts WHERE id = ?", [id]);
     return toContractRecord(created[0]);
@@ -494,6 +515,9 @@ export class ContractService {
       }
     }
 
+    const nextTermMonths =
+      patch.termMonths !== undefined ? parseTermMonths(patch.termMonths) : current.term_months;
+
     let amStaff = patch.amStaff !== undefined ? patch.amStaff : current.am_staff;
     if (amStaff) {
       const staffRows = await query<{ id: string }>("SELECT id FROM staff WHERE name = ?", [amStaff]);
@@ -545,6 +569,7 @@ export class ContractService {
         tax_code = ?,
         contract_number = ?,
         signed_date = ?,
+        term_months = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?`,
       [
@@ -561,9 +586,12 @@ export class ContractService {
         taxCode,
         nextContractNumber,
         nextSignedDate,
+        nextTermMonths,
         id,
       ]
     );
+
+    await syncServicesFromContract(id);
 
     if (patch.totalValue !== undefined) {
       await commissionService.recalculateForContract(id, nextTotalValue);

@@ -79,6 +79,9 @@ export interface CustomerRecord {
   billingPhone?: string;
   billingEmail?: string;
   note?: string;
+  referredByCtvId?: string;
+  referredByCtvName?: string;
+  referredByCtvCode?: string;
 }
 
 // 4. Service & Alert
@@ -96,6 +99,8 @@ export interface ServiceRecord {
   serviceGroup?: string | null;
   packageName?: string | null;
   paymentType?: string | null;
+  contractId?: string | null;
+  transactionCode?: string | null;
 }
 
 // 5. Lead
@@ -139,6 +144,7 @@ export interface ContractRecord {
   taxCode?: string | null;
   contractNumber?: string | null;
   signedDate?: string | null;
+  termMonths?: number | null;
   collectedAmount?: number;
 }
 

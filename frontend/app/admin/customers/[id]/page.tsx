@@ -3,13 +3,30 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Building2, User, Pencil, AlertTriangle } from "lucide-react";
+import {
+  ArrowLeft,
+  Building2,
+  User,
+  Pencil,
+  AlertTriangle,
+  Layers,
+  CalendarClock,
+  ClipboardList,
+  CheckCircle2,
+  Wallet,
+  Banknote,
+  Hourglass,
+  type LucideIcon,
+} from "lucide-react";
 import StatusBadge from "@/components/admin/shared/StatusBadge";
 import {
   CustomerRecord,
   TerritoryRecord,
+  ServiceRecord,
 } from "@/lib/crm/types/crm.types";
-import { getCustomer, updateCustomer } from "@/lib/api/customers.api";
+import { getCustomer, updateCustomer, getCtvOptions, CtvOption } from "@/lib/api/customers.api";
+import { getStaff } from "@/lib/api/staff.api";
+import { computeCustomerStats, formatVnd } from "@/lib/customer-stats";
 import { getTerritories } from "@/lib/api/territories.api";
 import { getCustomerTeams, CustomerTeamRecord } from "@/lib/api/customer-teams.api";
 import { getContracts } from "@/lib/api/contracts.api";
@@ -19,6 +36,7 @@ import { useAuth } from "@/lib/auth/auth-context";
 import CustomerForm, {
   CustomerFormValues,
   customerToFormValues,
+  ctvOptionsWithCurrent,
 } from "@/components/admin/customer/CustomerForm";
 import CustomerDocuments from "@/components/admin/customer/CustomerDocuments";
 import CustomerServices from "@/components/admin/customer/CustomerServices";
@@ -35,7 +53,10 @@ export default function CustomerDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [territories, setTerritories] = useState<TerritoryRecord[]>([]);
   const [teams, setTeams] = useState<CustomerTeamRecord[]>([]);
-  const [contracts, setContracts] = useState<ContractRecord[]>([]);
+  const [contracts, setContracts] = useState<ContractRecord[] | null>(null);
+  const [services, setServices] = useState<ServiceRecord[] | null>(null);
+  const [staffNames, setStaffNames] = useState<string[]>([]);
+  const [ctvOptions, setCtvOptions] = useState<CtvOption[]>([]);
 
   const [showEdit, setShowEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -66,6 +87,18 @@ export default function CustomerDetailPage() {
       .catch(() => {});
     getContracts()
       .then((c) => isMounted && setContracts(c))
+      .catch(() => isMounted && setContracts([]));
+    getStaff()
+      .then((staff) => {
+        if (isMounted) {
+          setStaffNames(
+            Array.from(new Set(staff.filter((s) => s.status === "Đang hoạt động").map((s) => s.name)))
+          );
+        }
+      })
+      .catch(() => {});
+    getCtvOptions()
+      .then((options) => isMounted && setCtvOptions(options))
       .catch(() => {});
 
     return () => {
@@ -89,6 +122,9 @@ export default function CustomerDetailPage() {
         customerCode: values.customerCode || undefined,
         status: values.status || undefined,
         teamId: values.teamId || undefined,
+        amStaff: values.amStaff || undefined,
+        amCaringStaff: values.amCaringStaff || undefined,
+        referredByCtvId: values.referredByCtvId || null,
         salesChannel: values.salesChannel || undefined,
         territoryId: values.territoryId || undefined,
         phone: values.phone || undefined,
@@ -130,7 +166,10 @@ export default function CustomerDetailPage() {
     );
   }
 
-  const customerContracts = contracts.filter((c) => c.customerId === customerId);
+  const customerContracts = (contracts ?? []).filter((c) => c.customerId === customerId);
+  const stats =
+    services && contracts ? computeCustomerStats(services, customerContracts) : null;
+  const statValue = (render: (s: NonNullable<typeof stats>) => string) => (stats ? render(stats) : "—");
 
   return (
     <div className="space-y-6">
@@ -183,6 +222,56 @@ export default function CustomerDetailPage() {
         )}
       </div>
 
+      {/* Thống kê nhanh */}
+      <section aria-label="Thống kê khách hàng" className="space-y-3">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <StatCard
+            icon={Layers}
+            label="Dịch vụ đang dùng"
+            value={statValue((s) => String(s.activeServices))}
+            hint="Còn hạn"
+          />
+          <StatCard
+            icon={CalendarClock}
+            label="Sắp hết hạn"
+            value={statValue((s) => String(s.expiringServices))}
+            hint="Trong 30 ngày tới"
+            tone={stats && stats.expiringServices > 0 ? "amber" : "default"}
+          />
+          <StatCard
+            icon={ClipboardList}
+            label="Tổng số đơn hàng"
+            value={statValue((s) => String(s.totalOrders))}
+          />
+          <StatCard
+            icon={CheckCircle2}
+            label="Đã triển khai hoàn tất"
+            value={statValue((s) => String(s.completedOrders))}
+            hint="Số đơn"
+          />
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <StatCard
+            icon={Wallet}
+            label="Tổng giá trị đơn hàng"
+            value={statValue((s) => formatVnd(s.totalValue))}
+          />
+          <StatCard
+            icon={Banknote}
+            label="Đã thu"
+            value={statValue((s) => formatVnd(s.collected))}
+            tone="green"
+          />
+          <StatCard
+            icon={Hourglass}
+            label="Còn phải thu"
+            value={statValue((s) => formatVnd(s.outstanding))}
+            hint="Tổng giá trị − đã thu"
+            tone={stats && stats.outstanding > 0 ? "rose" : "default"}
+          />
+        </div>
+      </section>
+
       {/* Thông tin chung */}
       <section className="rounded-2xl border border-slate-200 bg-white p-5">
         <h3 className="mb-3 text-sm font-bold text-slate-900">Thông tin chung</h3>
@@ -193,6 +282,17 @@ export default function CustomerDetailPage() {
           <InfoItem label="Kênh bán" value={customer.salesChannel} />
           <InfoItem label="AM phụ trách (bán hàng)" value={customer.amStaff} />
           <InfoItem label="AM chăm sóc (CSKH)" value={customer.amCaringStaff} />
+          <InfoItem label="Team" value={customer.teamName} />
+          <InfoItem
+            label="CTV giới thiệu"
+            value={
+              customer.referredByCtvName
+                ? `${customer.referredByCtvName}${
+                    customer.referredByCtvCode ? ` (${customer.referredByCtvCode})` : ""
+                  }`
+                : undefined
+            }
+          />
           <InfoItem label="Địa chỉ" value={customer.address} className="sm:col-span-3" />
           <InfoItem label="Ghi chú" value={customer.note} className="sm:col-span-3" />
         </div>
@@ -227,7 +327,11 @@ export default function CustomerDetailPage() {
       {/* Dịch vụ đang dùng */}
       <section className="rounded-2xl border border-slate-200 bg-white p-5">
         <h3 className="mb-3 text-sm font-bold text-slate-900">Dịch vụ đang dùng</h3>
-        <CustomerServices customerId={customerId} canManage={Boolean(canEdit)} />
+        <CustomerServices
+          customerId={customerId}
+          canManage={Boolean(canEdit)}
+          onServicesChange={setServices}
+        />
       </section>
 
       {/* Đơn hàng của khách */}
@@ -271,6 +375,10 @@ export default function CustomerDetailPage() {
           initialValues={customerToFormValues(customer)}
           territories={territories}
           teams={teams}
+          staffNames={staffNames}
+          ctvOptions={ctvOptionsWithCurrent(ctvOptions, customer)}
+          amStaffLocked={!isAdmin}
+          amCaringLocked={!isAdmin && customer.amStaff !== user?.name}
           submitting={submitting}
           error={editError}
           onSubmit={handleEditSubmit}
@@ -279,6 +387,40 @@ export default function CustomerDetailPage() {
           canDeleteDocuments={isAdmin}
         />
       )}
+    </div>
+  );
+}
+
+const STAT_TONE: Record<string, string> = {
+  default: "bg-blue-50 text-vnpt",
+  amber: "bg-amber-50 text-amber-600",
+  green: "bg-emerald-50 text-emerald-600",
+  rose: "bg-rose-50 text-rose-600",
+};
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  hint,
+  tone = "default",
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  hint?: string;
+  tone?: "default" | "amber" | "green" | "rose";
+}) {
+  return (
+    <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${STAT_TONE[tone]}`}>
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="min-w-0">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+        <div className="mt-0.5 truncate text-base font-bold text-slate-900">{value}</div>
+        {hint && <div className="text-[10px] text-slate-400">{hint}</div>}
+      </div>
     </div>
   );
 }

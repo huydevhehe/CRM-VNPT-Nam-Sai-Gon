@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { initDatabase } = await import("../../database/db.js");
+const { initDatabase, run } = await import("../../database/db.js");
 const { CustomerService, CustomerServiceError } = await import("./customer.service.js");
 
 await initDatabase();
@@ -84,12 +84,12 @@ test("update by unrelated AM returns 403", async () => {
   );
 });
 
-test("update cannot change am_staff", async () => {
+test("update by Admin rejects an unknown am_staff with 400", async () => {
   const service = new CustomerService();
   const suffix = Date.now();
 
   const result = await service.create({
-    name: `Công ty Không Đổi AM ${suffix}`,
+    name: `Công ty Đổi AM Sai ${suffix}`,
     type: "Doanh nghiệp",
     customerGroup: "Tự phát triển",
   });
@@ -101,6 +101,299 @@ test("update cannot change am_staff", async () => {
         { amStaff: "Ai đó khác" },
         { name: "Admin", role: "Admin" }
       );
+    },
+    (err: any) => {
+      assert.ok(err instanceof CustomerServiceError);
+      assert.equal(err.status, 400);
+      return true;
+    }
+  );
+});
+
+test("update by Admin can change am_staff and am_caring_staff to active staff", async () => {
+  const service = new CustomerService();
+  const suffix = Date.now();
+
+  const result = await service.create({
+    name: `Công ty Admin Đổi AM ${suffix}`,
+    type: "Doanh nghiệp",
+    customerGroup: "Tự phát triển",
+    amStaff: "Nguyễn Thị Tình",
+    amCaringStaff: "Nguyễn Thị Tình",
+  });
+
+  const updated = await service.update(
+    result.customer.id,
+    { amStaff: "Phạm Thanh Hà", amCaringStaff: "Nguyễn Thị Huyền Trang" },
+    { name: "Admin", role: "Admin" }
+  );
+
+  assert.equal(updated.am_staff, "Phạm Thanh Hà");
+  assert.equal(updated.am_caring_staff, "Nguyễn Thị Huyền Trang");
+});
+
+test("update by AM cannot change am_staff (403) but may resubmit the same value", async () => {
+  const service = new CustomerService();
+  const suffix = Date.now();
+
+  const result = await service.create({
+    name: `Công ty AM Không Đổi AM ${suffix}`,
+    type: "Doanh nghiệp",
+    customerGroup: "Tự phát triển",
+    amStaff: "Nguyễn Thị Tình",
+    amCaringStaff: "Nguyễn Thị Tình",
+  });
+  const operator = { name: "Nguyễn Thị Tình", role: "AM" };
+
+  await assert.rejects(
+    async () => {
+      await service.update(result.customer.id, { amStaff: "Phạm Thanh Hà" }, operator);
+    },
+    (err: any) => {
+      assert.ok(err instanceof CustomerServiceError);
+      assert.equal(err.status, 403);
+      return true;
+    }
+  );
+
+  const same = await service.update(
+    result.customer.id,
+    { amStaff: "Nguyễn Thị Tình", note: "Giữ nguyên AM" },
+    operator
+  );
+  assert.equal(same.am_staff, "Nguyễn Thị Tình");
+  assert.equal(same.note, "Giữ nguyên AM");
+});
+
+test("update by AM: only the sales AM of the customer may change am_caring_staff", async () => {
+  const service = new CustomerService();
+  const suffix = Date.now();
+
+  const result = await service.create({
+    name: `Công ty AM Đổi CSKH ${suffix}`,
+    type: "Doanh nghiệp",
+    customerGroup: "Tự phát triển",
+    amStaff: "Nguyễn Thị Tình",
+    amCaringStaff: "Phạm Thanh Hà",
+  });
+
+  await assert.rejects(
+    async () => {
+      await service.update(
+        result.customer.id,
+        { amCaringStaff: "Nguyễn Thị Huyền Trang" },
+        { name: "Phạm Thanh Hà", role: "AM" }
+      );
+    },
+    (err: any) => {
+      assert.ok(err instanceof CustomerServiceError);
+      assert.equal(err.status, 403);
+      return true;
+    }
+  );
+
+  const updated = await service.update(
+    result.customer.id,
+    { amCaringStaff: "Nguyễn Thị Huyền Trang" },
+    { name: "Nguyễn Thị Tình", role: "AM" }
+  );
+  assert.equal(updated.am_caring_staff, "Nguyễn Thị Huyền Trang");
+
+  await assert.rejects(
+    async () => {
+      await service.update(
+        result.customer.id,
+        { amCaringStaff: "Nhân Viên Không Tồn Tại XYZ" },
+        { name: "Nguyễn Thị Tình", role: "AM" }
+      );
+    },
+    (err: any) => {
+      assert.ok(err instanceof CustomerServiceError);
+      assert.equal(err.status, 400);
+      return true;
+    }
+  );
+});
+
+test("create by AM forces am_staff to the actor and defaults am_caring_staff to the actor", async () => {
+  const service = new CustomerService();
+  const suffix = Date.now();
+  const operator = { name: "Nguyễn Thị Tình", role: "AM" };
+
+  const own = await service.create(
+    { name: `Công ty AM Tạo ${suffix}`, type: "Doanh nghiệp", customerGroup: "Tự phát triển" },
+    operator
+  );
+  assert.equal(own.customer.am_staff, "Nguyễn Thị Tình");
+  assert.equal(own.customer.am_caring_staff, "Nguyễn Thị Tình");
+
+  const otherCaring = await service.create(
+    {
+      name: `Công ty AM Tạo CSKH ${suffix}`,
+      type: "Doanh nghiệp",
+      customerGroup: "Tự phát triển",
+      amStaff: "Nguyễn Thị Tình",
+      amCaringStaff: "Phạm Thanh Hà",
+    },
+    operator
+  );
+  assert.equal(otherCaring.customer.am_staff, "Nguyễn Thị Tình");
+  assert.equal(otherCaring.customer.am_caring_staff, "Phạm Thanh Hà");
+
+  await assert.rejects(
+    async () => {
+      await service.create(
+        {
+          name: `Công ty AM Tạo Hộ ${suffix}`,
+          type: "Doanh nghiệp",
+          customerGroup: "Tự phát triển",
+          amStaff: "Phạm Thanh Hà",
+        },
+        operator
+      );
+    },
+    (err: any) => {
+      assert.ok(err instanceof CustomerServiceError);
+      assert.equal(err.status, 403);
+      return true;
+    }
+  );
+
+  await assert.rejects(
+    async () => {
+      await service.create(
+        {
+          name: `Công ty AM CSKH Sai ${suffix}`,
+          type: "Doanh nghiệp",
+          customerGroup: "Tự phát triển",
+          amCaringStaff: "Nhân Viên Không Tồn Tại XYZ",
+        },
+        operator
+      );
+    },
+    (err: any) => {
+      assert.ok(err instanceof CustomerServiceError);
+      assert.equal(err.status, 400);
+      return true;
+    }
+  );
+});
+
+test("create by Admin validates chosen AM staff", async () => {
+  const service = new CustomerService();
+  const suffix = Date.now();
+  const admin = { name: "Admin", role: "Admin" };
+
+  const ok = await service.create(
+    {
+      name: `Công ty Admin Chọn AM ${suffix}`,
+      type: "Doanh nghiệp",
+      customerGroup: "Tự phát triển",
+      amStaff: "Phạm Thanh Hà",
+      amCaringStaff: "Nguyễn Thị Huyền Trang",
+    },
+    admin
+  );
+  assert.equal(ok.customer.am_staff, "Phạm Thanh Hà");
+  assert.equal(ok.customer.am_caring_staff, "Nguyễn Thị Huyền Trang");
+
+  await assert.rejects(
+    async () => {
+      await service.create(
+        {
+          name: `Công ty Admin AM Sai ${suffix}`,
+          type: "Doanh nghiệp",
+          customerGroup: "Tự phát triển",
+          amStaff: "Nhân Viên Không Tồn Tại XYZ",
+        },
+        admin
+      );
+    },
+    (err: any) => {
+      assert.ok(err instanceof CustomerServiceError);
+      assert.equal(err.status, 400);
+      return true;
+    }
+  );
+});
+
+test("create without services leaves services empty instead of defaulting", async () => {
+  const service = new CustomerService();
+  const suffix = Date.now();
+
+  const result = await service.create({
+    name: `Công ty Không Dịch Vụ ${suffix}`,
+    type: "Doanh nghiệp",
+    customerGroup: "Tự phát triển",
+  });
+
+  assert.equal(result.customer.services, null);
+});
+
+test("referred CTV: create/update validate the CTV and the DTO carries its name and code", async () => {
+  const service = new CustomerService();
+  const suffix = Date.now();
+  const ctvId = `CTV-CUS-${suffix}`;
+  const pendingCtvId = `CTV-CUS-PEND-${suffix}`;
+
+  await run(
+    "INSERT INTO users (id, username, name, role, status, referral_code) VALUES (?, ?, ?, ?, ?, ?)",
+    [ctvId, `ctv_cus_${suffix}`, `CTV Giới Thiệu ${suffix}`, "CTV", "Đang hoạt động", `REF${suffix}`]
+  );
+  await run(
+    "INSERT INTO users (id, username, name, role, status, referral_code) VALUES (?, ?, ?, ?, ?, ?)",
+    [pendingCtvId, `ctv_cus_p_${suffix}`, `CTV Chờ Duyệt ${suffix}`, "CTV", "Chờ duyệt", `REFP${suffix}`]
+  );
+
+  const created = await service.create({
+    name: `Công ty Có CTV ${suffix}`,
+    type: "Doanh nghiệp",
+    customerGroup: "Tự phát triển",
+    referredByCtvId: ctvId,
+  });
+  assert.equal(created.customer.referred_by_ctv_id, ctvId);
+  assert.equal(created.customer.referred_by_ctv_name, `CTV Giới Thiệu ${suffix}`);
+  assert.equal(created.customer.referred_by_ctv_code, `REF${suffix}`);
+
+  const options = await service.listCtvOptions();
+  assert.ok(options.some((o) => o.id === ctvId && o.code === `REF${suffix}`));
+  assert.ok(!options.some((o) => o.id === pendingCtvId));
+
+  for (const badId of ["CTV-KHONG-TON-TAI", pendingCtvId, "KH-NOT-A-CTV"]) {
+    await assert.rejects(
+      async () => {
+        await service.create({
+          name: `Công ty CTV Sai ${suffix}`,
+          type: "Doanh nghiệp",
+          customerGroup: "Tự phát triển",
+          referredByCtvId: badId,
+        });
+      },
+      (err: any) => {
+        assert.ok(err instanceof CustomerServiceError);
+        assert.equal(err.status, 400);
+        return true;
+      }
+    );
+  }
+
+  const plain = await service.create({
+    name: `Công ty Gắn CTV Sau ${suffix}`,
+    type: "Doanh nghiệp",
+    customerGroup: "Tự phát triển",
+  });
+  const admin = { name: "Admin", role: "Admin" };
+  const attached = await service.update(plain.customer.id, { referredByCtvId: ctvId }, admin);
+  assert.equal(attached.referred_by_ctv_id, ctvId);
+  assert.equal(attached.referred_by_ctv_name, `CTV Giới Thiệu ${suffix}`);
+
+  const cleared = await service.update(plain.customer.id, { referredByCtvId: "" }, admin);
+  assert.equal(cleared.referred_by_ctv_id, null);
+  assert.equal(cleared.referred_by_ctv_name, null);
+
+  await assert.rejects(
+    async () => {
+      await service.update(plain.customer.id, { referredByCtvId: "CTV-KHONG-TON-TAI" }, admin);
     },
     (err: any) => {
       assert.ok(err instanceof CustomerServiceError);

@@ -87,3 +87,20 @@ test("readWorkbookRows reads a plain contract sheet", () => {
   assert.equal(rows[0].customerName, "Công ty XYZ");
   assert.equal(rows[0].totalValue, 2000000);
 });
+
+test("parses the term months column by its Vietnamese aliases", () => {
+  const base = { "Mã giao dịch": "GD-T", "Tên khách hàng": "Khách T" };
+  const { rows } = parseContractSheet([
+    { ...base, "Thời hạn (tháng)": 24 },
+    { ...base, "Mã giao dịch": "GD-T2", "Thời hạn (tháng)": "" },
+    { ...base, "Mã giao dịch": "GD-T3", "Thời hạn (tháng)": "abc" },
+  ]);
+  assert.equal(rows[0].termMonths, 24);
+  assert.equal(rows[1].termMonths, null);
+  assert.equal(rows[2].termMonths, null);
+
+  const alias = parseContractSheet([{ ...base, "thoi han thang": "12" }]);
+  assert.equal(alias.rows[0].termMonths, 12);
+  const alias2 = parseContractSheet([{ ...base, "Thời hạn": "6" }]);
+  assert.equal(alias2.rows[0].termMonths, 6);
+});

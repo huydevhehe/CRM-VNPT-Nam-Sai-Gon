@@ -89,6 +89,7 @@ interface OrderFormState {
   customerId: string;
   contractNumber: string;
   signedDate: string;
+  termMonths: string;
 }
 
 const EMPTY_FORM: OrderFormState = {
@@ -106,6 +107,7 @@ const EMPTY_FORM: OrderFormState = {
   customerId: "",
   contractNumber: "",
   signedDate: "",
+  termMonths: "",
 };
 
 export default function ContractsPage() {
@@ -461,6 +463,7 @@ export default function ContractsPage() {
       customerId: order.customerId || "",
       contractNumber: order.contractNumber || "",
       signedDate: order.signedDate || "",
+      termMonths: order.termMonths ? String(order.termMonths) : "",
     });
     setFormError(null);
     setCustomerQuery("");
@@ -502,6 +505,7 @@ export default function ContractsPage() {
           customerId: form.customerId,
           contractNumber: form.contractNumber || null,
           signedDate: form.signedDate || null,
+          termMonths: form.termMonths ? Number(form.termMonths) : null,
         });
 
         setData((prev) => prev.map((row) => (row.id === editingId ? updated : row)));
@@ -522,6 +526,7 @@ export default function ContractsPage() {
           customerId: form.customerId,
           contractNumber: form.contractNumber || null,
           signedDate: form.signedDate || null,
+          termMonths: form.termMonths ? Number(form.termMonths) : null,
         });
 
         setData((prev) => [created, ...prev]);
@@ -623,6 +628,9 @@ export default function ContractsPage() {
           {item.serviceName && (
             <span className="text-[11px] text-slate-500">{item.serviceName}</span>
           )}
+          {item.termMonths ? (
+            <span className="block text-[11px] text-slate-400">Thời hạn {item.termMonths} tháng</span>
+          ) : null}
         </div>
       ),
     },
@@ -1159,7 +1167,7 @@ export default function ContractsPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-600">
                     Số hợp đồng
@@ -1179,6 +1187,20 @@ export default function ContractsPage() {
                     type="date"
                     value={form.signedDate}
                     onChange={(e) => setForm({ ...form, signedDate: e.target.value })}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-slate-600">
+                    Thời hạn (tháng)
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={form.termMonths}
+                    onChange={(e) => setForm({ ...form, termMonths: e.target.value })}
+                    placeholder="Mặc định 12 tháng"
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
                   />
                 </div>

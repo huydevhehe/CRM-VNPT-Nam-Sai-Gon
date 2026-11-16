@@ -9,6 +9,12 @@ import {
   updateService,
   deleteService,
 } from "@/lib/api/services.api";
+import { isExpiringSoon } from "@/lib/customer-stats";
+
+function formatIsoDateVn(value: string | null | undefined): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value ?? "");
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : (value ?? "—");
+}
 
 const SERVICE_GROUPS = ["BRCĐ", "CNTT", "Di động"] as const;
 const PAYMENT_METHODS = ["Trả trước", "Trả hàng tháng"] as const;
@@ -33,17 +39,19 @@ const EMPTY_SERVICE_FORM: ServiceFormState = {
   expirationDate: "",
 };
 
-function isExpiringSoon(expirationDate: string): boolean {
-  const days = Math.ceil((new Date(expirationDate).getTime() - Date.now()) / 86400000);
-  return days >= 0 && days <= 30;
+function linkedTitle(service: ServiceRecord): string {
+  const code = service.transactionCode ? ` ${service.transactionCode}` : "";
+  return `Dịch vụ này sinh từ đơn hàng${code}, nên sửa/xóa ở đơn hàng`;
 }
 
 interface CustomerServicesProps {
   customerId: string;
   canManage?: boolean;
+  /** Gọi mỗi khi danh sách dịch vụ tải xong hoặc thay đổi để trang cha cập nhật thống kê. */
+  onServicesChange?: (services: ServiceRecord[]) => void;
 }
 
-export default function CustomerServices({ customerId, canManage }: CustomerServicesProps) {
+export default function CustomerServices({ customerId, canManage, onServicesChange }: CustomerServicesProps) {
   const [services, setServices] = useState<ServiceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +61,11 @@ export default function CustomerServices({ customerId, canManage }: CustomerServ
   const [form, setForm] = useState<ServiceFormState>(EMPTY_SERVICE_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!loading) onServicesChange?.(services);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [services, loading]);
 
   async function reload() {
     setLoading(true);
@@ -168,6 +181,7 @@ export default function CustomerServices({ customerId, canManage }: CustomerServ
               <th className="px-3 py-2">Tên dịch vụ</th>
               <th className="px-3 py-2">Gói</th>
               <th className="px-3 py-2">Mã thuê bao</th>
+              <th className="px-3 py-2">Đơn hàng</th>
               <th className="px-3 py-2">Hình thức</th>
               <th className="px-3 py-2">Bắt đầu</th>
               <th className="px-3 py-2">Kết thúc</th>
@@ -177,7 +191,7 @@ export default function CustomerServices({ customerId, canManage }: CustomerServ
           <tbody className="divide-y divide-slate-100">
             {services.length === 0 ? (
               <tr>
-                <td colSpan={canManage ? 8 : 7} className="px-3 py-6 text-center text-slate-400">
+                <td colSpan={canManage ? 9 : 8} className="px-3 py-6 text-center text-slate-400">
                   Chưa có dịch vụ nào
                 </td>
               </tr>
@@ -191,25 +205,28 @@ export default function CustomerServices({ customerId, canManage }: CustomerServ
                   <td className="px-3 py-2 font-semibold text-slate-800">{service.serviceName}</td>
                   <td className="px-3 py-2">{service.packageName || "—"}</td>
                   <td className="px-3 py-2 font-mono">{service.serviceCode}</td>
+                  <td className="px-3 py-2 font-mono">{service.transactionCode || "—"}</td>
                   <td className="px-3 py-2">{service.paymentType || "—"}</td>
-                  <td className="px-3 py-2">{service.startDate}</td>
-                  <td className="px-3 py-2">{service.expirationDate}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{formatIsoDateVn(service.startDate)}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{formatIsoDateVn(service.expirationDate)}</td>
                   {canManage && (
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
                           onClick={() => openEdit(service)}
-                          className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-vnpt"
-                          title="Sửa"
+                          disabled={Boolean(service.contractId)}
+                          className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-vnpt disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                          title={service.contractId ? linkedTitle(service) : "Sửa"}
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
                         <button
                           type="button"
                           onClick={() => handleDelete(service)}
-                          className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-rose-600"
-                          title="Xóa"
+                          disabled={Boolean(service.contractId)}
+                          className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                          title={service.contractId ? linkedTitle(service) : "Xóa"}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
