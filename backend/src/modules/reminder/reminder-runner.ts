@@ -13,6 +13,8 @@ export interface DueItem {
   customerName: string;
   subscriberCode: string;
   staffName: string | null;
+  /** Nhóm dịch vụ (BRCĐ, CNTT, Di động) để chọn mẫu email; null thì dùng mẫu chung. */
+  serviceGroup?: string | null;
   recipients: string[];
 }
 
@@ -47,6 +49,7 @@ interface ServiceRow {
   service_code: string;
   expiration_date: string;
   staff_name: string;
+  service_group: string | null;
 }
 
 interface ReminderItemRow {
@@ -143,7 +146,7 @@ export const ReminderRunner = {
 
     // Nguồn "service"
     const services = await query<ServiceRow>(
-      "SELECT id, customer_id, customer_name, service_name, service_code, expiration_date, staff_name FROM services"
+      "SELECT id, customer_id, customer_name, service_name, service_code, expiration_date, staff_name, service_group FROM services"
     );
     for (const svc of services) {
       const daysBefore = findDueDays(svc.expiration_date, today, settings.daysBefore);
@@ -169,6 +172,7 @@ export const ReminderRunner = {
         customerName: svc.customer_name,
         subscriberCode: svc.service_code,
         staffName: svc.staff_name || null,
+        serviceGroup: svc.service_group?.trim() || null,
         recipients: Array.from(new Set(recipients)),
       });
     }
@@ -231,7 +235,7 @@ export const ReminderRunner = {
     const send: SendFn = opts?.send ?? ((msg) => sendMail(msg));
 
     const dueItems = await this.collectDue(today);
-    const template = await ReminderTemplateService.getEffective();
+    const templates = await ReminderTemplateService.getEffectiveAll();
     const result: RunResult = { sent: 0, failed: 0, skipped: 0 };
 
     for (const item of dueItems) {
@@ -251,6 +255,7 @@ export const ReminderRunner = {
         continue;
       }
 
+      const template = (item.serviceGroup && templates.byGroup.get(item.serviceGroup)) || templates.general;
       const { subject, text, html } = renderEmail(template, item);
       try {
         const sendResult = await send({ to: item.recipients, subject, text, html });

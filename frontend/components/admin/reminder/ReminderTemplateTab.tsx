@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Mail, RotateCcw, Send } from "lucide-react";
 import {
+  REMINDER_TEMPLATE_GROUPS,
   getReminderTemplate,
   previewReminderTemplate,
   resetReminderTemplate,
   saveReminderTemplate,
   sendReminderTemplateTest,
   type ReminderTemplate,
+  type ReminderTemplateGroup,
   type ReminderTemplatePreview,
 } from "@/lib/api/reminders.api";
 
@@ -19,6 +21,7 @@ const SUBJECT_MAX = 200;
 const BODY_MAX = 5000;
 
 export default function ReminderTemplateTab() {
+  const [group, setGroup] = useState<ReminderTemplateGroup | null>(null);
   const [template, setTemplate] = useState<ReminderTemplate | null>(null);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
@@ -44,23 +47,32 @@ export default function ReminderTemplateTab() {
   }
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
-        applyTemplate(await getReminderTemplate());
+        const data = await getReminderTemplate(group);
+        if (cancelled) return;
+        applyTemplate(data);
+        setLoadError(null);
       } catch (err) {
+        if (cancelled) return;
+        setTemplate(null);
         setLoadError(err instanceof Error ? err.message : "Không tải được mẫu email.");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [group]);
 
   useEffect(() => {
     if (!template) return;
     const seq = ++previewSeq.current;
     const timer = setTimeout(async () => {
       try {
-        const result = await previewReminderTemplate({ subject, body });
+        const result = await previewReminderTemplate({ subject, body }, group);
         if (seq !== previewSeq.current) return;
         setPreview(result);
         setPreviewError(null);
@@ -71,7 +83,19 @@ export default function ReminderTemplateTab() {
       }
     }, 350);
     return () => clearTimeout(timer);
-  }, [subject, body, template]);
+  }, [subject, body, template, group]);
+
+  function selectGroup(next: ReminderTemplateGroup | null) {
+    if (next === group) return;
+    if (template && (subject !== template.subject || body !== template.body)) {
+      if (!window.confirm("Nội dung đang soạn chưa lưu sẽ bị bỏ. Chuyển sang mẫu khác?")) return;
+    }
+    setNotice(null);
+    setTestNotice(null);
+    setPreview(null);
+    setLoading(true);
+    setGroup(next);
+  }
 
   function insertVariable(key: string) {
     const token = `{${key}}`;
@@ -94,8 +118,8 @@ export default function ReminderTemplateTab() {
     setSaving(true);
     setNotice(null);
     try {
-      applyTemplate(await saveReminderTemplate({ subject, body }));
-      setNotice({ ok: true, text: "Đã lưu mẫu email nhắc hết hạn." });
+      applyTemplate(await saveReminderTemplate({ subject, body }, group));
+      setNotice({ ok: true, text: group ? `Đã lưu mẫu riêng cho nhóm ${group}.` : "Đã lưu mẫu email nhắc hết hạn." });
     } catch (err) {
       setNotice({ ok: false, text: err instanceof Error ? err.message : "Lưu thất bại." });
     } finally {
@@ -104,12 +128,15 @@ export default function ReminderTemplateTab() {
   }
 
   async function handleReset() {
-    if (!window.confirm("Khôi phục mẫu email về mặc định? Nội dung đang dùng sẽ bị thay thế.")) return;
+    const confirmText = group
+      ? `Xoá mẫu riêng của nhóm ${group} và dùng lại mẫu chung? Nội dung đang dùng sẽ bị thay thế.`
+      : "Khôi phục mẫu email về mặc định? Nội dung đang dùng sẽ bị thay thế.";
+    if (!window.confirm(confirmText)) return;
     setSaving(true);
     setNotice(null);
     try {
-      applyTemplate(await resetReminderTemplate());
-      setNotice({ ok: true, text: "Đã khôi phục mẫu mặc định." });
+      applyTemplate(await resetReminderTemplate(group));
+      setNotice({ ok: true, text: group ? "Đã dùng lại mẫu chung." : "Đã khôi phục mẫu mặc định." });
     } catch (err) {
       setNotice({ ok: false, text: err instanceof Error ? err.message : "Khôi phục thất bại." });
     } finally {
@@ -121,7 +148,7 @@ export default function ReminderTemplateTab() {
     setTesting(true);
     setTestNotice(null);
     try {
-      await sendReminderTemplateTest(testTo.trim(), { subject, body });
+      await sendReminderTemplateTest(testTo.trim(), { subject, body }, group);
       setTestNotice({ ok: true, text: `Đã gửi thử tới ${testTo.trim()}.` });
     } catch (err) {
       setTestNotice({ ok: false, text: err instanceof Error ? err.message : "Gửi thử thất bại." });
@@ -130,17 +157,43 @@ export default function ReminderTemplateTab() {
     }
   }
 
+  const groupSelector = (
+    <div role="group" aria-label="Chọn mẫu theo nhóm dịch vụ" className="flex flex-wrap items-center gap-2">
+      {[null, ...REMINDER_TEMPLATE_GROUPS].map((g) => (
+        <button
+          key={g ?? "chung"}
+          type="button"
+          aria-pressed={group === g}
+          onClick={() => selectGroup(g)}
+          className={`rounded-full border px-4 py-1.5 text-xs font-semibold transition ${
+            group === g
+              ? "border-vnpt bg-vnpt text-white"
+              : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          {g ?? "Mẫu chung"}
+        </button>
+      ))}
+    </div>
+  );
+
   if (loading) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center text-sm text-slate-500">
-        Đang tải...
+      <div className="space-y-4">
+        {groupSelector}
+        <div className="rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center text-sm text-slate-500">
+          Đang tải...
+        </div>
       </div>
     );
   }
   if (!template) {
     return (
-      <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-        {loadError || "Không tải được mẫu email."}
+      <div className="space-y-4">
+        {groupSelector}
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {loadError || "Không tải được mẫu email."}
+        </div>
       </div>
     );
   }
@@ -148,20 +201,26 @@ export default function ReminderTemplateTab() {
   const dirty = subject !== template.subject || body !== template.body;
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+    <div className="space-y-4">
+      {groupSelector}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <div className="rounded-2xl border border-slate-200 bg-white p-6">
         <div className="mb-4 flex items-center gap-2">
           <Mail className="h-4.5 w-4.5 text-vnpt" />
-          <h2 className="text-sm font-bold text-slate-900">Mẫu email nhắc hết hạn</h2>
+          <h2 className="text-sm font-bold text-slate-900">
+            {group ? `Mẫu email nhắc hết hạn - nhóm ${group}` : "Mẫu email nhắc hết hạn"}
+          </h2>
           {template.isDefault && (
             <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-500">
-              Đang dùng mặc định
+              {group ? "Đang dùng mẫu chung" : "Đang dùng mặc định"}
             </span>
           )}
         </div>
         <p className="mb-4 text-xs text-slate-500">
-          Một mẫu chung cho mọi email nhắc hết hạn (dịch vụ và file Excel). Nội dung là văn bản thuần,
-          xuống dòng được giữ nguyên.
+          {group
+            ? `Mẫu riêng cho dịch vụ thuộc nhóm ${group}. Chưa lưu mẫu riêng thì nhóm này dùng mẫu chung.`
+            : "Mẫu chung dùng cho mọi nhóm chưa có mẫu riêng và cho email từ file Excel."}{" "}
+          Nội dung là văn bản thuần, xuống dòng được giữ nguyên.
         </p>
 
         <div className="space-y-4">
@@ -237,7 +296,7 @@ export default function ReminderTemplateTab() {
             className="flex items-center gap-1.5 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
           >
             <RotateCcw className="h-4 w-4" />
-            Khôi phục mặc định
+            {group ? "Dùng lại mẫu chung" : "Khôi phục mặc định"}
           </button>
         </div>
         {notice && (
@@ -305,6 +364,7 @@ export default function ReminderTemplateTab() {
             </p>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
