@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, FormEvent, useMemo } from "react";
+import { useEffect, useRef, useState, FormEvent, useMemo } from "react";
 import Link from "next/link";
 import {
   FileText,
@@ -126,7 +126,29 @@ export default function ContractsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
+  const customerPickerRef = useRef<HTMLDivElement>(null);
   const [leadCustomerHint, setLeadCustomerHint] = useState<string | null>(null);
+
+  // Đóng bảng gợi ý khách hàng khi bấm ra ngoài hoặc nhấn Esc.
+  useEffect(() => {
+    if (!customerPickerOpen) return;
+    function handlePointerDown(event: MouseEvent | TouchEvent) {
+      if (!customerPickerRef.current?.contains(event.target as Node)) {
+        setCustomerPickerOpen(false);
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setCustomerPickerOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [customerPickerOpen]);
 
   // Payment Modal state
   const [payingOrder, setPayingOrder] = useState<ContractRecord | null>(null);
@@ -1045,7 +1067,7 @@ export default function ContractsPage() {
                     </button>
                   </div>
                 ) : (
-                  <div className="relative">
+                  <div className="relative" ref={customerPickerRef}>
                     <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                     <input
                       value={customerQuery}
