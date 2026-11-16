@@ -1,16 +1,60 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ShieldCheck, UserCheck, Eye, AlertTriangle } from "lucide-react";
+import { ShieldCheck, UserCheck, AlertTriangle } from "lucide-react";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
 import { TableFilter } from "@/lib/table-filters";
 import { getAuditLogs } from "@/lib/api/reports.api";
+import { getPermissionMatrix, type PermissionMatrix, type PermissionRoleName } from "@/lib/api/staff.api";
+import AccessBadge from "@/components/admin/staff/AccessBadge";
 import { AuditLogRecord } from "@/lib/crm/types/crm.types";
+
+const ROLE_CARD_STYLES: Record<PermissionRoleName, { border: string; badge: string; icon: string }> = {
+  Admin: { border: "border-blue-200", badge: "bg-blue-100 text-blue-800", icon: "text-blue-600" },
+  AM: { border: "border-slate-200", badge: "bg-emerald-100 text-emerald-800", icon: "text-emerald-600" },
+  "AM Bán chăm": { border: "border-slate-200", badge: "bg-emerald-100 text-emerald-800", icon: "text-emerald-600" },
+};
 
 export default function SettingsPage() {
   const [logs, setLogs] = useState<AuditLogRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [matrix, setMatrix] = useState<PermissionMatrix | null>(null);
+  const [matrixLoading, setMatrixLoading] = useState(true);
+  const [matrixError, setMatrixError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadMatrix() {
+      setMatrixLoading(true);
+      setMatrixError(null);
+      try {
+        const data = await getPermissionMatrix();
+        if (isMounted) {
+          setMatrix(data);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setMatrixError(
+            err instanceof Error
+              ? err.message
+              : "Không thể tải ma trận phân quyền. Vui lòng thử lại."
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setMatrixLoading(false);
+        }
+      }
+    }
+
+    loadMatrix();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -97,57 +141,99 @@ export default function SettingsPage() {
           Tài khoản, Phân quyền & Nhật ký hệ thống (Audit Log)
         </h2>
         <p className="text-xs text-slate-500">
-          Cấu hình 4 nhóm vai trò chuẩn theo PRD V2 và lưu vết toàn bộ thay đổi dữ liệu quan trọng
+          Quyền hạn của 3 vai trò Admin, AM, AM Bán chăm và lưu vết toàn bộ thay đổi dữ liệu quan trọng
         </p>
       </div>
 
-      {/* 4 Role Permissions Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <div className="rounded-2xl border border-blue-200 bg-white p-5 shadow-xs">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-blue-600" />
-              <h3 className="font-bold text-slate-900 text-sm">Quản trị viên (Admin)</h3>
-            </div>
-            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800">
-              Toàn quyền
-            </span>
-          </div>
-          <p className="mt-2 text-xs text-slate-500 leading-relaxed">
-            Xem toàn bộ dữ liệu đơn vị Nam Sài Gòn, quản lý nhân viên, menu hoa hồng, cấu hình chỉ tiêu và điều chuyển khách hàng.
-          </p>
+      {/* Role cards + permission matrix */}
+      {matrixError ? (
+        <div
+          data-testid="permissions-error"
+          className="flex flex-col items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/70 px-6 py-10 text-center"
+        >
+          <AlertTriangle className="h-6 w-6 text-rose-500" />
+          <p className="text-sm font-semibold text-rose-700">Không thể tải ma trận phân quyền</p>
+          <p className="text-xs text-rose-600">{matrixError}</p>
         </div>
+      ) : matrixLoading || !matrix ? (
+        <div className="flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-6 py-10 text-sm text-slate-500">
+          Đang tải ma trận phân quyền...
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="role-cards">
+            {matrix.roles.map((role) => {
+              const style = ROLE_CARD_STYLES[role.role];
+              const Icon = role.role === "Admin" ? ShieldCheck : UserCheck;
+              return (
+                <div
+                  key={role.role}
+                  data-testid={`role-card-${role.role}`}
+                  className={`rounded-2xl border bg-white p-5 shadow-xs ${style.border}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Icon className={`h-5 w-5 ${style.icon}`} />
+                      <h3 className="font-bold text-slate-900 text-sm">{role.label}</h3>
+                    </div>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${style.badge}`}>
+                      {role.badge}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500 leading-relaxed">{role.description}</p>
+                </div>
+              );
+            })}
+          </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <UserCheck className="h-5 w-5 text-emerald-600" />
-              <h3 className="font-bold text-slate-900 text-sm">AM / AM Bán chăm</h3>
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-xs">
+            <div className="border-b border-slate-100 px-5 py-4">
+              <h3 className="text-sm font-bold text-slate-900">Ma trận phân quyền theo vai trò</h3>
+              <p className="text-xs text-slate-500">
+                Mức quyền của từng vai trò với từng chức năng. &quot;Chỉ dữ liệu của mình&quot; nghĩa là chỉ thấy và
+                xử lý dữ liệu do chính mình phụ trách hoặc khách được giao.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {matrix.levels.map((level) => (
+                  <AccessBadge key={level} level={level} />
+                ))}
+              </div>
             </div>
-            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-              Dữ liệu được giao
-            </span>
-          </div>
-          <p className="mt-2 text-xs text-slate-500 leading-relaxed">
-            Chỉ được xem và xử lý các tập khách hàng, danh sách nợ, gia hạn và nhiệm vụ được phân công. Không xem menu Hoa hồng.
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Eye className="h-5 w-5 text-slate-600" />
-              <h3 className="font-bold text-slate-900 text-sm">Người xem (Viewer)</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm" data-testid="permission-matrix">
+                <thead>
+                  <tr className="border-b border-slate-200 text-xs font-bold uppercase tracking-wide text-slate-500">
+                    <th className="px-5 py-2">Chức năng</th>
+                    {matrix.roles.map((role) => (
+                      <th key={role.role} className="px-3 py-2">
+                        {role.role}
+                      </th>
+                    ))}
+                    <th className="px-5 py-2">Ghi chú</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {matrix.modules.map((m) => (
+                    <tr
+                      key={m.key}
+                      data-testid={`matrix-row-${m.key}`}
+                      className="border-b border-slate-100 align-top"
+                    >
+                      <td className="px-5 py-2 font-semibold text-slate-900">{m.label}</td>
+                      {matrix.roles.map((role) => (
+                        <td key={role.role} className="px-3 py-2">
+                          <AccessBadge level={m.access[role.role]} />
+                        </td>
+                      ))}
+                      <td className="px-5 py-2 text-xs text-slate-500">{m.note}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700">
-              Chỉ xem Dashboard
-            </span>
           </div>
-          <p className="mt-2 text-xs text-slate-500 leading-relaxed">
-            Chỉ có quyền xem Dashboard tổng quan các chỉ số KPI, không xem danh sách chi tiết hoặc chỉnh sửa bất kỳ dữ liệu nào.
-          </p>
-        </div>
-      </div>
+        </>
+      )}
 
       {/* Audit Log Table */}
       {error ? (
