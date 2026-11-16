@@ -1,4 +1,5 @@
 import { query, run } from "../../database/db.js";
+import { SERVICE_GROUPS, type ServiceGroup } from "../../constants/org.js";
 import { sendMail, type SendMailMessage, type SendMailResult } from "../notification/email.service.js";
 import { ReminderSettingsService } from "./reminder-settings.service.js";
 
@@ -58,6 +59,9 @@ export interface RenderedEmail {
 }
 
 export interface ReminderTemplateView extends EmailTemplate {
+  /** Nhóm dịch vụ của mẫu; null là mẫu chung. */
+  group: ServiceGroup | null;
+  /** Mẫu chung: đang là mẫu mặc định. Mẫu nhóm: chưa có mẫu riêng, đang theo mẫu chung. */
   isDefault: boolean;
   defaultSubject: string;
   defaultBody: string;
@@ -206,6 +210,15 @@ interface TemplateRow {
   email_body_template: string | null;
 }
 
+/** Chuẩn hoá nhóm dịch vụ từ đầu vào; rỗng/null/undefined là mẫu chung, giá trị lạ bị từ chối. */
+function parseGroup(group: unknown): ServiceGroup | null {
+  if (group === undefined || group === null || group === "") return null;
+  if (typeof group === "string" && (SERVICE_GROUPS as readonly string[]).includes(group)) {
+    return group as ServiceGroup;
+  }
+  throw new TemplateValidationError(`Nhóm dịch vụ không hợp lệ. Các nhóm hợp lệ: ${SERVICE_GROUPS.join(", ")}`);
+}
+
 async function readStored(): Promise<TemplateRow> {
   await ReminderSettingsService.get(); // đảm bảo hàng cấu hình đã tồn tại
   const rows = await query<TemplateRow>(
@@ -215,9 +228,36 @@ async function readStored(): Promise<TemplateRow> {
   return rows[0] ?? { email_subject_template: null, email_body_template: null };
 }
 
-function toView(template: EmailTemplate): ReminderTemplateView {
+async function readGroupStored(group: ServiceGroup): Promise<TemplateRow | null> {
+  const rows = await query<TemplateRow>(
+    "SELECT email_subject_template, email_body_template FROM reminder_group_templates WHERE service_group = ?",
+    [group]
+  );
+  return rows[0] ?? null;
+}
+
+/** Mẫu nhóm: phần nào nhóm chưa có thì lấy từ mẫu chung. */
+function mergeOverride(general: EmailTemplate, row: TemplateRow | null): EmailTemplate {
+  return {
+    subject: row?.email_subject_template?.trim() ? row.email_subject_template : general.subject,
+    body: row?.email_body_template?.trim() ? row.email_body_template : general.body,
+  };
+}
+
+function toView(template: EmailTemplate, group: ServiceGroup | null, general: EmailTemplate): ReminderTemplateView {
+  if (group) {
+    return {
+      ...template,
+      group,
+      isDefault: template.subject === general.subject && template.body === general.body,
+      defaultSubject: general.subject,
+      defaultBody: general.body,
+      variables: TEMPLATE_VARIABLES,
+    };
+  }
   return {
     ...template,
+    group: null,
     isDefault: template.subject === DEFAULT_SUBJECT_TEMPLATE && template.body === DEFAULT_BODY_TEMPLATE,
     defaultSubject: DEFAULT_SUBJECT_TEMPLATE,
     defaultBody: DEFAULT_BODY_TEMPLATE,
@@ -226,21 +266,53 @@ function toView(template: EmailTemplate): ReminderTemplateView {
 }
 
 export const ReminderTemplateService = {
-  /** Mẫu đang áp dụng: mẫu đã lưu, thiếu phần nào dùng mặc định phần đó. */
-  async getEffective(): Promise<EmailTemplate> {
+  /** Mẫu đang áp dụng: mẫu đã lưu, thiếu phần nào dùng mặc định phần đó. Có `group` thì ưu tiên mẫu riêng của nhóm. */
+  async getEffective(group?: unknown): Promise<EmailTemplate> {
+    const parsed = parseGroup(group);
     const row = await readStored();
-    return {
+    const general: EmailTemplate = {
       subject: row.email_subject_template?.trim() ? row.email_subject_template : DEFAULT_SUBJECT_TEMPLATE,
       body: row.email_body_template?.trim() ? row.email_body_template : DEFAULT_BODY_TEMPLATE,
     };
+    if (!parsed) return general;
+    return mergeOverride(general, await readGroupStored(parsed));
   },
 
-  async getView(): Promise<ReminderTemplateView> {
-    return toView(await ReminderTemplateService.getEffective());
+  /** Mẫu chung + mẫu riêng của từng nhóm đã lưu, đọc một lần cho cả lượt gửi. */
+  async getEffectiveAll(): Promise<{ general: EmailTemplate; byGroup: Map<string, EmailTemplate> }> {
+    const general = await ReminderTemplateService.getEffective();
+    const rows = await query<TemplateRow & { service_group: string }>(
+      "SELECT service_group, email_subject_template, email_body_template FROM reminder_group_templates"
+    );
+    const byGroup = new Map<string, EmailTemplate>();
+    for (const row of rows) {
+      byGroup.set(row.service_group, mergeOverride(general, row));
+    }
+    return { general, byGroup };
   },
 
-  async save(input: { subject?: unknown; body?: unknown }): Promise<ReminderTemplateView> {
+  async getView(group?: unknown): Promise<ReminderTemplateView> {
+    const parsed = parseGroup(group);
+    const general = await ReminderTemplateService.getEffective();
+    const template = parsed ? await ReminderTemplateService.getEffective(parsed) : general;
+    return toView(template, parsed, general);
+  },
+
+  async save(input: { subject?: unknown; body?: unknown }, group?: unknown): Promise<ReminderTemplateView> {
+    const parsed = parseGroup(group);
     const template = validateTemplate(input);
+    if (parsed) {
+      await run(
+        `INSERT INTO reminder_group_templates (service_group, email_subject_template, email_body_template, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT (service_group) DO UPDATE SET
+           email_subject_template = EXCLUDED.email_subject_template,
+           email_body_template = EXCLUDED.email_body_template,
+           updated_at = EXCLUDED.updated_at`,
+        [parsed, template.subject, template.body, new Date().toISOString()]
+      );
+      return ReminderTemplateService.getView(parsed);
+    }
     await readStored();
     await run(
       "UPDATE reminder_settings SET email_subject_template = ?, email_body_template = ?, updated_at = ? WHERE id = ?",
@@ -249,7 +321,13 @@ export const ReminderTemplateService = {
     return ReminderTemplateService.getView();
   },
 
-  async reset(): Promise<ReminderTemplateView> {
+  /** Mẫu chung: về mặc định. Mẫu nhóm: xoá mẫu riêng, nhóm theo lại mẫu chung. */
+  async reset(group?: unknown): Promise<ReminderTemplateView> {
+    const parsed = parseGroup(group);
+    if (parsed) {
+      await run("DELETE FROM reminder_group_templates WHERE service_group = ?", [parsed]);
+      return ReminderTemplateService.getView(parsed);
+    }
     await readStored();
     await run(
       "UPDATE reminder_settings SET email_subject_template = NULL, email_body_template = NULL, updated_at = ? WHERE id = ?",
@@ -258,9 +336,9 @@ export const ReminderTemplateService = {
     return ReminderTemplateService.getView();
   },
 
-  /** Render với dữ liệu mẫu; thiếu `subject`/`body` thì dùng mẫu đã lưu. */
-  async preview(draft: { subject?: unknown; body?: unknown }): Promise<RenderedEmail> {
-    const template = await resolveDraft(draft);
+  /** Render với dữ liệu mẫu; thiếu `subject`/`body` thì dùng mẫu đã lưu (của nhóm nếu có `group`). */
+  async preview(draft: { subject?: unknown; body?: unknown }, group?: unknown): Promise<RenderedEmail> {
+    const template = await resolveDraft(draft, group);
     return renderEmail(template, SAMPLE_DATA);
   },
 
@@ -268,12 +346,14 @@ export const ReminderTemplateService = {
   async sendTest(
     to: unknown,
     draft: { subject?: unknown; body?: unknown },
-    send: (msg: SendMailMessage) => Promise<SendMailResult> = (msg) => sendMail(msg)
+    send: (msg: SendMailMessage) => Promise<SendMailResult> = (msg) => sendMail(msg),
+    group?: unknown
   ): Promise<SendMailResult> {
+    parseGroup(group);
     if (typeof to !== "string" || !EMAIL_PATTERN.test(to.trim())) {
       throw new TemplateValidationError('Địa chỉ email "Gửi thử tới" không hợp lệ');
     }
-    const template = await resolveDraft(draft);
+    const template = await resolveDraft(draft, group);
     const rendered = renderEmail(template, SAMPLE_DATA);
     return send({
       to: to.trim(),
@@ -284,11 +364,11 @@ export const ReminderTemplateService = {
   },
 };
 
-async function resolveDraft(draft: { subject?: unknown; body?: unknown }): Promise<EmailTemplate> {
+async function resolveDraft(draft: { subject?: unknown; body?: unknown }, group?: unknown): Promise<EmailTemplate> {
+  const current = await ReminderTemplateService.getEffective(group);
   if (draft.subject === undefined && draft.body === undefined) {
-    return ReminderTemplateService.getEffective();
+    return current;
   }
-  const current = await ReminderTemplateService.getEffective();
   return validateTemplate({
     subject: draft.subject === undefined ? current.subject : draft.subject,
     body: draft.body === undefined ? current.body : draft.body,

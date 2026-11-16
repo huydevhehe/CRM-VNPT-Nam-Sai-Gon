@@ -73,10 +73,12 @@ function sendTemplateError(res: Response, error: unknown) {
   res.status(error instanceof TemplateValidationError ? 400 : 500).json({ success: false, message });
 }
 
+// Các route /template nhận thêm query `?group=BRCĐ|CNTT|Di động` để thao tác mẫu riêng của nhóm; bỏ trống là mẫu chung.
+
 // GET /api/reminders/template — mẫu đang áp dụng + mẫu mặc định + danh sách biến.
-reminderRouter.get("/template", async (_req: Request, res: Response) => {
+reminderRouter.get("/template", async (req: Request, res: Response) => {
   try {
-    res.json({ success: true, data: await ReminderTemplateService.getView() });
+    res.json({ success: true, data: await ReminderTemplateService.getView(req.query.group) });
   } catch (error) {
     sendTemplateError(res, error);
   }
@@ -86,7 +88,7 @@ reminderRouter.get("/template", async (_req: Request, res: Response) => {
 reminderRouter.put("/template", async (req: Request, res: Response) => {
   try {
     const { subject, body } = req.body ?? {};
-    res.json({ success: true, data: await ReminderTemplateService.save({ subject, body }) });
+    res.json({ success: true, data: await ReminderTemplateService.save({ subject, body }, req.query.group) });
   } catch (error) {
     sendTemplateError(res, error);
   }
@@ -96,16 +98,16 @@ reminderRouter.put("/template", async (req: Request, res: Response) => {
 reminderRouter.post("/template/preview", async (req: Request, res: Response) => {
   try {
     const { subject, body } = req.body ?? {};
-    res.json({ success: true, data: await ReminderTemplateService.preview({ subject, body }) });
+    res.json({ success: true, data: await ReminderTemplateService.preview({ subject, body }, req.query.group) });
   } catch (error) {
     sendTemplateError(res, error);
   }
 });
 
-// POST /api/reminders/template/reset — khôi phục mẫu mặc định.
-reminderRouter.post("/template/reset", async (_req: Request, res: Response) => {
+// POST /api/reminders/template/reset — khôi phục mẫu mặc định (mẫu nhóm: xoá mẫu riêng, theo lại mẫu chung).
+reminderRouter.post("/template/reset", async (req: Request, res: Response) => {
   try {
-    res.json({ success: true, data: await ReminderTemplateService.reset() });
+    res.json({ success: true, data: await ReminderTemplateService.reset(req.query.group) });
   } catch (error) {
     sendTemplateError(res, error);
   }
@@ -115,7 +117,7 @@ reminderRouter.post("/template/reset", async (_req: Request, res: Response) => {
 reminderRouter.post("/template/test", async (req: Request, res: Response) => {
   try {
     const { to, subject, body } = req.body ?? {};
-    const result = await ReminderTemplateService.sendTest(to, { subject, body });
+    const result = await ReminderTemplateService.sendTest(to, { subject, body }, undefined, req.query.group);
     if (!result.sent) {
       res.status(400).json({ success: false, message: result.error || "Gửi thử thất bại" });
       return;

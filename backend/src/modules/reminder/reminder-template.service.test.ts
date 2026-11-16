@@ -28,6 +28,7 @@ const DATA = {
 
 test.after(async () => {
   await ReminderTemplateService.reset();
+  await run("DELETE FROM reminder_group_templates");
   await run("DELETE FROM reminder_logs WHERE item_id LIKE 'SVC-TPL-%'");
   await run("DELETE FROM services WHERE id LIKE 'SVC-TPL-%'");
   await run("DELETE FROM staff WHERE id LIKE 'STAFF-TPL-%'");
@@ -216,4 +217,108 @@ test("runner dùng mẫu đã lưu khi gửi, và dùng mặc định khi đã r
   const again = sent.filter((m) => m.subject.includes("DV Tpl"));
   assert.equal(again.length, 1);
   assert.ok(again[0].subject.startsWith("[VNPT NSG] Dịch vụ DV Tpl của"));
+});
+
+test("mẫu theo nhóm: chưa có mẫu riêng thì theo mẫu chung; lưu riêng không đổi mẫu chung; reset nhóm về mẫu chung", async () => {
+  await ReminderTemplateService.reset();
+  await ReminderTemplateService.reset("CNTT");
+  await ReminderTemplateService.save({ subject: "CHUNG {dịch vụ}", body: "Mẫu chung {tên khách}" });
+
+  const before = await ReminderTemplateService.getView("CNTT");
+  assert.equal(before.group, "CNTT");
+  assert.equal(before.isDefault, true);
+  assert.equal(before.subject, "CHUNG {dịch vụ}");
+  assert.equal(before.defaultSubject, "CHUNG {dịch vụ}");
+
+  const saved = await ReminderTemplateService.save({ subject: "CNTT {dịch vụ}", body: "Riêng CNTT {tên khách}" }, "CNTT");
+  assert.equal(saved.isDefault, false);
+  assert.equal(saved.subject, "CNTT {dịch vụ}");
+  assert.equal((await ReminderTemplateService.getEffective()).subject, "CHUNG {dịch vụ}");
+  assert.equal((await ReminderTemplateService.getEffective("CNTT")).body, "Riêng CNTT {tên khách}");
+  assert.equal((await ReminderTemplateService.getEffective("BRCĐ")).subject, "CHUNG {dịch vụ}");
+
+  await assert.rejects(() => ReminderTemplateService.save({ subject: "{sai}", body: "x" }, "CNTT"), TemplateValidationError);
+  assert.equal((await ReminderTemplateService.getEffective("CNTT")).subject, "CNTT {dịch vụ}");
+
+  const reset = await ReminderTemplateService.reset("CNTT");
+  assert.equal(reset.isDefault, true);
+  assert.equal((await ReminderTemplateService.getEffective("CNTT")).subject, "CHUNG {dịch vụ}");
+  await ReminderTemplateService.reset();
+});
+
+test("nhóm dịch vụ không hợp lệ bị từ chối ở mọi thao tác; rỗng/null là mẫu chung", async () => {
+  await assert.rejects(() => ReminderTemplateService.getView("Khác"), /Nhóm dịch vụ không hợp lệ/);
+  await assert.rejects(() => ReminderTemplateService.save({ subject: "a", body: "b" }, "Khác"), TemplateValidationError);
+  await assert.rejects(() => ReminderTemplateService.reset("Khác"), TemplateValidationError);
+  await assert.rejects(() => ReminderTemplateService.preview({}, "Khác"), TemplateValidationError);
+  await assert.rejects(() => ReminderTemplateService.sendTest("a@b.co", {}, undefined, "Khác"), TemplateValidationError);
+  assert.equal((await ReminderTemplateService.getView(null)).group, null);
+  assert.equal((await ReminderTemplateService.getView("")).group, null);
+});
+
+test("preview và sendTest theo nhóm dùng mẫu riêng của nhóm", async () => {
+  await ReminderTemplateService.reset();
+  await ReminderTemplateService.save({ subject: "CHUNG {dịch vụ}", body: "x" });
+  await ReminderTemplateService.save({ subject: "DĐ {dịch vụ}", body: "y" }, "Di động");
+  assert.equal((await ReminderTemplateService.preview({}, "Di động")).subject, "DĐ Internet cáp quang FiberVNN");
+  assert.equal((await ReminderTemplateService.preview({})).subject, "CHUNG Internet cáp quang FiberVNN");
+
+  const calls: { subject: string }[] = [];
+  const fakeSend = async (msg: { to: string | string[]; subject: string; text: string }) => {
+    calls.push(msg);
+    return { sent: true };
+  };
+  await ReminderTemplateService.sendTest("a@b.co", {}, fakeSend, "Di động");
+  assert.equal(calls[0].subject, "[Gửi thử] DĐ Internet cáp quang FiberVNN");
+  await ReminderTemplateService.reset("Di động");
+  await ReminderTemplateService.reset();
+});
+
+test("runner chọn mẫu theo nhóm dịch vụ; nhóm chưa có mẫu riêng hoặc không có nhóm thì dùng mẫu chung", async () => {
+  await run("DELETE FROM reminder_logs WHERE item_id LIKE 'SVC-TPL-%'");
+  await run("DELETE FROM services WHERE id LIKE 'SVC-TPL-%'");
+  await run("DELETE FROM staff WHERE id LIKE 'STAFF-TPL-%'");
+  const suffix = `${Date.now()}`;
+  await run(`INSERT INTO staff (id, code, name, role, status, email) VALUES (?, ?, ?, ?, ?, ?)`, [
+    `STAFF-TPL-G-${suffix}`,
+    `CODE-TPL-G-${suffix}`,
+    `AM Nhóm ${suffix}`,
+    "AM",
+    "Đang hoạt động",
+    "am-nhom@example.com",
+  ]);
+  const groups: [string, string | null][] = [
+    ["CNTT", "CNTT"],
+    ["BRCĐ", "BRCĐ"],
+    ["TRONG", null],
+    ["LA", "Nhóm lạ"],
+  ];
+  for (const [tag, group] of groups) {
+    await run(
+      `INSERT INTO services (id, customer_name, service_name, service_code, start_date, expiration_date, staff_name, service_group)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [`SVC-TPL-G-${tag}-${suffix}`, `KH ${tag}`, `DV-${tag}-${suffix}`, `SUB-${tag}`, "2026-01-01", "2026-11-18", `AM Nhóm ${suffix}`, group]
+    );
+  }
+  await ReminderSettingsService.update({ notifyStaff: true, notifyCustomer: false, daysBefore: [7], extraCc: "" });
+  await ReminderTemplateService.reset();
+  await ReminderTemplateService.reset("CNTT");
+  await ReminderTemplateService.save({ subject: "CHUNG {dịch vụ}", body: "chung" });
+  await ReminderTemplateService.save({ subject: "CNTT {dịch vụ}", body: "riêng" }, "CNTT");
+
+  const sent: { to: string | string[]; subject: string; text: string }[] = [];
+  const fakeSend = async (msg: { to: string | string[]; subject: string; text: string }) => {
+    sent.push(msg);
+    return { sent: true };
+  };
+  await ReminderRunner.run("2026-11-11", { send: fakeSend });
+  const bySubject = (tag: string) => sent.find((m) => m.subject.includes(`DV-${tag}-${suffix}`));
+  assert.equal(bySubject("CNTT")?.subject, `CNTT DV-CNTT-${suffix}`);
+  assert.equal(bySubject("CNTT")?.text, "riêng");
+  assert.equal(bySubject("BRCĐ")?.subject, `CHUNG DV-BRCĐ-${suffix}`);
+  assert.equal(bySubject("TRONG")?.subject, `CHUNG DV-TRONG-${suffix}`);
+  assert.equal(bySubject("LA")?.subject, `CHUNG DV-LA-${suffix}`);
+
+  await ReminderTemplateService.reset("CNTT");
+  await ReminderTemplateService.reset();
 });

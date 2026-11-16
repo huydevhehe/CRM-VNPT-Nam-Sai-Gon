@@ -146,9 +146,15 @@ export interface ReminderTemplateVariable {
   sample: string;
 }
 
+export const REMINDER_TEMPLATE_GROUPS = ["BRCĐ", "CNTT", "Di động"] as const;
+export type ReminderTemplateGroup = (typeof REMINDER_TEMPLATE_GROUPS)[number];
+
 export interface ReminderTemplate {
   subject: string;
   body: string;
+  /** Nhóm dịch vụ của mẫu; null là mẫu chung. */
+  group: ReminderTemplateGroup | null;
+  /** Mẫu chung: đang là mặc định. Mẫu nhóm: chưa có mẫu riêng, đang theo mẫu chung. */
   isDefault: boolean;
   defaultSubject: string;
   defaultBody: string;
@@ -166,30 +172,46 @@ export interface ReminderTemplateDraft {
   body: string;
 }
 
-export function getReminderTemplate(): Promise<ReminderTemplate> {
-  return apiFetch<ReminderTemplate>("/reminders/template");
+/** `group` bỏ trống/null là mẫu chung. */
+export function reminderTemplatePath(suffix: string, group?: ReminderTemplateGroup | null): string {
+  const query = group ? `?group=${encodeURIComponent(group)}` : "";
+  return `/reminders/template${suffix}${query}`;
 }
 
-export function saveReminderTemplate(draft: ReminderTemplateDraft): Promise<ReminderTemplate> {
-  return apiFetch<ReminderTemplate>("/reminders/template", {
+export function getReminderTemplate(group?: ReminderTemplateGroup | null): Promise<ReminderTemplate> {
+  return apiFetch<ReminderTemplate>(reminderTemplatePath("", group));
+}
+
+export function saveReminderTemplate(
+  draft: ReminderTemplateDraft,
+  group?: ReminderTemplateGroup | null
+): Promise<ReminderTemplate> {
+  return apiFetch<ReminderTemplate>(reminderTemplatePath("", group), {
     method: "PUT",
     body: JSON.stringify(draft),
   });
 }
 
-export function previewReminderTemplate(draft: ReminderTemplateDraft): Promise<ReminderTemplatePreview> {
-  return apiFetch<ReminderTemplatePreview>("/reminders/template/preview", {
+export function previewReminderTemplate(
+  draft: ReminderTemplateDraft,
+  group?: ReminderTemplateGroup | null
+): Promise<ReminderTemplatePreview> {
+  return apiFetch<ReminderTemplatePreview>(reminderTemplatePath("/preview", group), {
     method: "POST",
     body: JSON.stringify(draft),
   });
 }
 
-export function resetReminderTemplate(): Promise<ReminderTemplate> {
-  return apiFetch<ReminderTemplate>("/reminders/template/reset", { method: "POST" });
+export function resetReminderTemplate(group?: ReminderTemplateGroup | null): Promise<ReminderTemplate> {
+  return apiFetch<ReminderTemplate>(reminderTemplatePath("/reset", group), { method: "POST" });
 }
 
-export function sendReminderTemplateTest(to: string, draft: ReminderTemplateDraft): Promise<{ sent: boolean }> {
-  return apiFetch<{ sent: boolean }>("/reminders/template/test", {
+export function sendReminderTemplateTest(
+  to: string,
+  draft: ReminderTemplateDraft,
+  group?: ReminderTemplateGroup | null
+): Promise<{ sent: boolean }> {
+  return apiFetch<{ sent: boolean }>(reminderTemplatePath("/test", group), {
     method: "POST",
     body: JSON.stringify({ to, ...draft }),
   });
