@@ -306,4 +306,107 @@ test.describe("Orders API (Đơn hàng)", () => {
     expect((await keepRes.json()).data.customerId).toBe(customer.id);
   });
 
+  test("order generates one service per subscriber code and keeps them in sync", async ({ request }) => {
+    const suffix = Date.now();
+    const svcCustomer = await createCustomerForOrder(request, adminToken);
+    const createRes = await request.post(`${API_URL}/contracts`, {
+      headers: bearer(adminToken),
+      data: {
+        transactionCode: `GD_SVC_${suffix}`,
+        customerId: svcCustomer.id,
+        subscriberCodes: [`TB_A_${suffix}`, `TB_B_${suffix}`, `TB_C_${suffix}`],
+        totalValue: 3000000,
+        channel: "Trực tiếp",
+        serviceGroup: "BRCĐ",
+        serviceName: "FiberVNN",
+        packageName: "Home Net 2",
+        paymentMethod: "Trả trước",
+        signedDate: "2026-01-31",
+        termMonths: 1,
+      },
+    });
+    expect(createRes.status()).toBe(201);
+    const order = (await createRes.json()).data;
+    expect(order.termMonths).toBe(1);
+
+    const listServices = async () => {
+      const res = await request.get(`${API_URL}/customers/${svcCustomer.id}/services`, {
+        headers: bearer(adminToken),
+      });
+      expect(res.status()).toBe(200);
+      return (await res.json()).data as Array<Record<string, any>>;
+    };
+
+    let services = await listServices();
+    expect(services.map((s) => s.serviceCode).sort()).toEqual(
+      [`TB_A_${suffix}`, `TB_B_${suffix}`, `TB_C_${suffix}`]
+    );
+    for (const s of services) {
+      expect(s.contractId).toBe(order.id);
+      expect(s.transactionCode).toBe(`GD_SVC_${suffix}`);
+      expect(s.serviceName).toBe("FiberVNN");
+      expect(s.serviceGroup).toBe("BRCĐ");
+      expect(s.paymentType).toBe("Trả trước");
+      expect(s.startDate).toBe("2026-01-31");
+      expect(s.expirationDate).toBe("2026-02-28");
+    }
+
+    const allRes = await request.get(`${API_URL}/services`, { headers: bearer(adminToken) });
+    const all = (await allRes.json()).data as Array<Record<string, any>>;
+    expect(all.filter((s) => s.contractId === order.id)).toHaveLength(3);
+
+    const patchRes = await request.patch(`${API_URL}/contracts/${order.id}`, {
+      headers: bearer(adminToken),
+      data: { subscriberCodes: [`TB_A_${suffix}`, `TB_C_${suffix}`], termMonths: 12 },
+    });
+    expect(patchRes.status()).toBe(200);
+    services = await listServices();
+    expect(services.map((s) => s.serviceCode).sort()).toEqual([`TB_A_${suffix}`, `TB_C_${suffix}`]);
+    expect(services[0].expirationDate).toBe("2027-01-31");
+
+    const lockedRes = await request.delete(`${API_URL}/services/${services[0].id}`, {
+      headers: bearer(adminToken),
+    });
+    expect(lockedRes.status()).toBe(400);
+    expect((await lockedRes.json()).message).toContain(`GD_SVC_${suffix}`);
+  });
+
+  test("order without term defaults generated services to 12 months", async ({ request }) => {
+    const suffix = Date.now();
+    const svcCustomer = await createCustomerForOrder(request, adminToken);
+    const createRes = await request.post(`${API_URL}/contracts`, {
+      headers: bearer(adminToken),
+      data: {
+        transactionCode: `GD_DEF_${suffix}`,
+        customerId: svcCustomer.id,
+        subscriberCodes: [`TB_DEF_${suffix}`],
+        totalValue: 1000000,
+        channel: "Trực tiếp",
+        signedDate: "2026-03-10",
+      },
+    });
+    expect(createRes.status()).toBe(201);
+
+    const res = await request.get(`${API_URL}/customers/${svcCustomer.id}/services`, {
+      headers: bearer(adminToken),
+    });
+    const [service] = (await res.json()).data;
+    expect(service.startDate).toBe("2026-03-10");
+    expect(service.expirationDate).toBe("2027-03-10");
+    expect(service.serviceName).toBe("Dịch vụ");
+
+    const badTerm = await request.post(`${API_URL}/contracts`, {
+      headers: bearer(adminToken),
+      data: {
+        transactionCode: `GD_BADTERM_${suffix}`,
+        customerId: svcCustomer.id,
+        subscriberCodes: [`TB_BAD_${suffix}`],
+        totalValue: 1000000,
+        channel: "Trực tiếp",
+        termMonths: 0,
+      },
+    });
+    expect(badTerm.status()).toBe(400);
+  });
+
 });

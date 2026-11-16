@@ -9,6 +9,7 @@ import {
   TerritoryRecord,
 } from "@/lib/crm/types/crm.types";
 import { CustomerTeamRecord } from "@/lib/api/customer-teams.api";
+import type { CtvOption } from "@/lib/api/customers.api";
 import { CUSTOMER_GROUP_LABEL } from "@/lib/crm/constants/org.constants";
 import { LEAD_CHANNELS } from "@/lib/crm/constants/org.constants";
 import CustomerDocuments from "./CustomerDocuments";
@@ -24,6 +25,9 @@ export interface CustomerFormValues {
   customerCode: string;
   status: string;
   teamId: string;
+  amStaff: string;
+  amCaringStaff: string;
+  referredByCtvId: string;
   salesChannel: string;
   territoryId: string;
   address: string;
@@ -44,6 +48,9 @@ export const EMPTY_CUSTOMER_FORM: CustomerFormValues = {
   customerCode: "",
   status: "",
   teamId: "",
+  amStaff: "",
+  amCaringStaff: "",
+  referredByCtvId: "",
   salesChannel: "",
   territoryId: "",
   address: "",
@@ -65,6 +72,9 @@ export function customerToFormValues(customer: CustomerRecord): CustomerFormValu
     customerCode: customer.customerCode || "",
     status: customer.status || "",
     teamId: customer.teamId || "",
+    amStaff: customer.amStaff || "",
+    amCaringStaff: customer.amCaringStaff || "",
+    referredByCtvId: customer.referredByCtvId || "",
     salesChannel: customer.salesChannel || "",
     territoryId: customer.territoryId || "",
     address: customer.address || "",
@@ -78,11 +88,33 @@ export function customerToFormValues(customer: CustomerRecord): CustomerFormValu
   };
 }
 
+/** Giữ CTV đang gắn với khách trong danh sách chọn dù CTV đó không còn hoạt động. */
+export function ctvOptionsWithCurrent(options: CtvOption[], customer?: CustomerRecord | null): CtvOption[] {
+  if (!customer?.referredByCtvId || options.some((o) => o.id === customer.referredByCtvId)) {
+    return options;
+  }
+  return [
+    {
+      id: customer.referredByCtvId,
+      code: customer.referredByCtvCode || "",
+      name: customer.referredByCtvName || customer.referredByCtvId,
+    },
+    ...options,
+  ];
+}
+
 interface CustomerFormProps {
   mode: "create" | "edit";
   initialValues?: CustomerFormValues;
   territories: TerritoryRecord[];
   teams: CustomerTeamRecord[];
+  /** Tên nhân viên đang hoạt động để chọn AM bán hàng / AM CSKH. */
+  staffNames: string[];
+  ctvOptions: CtvOption[];
+  /** AM / AM Bán chăm: AM bán hàng bị khoá (tạo = chính mình, sửa = giữ nguyên). */
+  amStaffLocked?: boolean;
+  /** Người không phải AM bán hàng của khách (khi sửa) không được đổi AM CSKH. */
+  amCaringLocked?: boolean;
   submitting?: boolean;
   error?: string | null;
   onSubmit: (values: CustomerFormValues) => void | Promise<void>;
@@ -103,6 +135,10 @@ export default function CustomerForm({
   initialValues,
   territories,
   teams,
+  staffNames,
+  ctvOptions,
+  amStaffLocked,
+  amCaringLocked,
   submitting,
   error,
   onSubmit,
@@ -115,6 +151,10 @@ export default function CustomerForm({
 
   function set<K extends keyof CustomerFormValues>(key: K, value: CustomerFormValues[K]) {
     setValues((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function withCurrent(names: string[], current: string): string[] {
+    return current && !names.includes(current) ? [current, ...names] : names;
   }
 
   function copyContactToBilling() {
@@ -256,6 +296,51 @@ export default function CustomerForm({
               </div>
 
               <div>
+                <label htmlFor="cf-am-staff" className={labelClass}>
+                  AM bán hàng{" "}
+                  {!amStaffLocked && mode === "create" && (
+                    <span className="text-rose-500" aria-hidden="true">*</span>
+                  )}
+                </label>
+                <select
+                  id="cf-am-staff"
+                  value={values.amStaff}
+                  required={!amStaffLocked && mode === "create"}
+                  disabled={amStaffLocked}
+                  onChange={(e) => set("amStaff", e.target.value)}
+                  className={`${inputClass} disabled:bg-slate-50 disabled:text-slate-500`}
+                >
+                  <option value="">— Chọn AM bán hàng —</option>
+                  {withCurrent(staffNames, values.amStaff).map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="cf-am-caring" className={labelClass}>
+                  AM CSKH (chăm sóc)
+                </label>
+                <select
+                  id="cf-am-caring"
+                  value={values.amCaringStaff}
+                  disabled={amCaringLocked}
+                  onChange={(e) => set("amCaringStaff", e.target.value)}
+                  className={`${inputClass} disabled:bg-slate-50 disabled:text-slate-500`}
+                >
+                  <option value="">
+                    {mode === "create" ? "— Mặc định theo AM bán hàng —" : "— Chưa phân công —"}
+                  </option>
+                  {withCurrent(staffNames, values.amCaringStaff).map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
                 <label htmlFor="cf-sales-channel" className={labelClass}>
                   Kênh bán
                 </label>
@@ -287,6 +372,26 @@ export default function CustomerForm({
                   {territories.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.wardName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="col-span-2">
+                <label htmlFor="cf-ctv" className={labelClass}>
+                  CTV giới thiệu
+                </label>
+                <select
+                  id="cf-ctv"
+                  value={values.referredByCtvId}
+                  onChange={(e) => set("referredByCtvId", e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">— Không có CTV giới thiệu —</option>
+                  {ctvOptions.map((ctv) => (
+                    <option key={ctv.id} value={ctv.id}>
+                      {ctv.name}
+                      {ctv.code ? ` (${ctv.code})` : ""}
                     </option>
                   ))}
                 </select>

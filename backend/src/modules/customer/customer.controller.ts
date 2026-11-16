@@ -80,9 +80,21 @@ customerRouter.get("/", async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/customers/ctv-options — danh sách CTV để chọn "CTV giới thiệu" (mọi nhân viên; /api/ctv-accounts chỉ Admin).
+// Đặt TRƯỚC "/:id" để không bị route "/:id" nuốt mất.
+customerRouter.get("/ctv-options", async (_req: Request, res: Response) => {
+  try {
+    const options = await customerService.listCtvOptions();
+    res.json({ success: true, data: options });
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
 customerRouter.post("/", requireAuth, async (req: Request, res: Response) => {
   try {
-    const result = await customerService.create(req.body);
+    const operator = { name: req.user?.name ?? req.user?.id ?? "Admin", role: req.user?.role ?? "" };
+    const result = await customerService.create(req.body ?? {}, operator);
     res.status(201).json({ success: true, data: result.customer, message: result.message });
   } catch (error: any) {
     sendError(res, error);

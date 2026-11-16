@@ -86,6 +86,7 @@ test("importBatch with mode 'append' creates new customer and updates existing c
   assert.equal(newRow.am_caring_staff, staffName);
   assert.equal(newRow.handover_batch, `DOT-APPEND-${suffix}`);
   assert.equal(newRow.territory_id, territoryId);
+  assert.equal(newRow.services, "Metronet, Chữ ký số");
 });
 
 test("importBatch with mode 'replace' clears am_caring_staff of unmentioned customers in same territory only", async () => {
@@ -205,4 +206,30 @@ test("importBatch rolls back transaction entirely if any record is invalid", asy
   // Kiểm tra không có bản ghi nào bị ghi dở dang
   const rows = await query<any>("SELECT * FROM customers WHERE identity_code = ?", [newCode]);
   assert.equal(rows.length, 0);
+});
+
+test("importBatch leaves services empty for new customers without a services column", async () => {
+  const service = new CustomerService();
+  const suffix = Date.now();
+  const territoryId = `WARD-NOSVC-${suffix}`;
+  const staffName = `AM-Batch-NoSvc-${suffix}`;
+
+  await run("INSERT INTO territories (id, ward_name) VALUES (?, ?)", [territoryId, `Phường NoSvc ${suffix}`]);
+  await run(
+    "INSERT INTO staff (id, name, code, role, status) VALUES (?, ?, ?, ?, ?)",
+    [`STF-NOSVC-${suffix}`, staffName, `NV-NOSVC-${suffix}`, "AM Bán chăm", "Đang hoạt động"]
+  );
+
+  await service.importBatch({
+    territoryId,
+    amCaringStaff: staffName,
+    handoverBatch: `DOT-NOSVC-${suffix}`,
+    mode: "append",
+    customers: [{ identityCode: `MST-NOSVC-${suffix}`, name: "Khách Không Dịch Vụ" }],
+  });
+
+  const [row] = await query<any>("SELECT services FROM customers WHERE identity_code = ?", [
+    `MST-NOSVC-${suffix}`,
+  ]);
+  assert.equal(row.services, null);
 });

@@ -9,6 +9,7 @@ export interface ContractImportRow {
   customerName: string;
   subscriberCodes: string[];
   totalValue: number | null;
+  termMonths: number | null;
   channel: string;
   amStaff: string;
   serviceGroup: string;
@@ -20,7 +21,7 @@ export interface ContractImportRow {
   note: string;
 }
 
-type StringField = Exclude<keyof ContractImportRow, "rowNumber" | "subscriberCodes" | "totalValue">;
+type StringField = Exclude<keyof ContractImportRow, "rowNumber" | "subscriberCodes" | "totalValue" | "termMonths">;
 
 interface FieldAliasDef {
   field: StringField;
@@ -43,6 +44,7 @@ const FIELD_ALIASES: FieldAliasDef[] = [
 
 const SUBSCRIBER_CODES_ALIASES = ["ma thue bao"];
 const TOTAL_VALUE_ALIASES = ["gia tri don hang", "gia tri hop dong", "gia tri"];
+const TERM_MONTHS_ALIASES = ["thoi han thang", "thoi han"];
 
 function collectHeaders(rows: Record<string, unknown>[]): string[] {
   const set = new Set<string>();
@@ -66,6 +68,7 @@ function buildHeaderMap(headers: string[]): {
   stringFields: Partial<Record<StringField, string>>;
   subscriberCodes?: string;
   totalValue?: string;
+  termMonths?: string;
 } {
   const stringFields: Partial<Record<StringField, string>> = {};
   for (const { field, aliases } of FIELD_ALIASES) {
@@ -76,6 +79,7 @@ function buildHeaderMap(headers: string[]): {
     stringFields,
     subscriberCodes: findHeader(headers, SUBSCRIBER_CODES_ALIASES),
     totalValue: findHeader(headers, TOTAL_VALUE_ALIASES),
+    termMonths: findHeader(headers, TERM_MONTHS_ALIASES),
   };
 }
 
@@ -94,6 +98,12 @@ function parseTotalValue(raw: unknown): number | null {
   if (!cleaned) return null;
   const num = Number(cleaned);
   return Number.isNaN(num) ? null : num;
+}
+
+function parseTermMonths(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === "") return null;
+  const num = typeof raw === "number" ? raw : Number(String(raw).trim().replace(",", "."));
+  return Number.isInteger(num) && num >= 1 ? num : null;
 }
 
 /**
@@ -150,6 +160,7 @@ export function parseContractSheet(rows: Record<string, unknown>[]): {
         ? parseSubscriberCodes(raw[headerMap.subscriberCodes])
         : [],
       totalValue: headerMap.totalValue ? parseTotalValue(raw[headerMap.totalValue]) : null,
+      termMonths: headerMap.termMonths ? parseTermMonths(raw[headerMap.termMonths]) : null,
       channel: getString("channel"),
       amStaff: getString("amStaff"),
       serviceGroup: getString("serviceGroup"),

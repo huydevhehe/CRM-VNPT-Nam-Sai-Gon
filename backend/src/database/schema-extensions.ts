@@ -1,5 +1,6 @@
 import { query, run } from "./db.js";
 import { LEAD_GROUP_RENAMES } from "../constants/org.js";
+import { syncServicesFromContract } from "../modules/service/contract-service-sync.js";
 
 const IDENTIFIER_PATTERN = /^[a-z_]+$/;
 
@@ -42,6 +43,7 @@ export async function applySchemaExtensions(): Promise<void> {
   await ensureColumn("customers", "billing_phone", "TEXT");
   await ensureColumn("customers", "billing_email", "TEXT");
   await ensureColumn("customers", "note", "TEXT");
+  await ensureColumn("customers", "referred_by_ctv_id", "TEXT");
 
   await run(`
     CREATE TABLE IF NOT EXISTS customer_teams (
@@ -86,6 +88,7 @@ export async function applySchemaExtensions(): Promise<void> {
   await ensureColumn("contracts", "contract_number", "TEXT");
   await ensureColumn("contracts", "signed_date", "TEXT");
   await ensureColumn("contracts", "collected_amount", "REAL DEFAULT 0");
+  await ensureColumn("contracts", "term_months", "INTEGER");
 
   await ensureColumn("commissions", "contract_id", "TEXT");
   await ensureColumn("commissions", "ctv_id", "TEXT");
@@ -259,6 +262,8 @@ export async function applySchemaExtensions(): Promise<void> {
   await ensureColumn("services", "service_group", "TEXT");
   await ensureColumn("services", "package_name", "TEXT");
   await ensureColumn("services", "payment_type", "TEXT");
+  await ensureColumn("services", "contract_id", "TEXT");
+  await run("CREATE INDEX IF NOT EXISTS ix_services_contract_id ON services(contract_id)");
 
   // Bảng đánh dấu migration một-lần, do file này sở hữu. Dùng để tránh
   // backfillRelations() chạy lại mỗi lần khởi động server và điền lại giá trị
@@ -388,6 +393,26 @@ export async function backfillRelations(): Promise<void> {
   // ĐÚNG 1 khách có name trùng khớp chính xác — tên trùng 0 hoặc >1 khách thì
   // để NULL, không gán bừa (Review Focus #5, dot-07.md).
   await runMigrationOnce("services_customer_id_backfill_v1", backfillServiceCustomerIds);
+
+  // Đơn hàng cũ chưa có dịch vụ: sinh "Dịch vụ - Mã thuê bao" cho đơn đã có khách.
+  await runMigrationOnce("services_from_contracts_v1", backfillServicesFromContracts);
+}
+
+/**
+ * Logic thật của migration một-lần `services_from_contracts_v1`, tách riêng để
+ * test gọi lại được. Idempotent: đồng bộ theo `contract_id` / (khách + mã thuê bao)
+ * nên chạy lại không tạo trùng. Đơn chưa có khách hoặc không có mã thuê bao bị bỏ qua.
+ */
+export async function backfillServicesFromContracts(): Promise<void> {
+  const contracts = await query<{ id: string }>(
+    `SELECT id FROM contracts
+     WHERE customer_id IS NOT NULL AND customer_id <> ''
+       AND subscriber_codes IS NOT NULL AND subscriber_codes NOT IN ('', '[]')
+     ORDER BY created_at ASC, id ASC`
+  );
+  for (const c of contracts) {
+    await syncServicesFromContract(c.id);
+  }
 }
 
 /**

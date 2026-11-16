@@ -4,6 +4,8 @@ import { requireAdmin } from "../../middleware/require-role.js";
 import { ROLES } from "../../constants/org.js";
 import { StaffService } from "./staff.service.js";
 import { HttpError } from "../auth/auth.service.js";
+import { getPermissionMatrix } from "../../constants/permissions.js";
+import { getStaffOverview } from "./staff-overview.service.js";
 
 export const staffRouter = Router();
 const staffService = new StaffService();
@@ -72,6 +74,22 @@ staffRouter.post("/", requireAuth, requireAdmin, async (req: Request, res: Respo
     res.status(201).json({ success: true, data: staff });
   } catch (error: any) {
     const statusCode = error instanceof HttpError ? error.status : 400;
+    res.status(statusCode).json({ success: false, message: error.message });
+  }
+});
+
+// GET /api/staff/permissions — Admin xem ma trận quyền theo vai trò (phải khai báo TRƯỚC các route /:id)
+staffRouter.get("/permissions", requireAuth, requireAdmin, (_req: Request, res: Response) => {
+  res.json({ success: true, data: getPermissionMatrix() });
+});
+
+// GET /api/staff/:id/overview — Admin xem quyền và danh sách khách hàng của một nhân viên
+staffRouter.get("/:id/overview", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const overview = await getStaffOverview(req.params.id);
+    res.json({ success: true, data: overview });
+  } catch (error: any) {
+    const statusCode = error instanceof HttpError ? error.status : 500;
     res.status(statusCode).json({ success: false, message: error.message });
   }
 });

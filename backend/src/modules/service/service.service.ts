@@ -14,6 +14,8 @@ export interface ServiceRow {
   service_group?: string | null;
   package_name?: string | null;
   payment_type?: string | null;
+  contract_id?: string | null;
+  contract_transaction_code?: string | null;
 }
 
 export interface ServiceRecordDto {
@@ -30,6 +32,8 @@ export interface ServiceRecordDto {
   serviceGroup: string | null;
   packageName: string | null;
   paymentType: string | null;
+  contractId: string | null;
+  transactionCode: string | null;
 }
 
 export class ServiceServiceError extends Error {
@@ -60,7 +64,20 @@ function toServiceRecord(row: ServiceRow): ServiceRecordDto {
     serviceGroup: row.service_group ?? null,
     packageName: row.package_name ?? null,
     paymentType: row.payment_type ?? null,
+    contractId: row.contract_id ?? null,
+    transactionCode: row.contract_transaction_code ?? null,
   };
+}
+
+const SERVICE_SELECT = `
+  SELECT s.*, c.transaction_code AS contract_transaction_code
+  FROM services s
+  LEFT JOIN contracts c ON c.id = s.contract_id
+`;
+
+function contractLinkedMessage(row: ServiceRow): string {
+  const code = row.contract_transaction_code ? ` ${row.contract_transaction_code}` : "";
+  return `Dịch vụ này sinh từ đơn hàng${code}, vui lòng chỉnh sửa ở đơn hàng`;
 }
 
 function isValidServiceGroup(v: unknown): v is (typeof SERVICE_GROUPS)[number] {
@@ -71,23 +88,31 @@ function isValidPaymentType(v: unknown): v is (typeof PAYMENT_METHODS)[number] {
   return typeof v === "string" && (PAYMENT_METHODS as readonly string[]).includes(v);
 }
 
+export interface ServiceDb {
+  query: <T = any>(sql: string, params?: any[]) => Promise<T[]>;
+  run: (sql: string, params?: any[]) => Promise<unknown>;
+}
+
 /**
  * Cập nhật lại tóm tắt dịch vụ trên bảng customers (cột `services` nối tên
  * dịch vụ bằng ", ", `nearest_expiration` = ngày hết hạn sớm nhất còn hiệu
  * lực từ hôm nay) để bảng danh sách khách hàng cũ (dòng 1 `customers`) vẫn
  * hiển thị đúng sau khi thêm/sửa/xóa dịch vụ của khách.
  */
-async function refreshCustomerSummary(customerId: string): Promise<void> {
-  const rows = await query<{ service_name: string; expiration_date: string }>(
+export async function refreshCustomerSummary(
+  customerId: string,
+  db: ServiceDb = { query, run }
+): Promise<void> {
+  const rows = await db.query<{ service_name: string; expiration_date: string }>(
     "SELECT service_name, expiration_date FROM services WHERE customer_id = ? ORDER BY expiration_date ASC",
     [customerId]
   );
 
-  const servicesJoined = rows.map((r) => r.service_name).join(", ");
+  const servicesJoined = Array.from(new Set(rows.map((r) => r.service_name))).join(", ");
   const today = todayVn();
   const nearest = rows.find((r) => r.expiration_date >= today);
 
-  await run("UPDATE customers SET services = ?, nearest_expiration = ? WHERE id = ?", [
+  await db.run("UPDATE customers SET services = ?, nearest_expiration = ? WHERE id = ?", [
     servicesJoined || null,
     nearest ? nearest.expiration_date : null,
     customerId,
@@ -108,15 +133,15 @@ export interface CreateServiceInput {
 
 export class ServiceService {
   async getAll(filters: { staff?: string; expiringWithinDays?: number }): Promise<ServiceRecordDto[]> {
-    let sql = "SELECT * FROM services WHERE 1=1";
+    let sql = `${SERVICE_SELECT} WHERE 1=1`;
     const params: any[] = [];
 
     if (filters.staff && filters.staff !== "all") {
-      sql += " AND staff_name = ?";
+      sql += " AND s.staff_name = ?";
       params.push(filters.staff);
     }
 
-    sql += " ORDER BY expiration_date ASC";
+    sql += " ORDER BY s.expiration_date ASC";
     const rows = await query<ServiceRow>(sql, params);
     let records = rows.map(toServiceRecord);
 
@@ -129,7 +154,7 @@ export class ServiceService {
 
   async listByCustomer(customerId: string): Promise<ServiceRecordDto[]> {
     const rows = await query<ServiceRow>(
-      "SELECT * FROM services WHERE customer_id = ? ORDER BY expiration_date ASC",
+      `${SERVICE_SELECT} WHERE s.customer_id = ? ORDER BY s.expiration_date ASC`,
       [customerId]
     );
     return rows.map(toServiceRecord);
@@ -192,7 +217,7 @@ export class ServiceService {
 
     await refreshCustomerSummary(input.customerId);
 
-    const rows = await query<ServiceRow>("SELECT * FROM services WHERE id = ?", [id]);
+    const rows = await query<ServiceRow>(`${SERVICE_SELECT} WHERE s.id = ?`, [id]);
     return toServiceRecord(rows[0]);
   }
 
@@ -201,11 +226,14 @@ export class ServiceService {
     patch: Partial<CreateServiceInput>,
     scope: string | null = null
   ): Promise<ServiceRecordDto> {
-    const existingRows = await query<ServiceRow>("SELECT * FROM services WHERE id = ?", [id]);
+    const existingRows = await query<ServiceRow>(`${SERVICE_SELECT} WHERE s.id = ?`, [id]);
     if (existingRows.length === 0) {
       throw new ServiceServiceError("Không tìm thấy dịch vụ", 404);
     }
     const existing = existingRows[0];
+    if (existing.contract_id) {
+      throw new ServiceServiceError(contractLinkedMessage(existing), 400);
+    }
 
     if (scope !== null) {
       if (existing.staff_name !== scope) {
@@ -269,14 +297,17 @@ export class ServiceService {
       await refreshCustomerSummary(affectedCustomerId);
     }
 
-    const rows = await query<ServiceRow>("SELECT * FROM services WHERE id = ?", [id]);
+    const rows = await query<ServiceRow>(`${SERVICE_SELECT} WHERE s.id = ?`, [id]);
     return toServiceRecord(rows[0]);
   }
 
   async remove(id: string): Promise<void> {
-    const rows = await query<ServiceRow>("SELECT * FROM services WHERE id = ?", [id]);
+    const rows = await query<ServiceRow>(`${SERVICE_SELECT} WHERE s.id = ?`, [id]);
     if (rows.length === 0) {
       throw new ServiceServiceError("Không tìm thấy dịch vụ", 404);
+    }
+    if (rows[0].contract_id) {
+      throw new ServiceServiceError(contractLinkedMessage(rows[0]), 400);
     }
     const customerId = rows[0].customer_id;
 

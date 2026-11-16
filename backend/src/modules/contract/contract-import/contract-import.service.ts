@@ -61,6 +61,7 @@ export class ContractImportService {
         customerName: "",
         subscriberCodes: [],
         totalValue: null,
+        termMonths: null,
         channel: "",
         amStaff: "",
         serviceGroup: "",

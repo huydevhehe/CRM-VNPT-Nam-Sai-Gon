@@ -28,6 +28,8 @@ import {
   transferCaringStaff,
   importCustomerBatchExcel,
   assignStaffBulk,
+  getCtvOptions,
+  CtvOption,
 } from "@/lib/api/customers.api";
 import { getTerritories } from "@/lib/api/territories.api";
 import { getStaff } from "@/lib/api/staff.api";
@@ -41,7 +43,9 @@ import { useAuth } from "@/lib/auth/auth-context";
 import TeamManager from "@/components/admin/customer/TeamManager";
 import CustomerForm, {
   CustomerFormValues,
+  EMPTY_CUSTOMER_FORM,
   customerToFormValues,
+  ctvOptionsWithCurrent,
 } from "@/components/admin/customer/CustomerForm";
 import CustomerImportWizard from "@/components/admin/customer/CustomerImportWizard";
 
@@ -62,6 +66,8 @@ export default function CustomersPage() {
   const [transferTarget, setTransferTarget] = useState<CustomerRecord | null>(null);
   const [transferStaff, setTransferStaff] = useState("");
   const [staffNames, setStaffNames] = useState<string[]>([]);
+  const [activeStaffNames, setActiveStaffNames] = useState<string[]>([]);
+  const [ctvOptions, setCtvOptions] = useState<CtvOption[]>([]);
   const [transferError, setTransferError] = useState<string | null>(null);
   const [transferring, setTransferring] = useState(false);
 
@@ -143,10 +149,23 @@ export default function CustomersPage() {
     let isMounted = true;
     getStaff()
       .then((staff) => {
-        if (isMounted) setStaffNames(Array.from(new Set(staff.map((s) => s.name))));
+        if (isMounted) {
+          setStaffNames(Array.from(new Set(staff.map((s) => s.name))));
+          setActiveStaffNames(
+            Array.from(new Set(staff.filter((s) => s.status === "Đang hoạt động").map((s) => s.name)))
+          );
+        }
       })
       .catch(() => {
         // Gợi ý tên nhân viên là tuỳ chọn; backend vẫn kiểm tra khi điều chuyển.
+      });
+
+    getCtvOptions()
+      .then((options) => {
+        if (isMounted) setCtvOptions(options);
+      })
+      .catch(() => {
+        // Danh sách CTV chỉ để chọn "CTV giới thiệu"; không chặn trang khách hàng.
       });
 
     getTerritories()
@@ -254,6 +273,9 @@ export default function CustomersPage() {
         customerCode: values.customerCode || undefined,
         status: values.status || undefined,
         teamId: values.teamId || undefined,
+        amStaff: values.amStaff || undefined,
+        amCaringStaff: values.amCaringStaff || undefined,
+        referredByCtvId: values.referredByCtvId || undefined,
         salesChannel: values.salesChannel || undefined,
         territoryId: values.territoryId || undefined,
         phone: values.phone || undefined,
@@ -291,6 +313,9 @@ export default function CustomersPage() {
         customerCode: values.customerCode || undefined,
         status: values.status || undefined,
         teamId: values.teamId || undefined,
+        amStaff: values.amStaff || undefined,
+        amCaringStaff: values.amCaringStaff || undefined,
+        referredByCtvId: values.referredByCtvId || null,
         salesChannel: values.salesChannel || undefined,
         territoryId: values.territoryId || undefined,
         phone: values.phone || undefined,
@@ -456,27 +481,33 @@ export default function CustomersPage() {
     {
       header: "Dịch vụ đã đăng ký",
       accessorKey: "services",
-      cell: (item) => (
-        <div className="flex flex-wrap gap-1">
-          {item.services.map((s, i) => (
-            <span
-              key={i}
-              className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700"
-            >
-              {s}
-            </span>
-          ))}
-        </div>
-      ),
+      cell: (item) =>
+        item.services.length === 0 ? (
+          <span className="text-xs text-slate-400">Chưa có dịch vụ</span>
+        ) : (
+          <div className="flex flex-wrap gap-1">
+            {item.services.map((s, i) => (
+              <span
+                key={i}
+                className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700"
+              >
+                {s}
+              </span>
+            ))}
+          </div>
+        ),
     },
     {
       header: "Hết hạn gần nhất",
       accessorKey: "nearestExpiration",
-      cell: (item) => (
-        <span className="font-semibold text-amber-700">
-          {item.nearestExpiration}
-        </span>
-      ),
+      cell: (item) =>
+        item.nearestExpiration ? (
+          <span className="font-semibold text-amber-700">
+            {item.nearestExpiration.replace(/^(\d{4})-(\d{2})-(\d{2}).*$/, "$3/$2/$1")}
+          </span>
+        ) : (
+          <span className="text-slate-400">—</span>
+        ),
     },
     {
       header: "AM Phụ trách",
@@ -504,6 +535,21 @@ export default function CustomersPage() {
       cell: (item) => (
         <span className="text-xs font-semibold text-slate-700">{item.teamName || "—"}</span>
       ),
+    },
+    {
+      header: "CTV giới thiệu",
+      accessorKey: "referredByCtvName",
+      cell: (item) =>
+        item.referredByCtvName ? (
+          <div className="text-xs">
+            <div className="font-medium text-slate-800">{item.referredByCtvName}</div>
+            {item.referredByCtvCode && (
+              <div className="font-mono text-[10px] text-slate-400">{item.referredByCtvCode}</div>
+            )}
+          </div>
+        ) : (
+          <span className="text-slate-400">—</span>
+        ),
     },
     {
       header: "Đợt giao",
@@ -727,6 +773,11 @@ export default function CustomersPage() {
               getValue: (row) => row.salesChannel || null,
             },
             {
+              id: "referredByCtvName",
+              label: "CTV giới thiệu",
+              getValue: (row) => row.referredByCtvName || null,
+            },
+            {
               id: "amStaff",
               label: "AM phụ trách",
               getValue: (row) => row.amStaff || null,
@@ -850,8 +901,16 @@ export default function CustomersPage() {
       {showForm && (
         <CustomerForm
           mode="create"
+          initialValues={
+            isAdmin
+              ? undefined
+              : { ...EMPTY_CUSTOMER_FORM, amStaff: user?.name ?? "", amCaringStaff: user?.name ?? "" }
+          }
           territories={territories}
           teams={teams}
+          staffNames={activeStaffNames}
+          ctvOptions={ctvOptions}
+          amStaffLocked={!isAdmin}
           submitting={submitting}
           error={formError}
           onSubmit={handleCreateSubmit}
@@ -866,6 +925,10 @@ export default function CustomersPage() {
           initialValues={customerToFormValues(editTarget)}
           territories={territories}
           teams={teams}
+          staffNames={activeStaffNames}
+          ctvOptions={ctvOptionsWithCurrent(ctvOptions, editTarget)}
+          amStaffLocked={!isAdmin}
+          amCaringLocked={!isAdmin && editTarget.amStaff !== user?.name}
           submitting={submitting}
           error={formError}
           onSubmit={handleEditSubmit}

@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
-import { ADMIN, AM, API_URL, apiLogin, bearer } from "./helpers";
+import { ADMIN, AM, API_URL, apiLogin, bearer, createApprovedCtv } from "./helpers";
 
 const STAFF_OLD = "Nguyễn Thị Tình";
 const STAFF_NEW = "Phạm Thanh Hà";
@@ -442,5 +442,187 @@ test.describe("API Team khách hàng", () => {
       data: { customerIds: [id], amCaringStaff: "Nhân Viên Không Tồn Tại ABC" },
     });
     expect(badStaff.status()).toBe(400);
+  });
+});
+
+test.describe("API khách hàng: AM phụ trách, CTV giới thiệu, dịch vụ rỗng", () => {
+  let token: string;
+  let amToken: string;
+
+  test.beforeAll(async ({ request }) => {
+    token = await apiLogin(request, ADMIN.username, ADMIN.password);
+    amToken = await apiLogin(request, AM.username, AM.password);
+  });
+
+  function newCustomer(data: Record<string, unknown> = {}) {
+    return {
+      name: `KH API AM-CTV ${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type: "Doanh nghiệp",
+      customerGroup: "Tự phát triển",
+      ...data,
+    };
+  }
+
+  test("khách tạo mới không có dịch vụ: services rỗng, không còn mặc định Internet Fiber", async ({
+    request,
+  }) => {
+    const res = await request.post(`${API_URL}/customers`, {
+      headers: bearer(token),
+      data: newCustomer(),
+    });
+    expect(res.status()).toBe(201);
+    const data = (await res.json()).data;
+    expect(data.services ?? "").toBe("");
+  });
+
+  test("Admin chọn AM bán hàng và AM CSKH; nhân viên không tồn tại bị 400", async ({ request }) => {
+    const ok = await request.post(`${API_URL}/customers`, {
+      headers: bearer(token),
+      data: newCustomer({ amStaff: STAFF_NEW, amCaringStaff: "Nguyễn Thị Huyền Trang" }),
+    });
+    expect(ok.status()).toBe(201);
+    const data = (await ok.json()).data;
+    expect(data.am_staff).toBe(STAFF_NEW);
+    expect(data.am_caring_staff).toBe("Nguyễn Thị Huyền Trang");
+
+    const bad = await request.post(`${API_URL}/customers`, {
+      headers: bearer(token),
+      data: newCustomer({ amStaff: "Nhân Viên Không Tồn Tại ABC" }),
+    });
+    expect(bad.status()).toBe(400);
+  });
+
+  test("AM tạo khách: AM bán hàng ép = chính mình, AM CSKH mặc định chính mình hoặc chọn người khác", async ({
+    request,
+  }) => {
+    const own = await request.post(`${API_URL}/customers`, {
+      headers: bearer(amToken),
+      data: newCustomer(),
+    });
+    expect(own.status()).toBe(201);
+    const ownData = (await own.json()).data;
+    expect(ownData.am_staff).toBe(STAFF_OLD);
+    expect(ownData.am_caring_staff).toBe(STAFF_OLD);
+
+    const withCaring = await request.post(`${API_URL}/customers`, {
+      headers: bearer(amToken),
+      data: newCustomer({ amStaff: STAFF_OLD, amCaringStaff: STAFF_NEW }),
+    });
+    expect(withCaring.status()).toBe(201);
+    const caringData = (await withCaring.json()).data;
+    expect(caringData.am_staff).toBe(STAFF_OLD);
+    expect(caringData.am_caring_staff).toBe(STAFF_NEW);
+
+    const forOther = await request.post(`${API_URL}/customers`, {
+      headers: bearer(amToken),
+      data: newCustomer({ amStaff: STAFF_NEW }),
+    });
+    expect(forOther.status()).toBe(403);
+  });
+
+  test("AM sửa khách của mình: không đổi được AM bán hàng, đổi được AM CSKH; Admin đổi tự do", async ({
+    request,
+  }) => {
+    const created = await request.post(`${API_URL}/customers`, {
+      headers: bearer(amToken),
+      data: newCustomer(),
+    });
+    const id = (await created.json()).data.id;
+
+    const changeAm = await request.patch(`${API_URL}/customers/${id}`, {
+      headers: bearer(amToken),
+      data: { amStaff: STAFF_NEW },
+    });
+    expect(changeAm.status()).toBe(403);
+
+    const sameAm = await request.patch(`${API_URL}/customers/${id}`, {
+      headers: bearer(amToken),
+      data: { amStaff: STAFF_OLD, note: "Giữ nguyên AM bán hàng" },
+    });
+    expect(sameAm.status()).toBe(200);
+
+    const changeCaring = await request.patch(`${API_URL}/customers/${id}`, {
+      headers: bearer(amToken),
+      data: { amCaringStaff: STAFF_NEW },
+    });
+    expect(changeCaring.status()).toBe(200);
+    expect((await changeCaring.json()).data.am_caring_staff).toBe(STAFF_NEW);
+
+    const adminChange = await request.patch(`${API_URL}/customers/${id}`, {
+      headers: bearer(token),
+      data: { amStaff: STAFF_NEW, amCaringStaff: STAFF_OLD },
+    });
+    expect(adminChange.status()).toBe(200);
+    const after = (await adminChange.json()).data;
+    expect(after.am_staff).toBe(STAFF_NEW);
+    expect(after.am_caring_staff).toBe(STAFF_OLD);
+  });
+
+  test("GET /customers/ctv-options: mọi nhân viên gọi được, CTV vãng lai bị chặn", async ({ request }) => {
+    const ctv = await createApprovedCtv(request, token);
+
+    const asAm = await request.get(`${API_URL}/customers/ctv-options`, { headers: bearer(amToken) });
+    expect(asAm.status()).toBe(200);
+    const options = (await asAm.json()).data as Array<{ id: string; code: string; name: string }>;
+    const found = options.find((o) => o.id === ctv.id);
+    expect(found).toBeTruthy();
+    expect(found?.code).toBe(ctv.referralCode);
+
+    const asCtv = await request.get(`${API_URL}/customers/ctv-options`, { headers: bearer(ctv.token) });
+    expect(asCtv.status()).toBe(403);
+
+    const anonymous = await request.get(`${API_URL}/customers/ctv-options`);
+    expect(anonymous.status()).toBe(401);
+  });
+
+  test("CTV giới thiệu: tạo, sửa, gỡ; CTV không tồn tại bị 400; DTO trả tên và mã CTV", async ({
+    request,
+  }) => {
+    const ctv = await createApprovedCtv(request, token);
+
+    const created = await request.post(`${API_URL}/customers`, {
+      headers: bearer(amToken),
+      data: newCustomer({ referredByCtvId: ctv.id }),
+    });
+    expect(created.status()).toBe(201);
+    const createdData = (await created.json()).data;
+    expect(createdData.referred_by_ctv_id).toBe(ctv.id);
+    expect(createdData.referred_by_ctv_name).toBeTruthy();
+    expect(createdData.referred_by_ctv_code).toBe(ctv.referralCode);
+
+    const bad = await request.post(`${API_URL}/customers`, {
+      headers: bearer(amToken),
+      data: newCustomer({ referredByCtvId: "CTV-KHONG-TON-TAI" }),
+    });
+    expect(bad.status()).toBe(400);
+
+    const plain = await request.post(`${API_URL}/customers`, {
+      headers: bearer(amToken),
+      data: newCustomer(),
+    });
+    const id = (await plain.json()).data.id;
+
+    const attach = await request.patch(`${API_URL}/customers/${id}`, {
+      headers: bearer(amToken),
+      data: { referredByCtvId: ctv.id },
+    });
+    expect(attach.status()).toBe(200);
+    expect((await attach.json()).data.referred_by_ctv_id).toBe(ctv.id);
+
+    const detail = await request.get(`${API_URL}/customers/${id}`, { headers: bearer(amToken) });
+    expect((await detail.json()).data.referred_by_ctv_code).toBe(ctv.referralCode);
+
+    const detach = await request.patch(`${API_URL}/customers/${id}`, {
+      headers: bearer(amToken),
+      data: { referredByCtvId: null },
+    });
+    expect(detach.status()).toBe(200);
+    expect((await detach.json()).data.referred_by_ctv_id).toBeNull();
+
+    const badPatch = await request.patch(`${API_URL}/customers/${id}`, {
+      headers: bearer(amToken),
+      data: { referredByCtvId: "CTV-KHONG-TON-TAI" },
+    });
+    expect(badPatch.status()).toBe(400);
   });
 });

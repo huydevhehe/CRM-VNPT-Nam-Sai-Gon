@@ -127,6 +127,7 @@ contractRouter.post("/", requireAuth, async (req: Request, res: Response) => {
       taxCode,
       contractNumber,
       signedDate,
+      termMonths,
     } = req.body;
 
     const actor = {
@@ -151,6 +152,7 @@ contractRouter.post("/", requireAuth, async (req: Request, res: Response) => {
         taxCode,
         contractNumber,
         signedDate,
+        termMonths,
       },
       actor
     );
@@ -180,6 +182,7 @@ contractRouter.patch("/:id", requireAuth, async (req: Request, res: Response) =>
       taxCode,
       contractNumber,
       signedDate,
+      termMonths,
     } = req.body;
 
     const actor = {
@@ -204,6 +207,7 @@ contractRouter.patch("/:id", requireAuth, async (req: Request, res: Response) =>
         taxCode,
         contractNumber,
         signedDate,
+        termMonths,
       },
       actor
     );

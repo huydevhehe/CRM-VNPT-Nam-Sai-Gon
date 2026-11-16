@@ -227,6 +227,7 @@ test.describe("Lead / Hợp đồng / Hoa hồng gắn CTV và Phường trên t
     await expect(fieldByLabel(page, "Giá trị đơn hàng (₫)")).toHaveValue("20000000");
     await fieldByLabel(page, "Mã giao dịch").fill(transactionCode);
     await fieldByLabel(page, "Mã thuê bao (phân tách bởi dấu phẩy)").fill("0901112223");
+    await fieldByLabel(page, "Thời hạn (tháng)").fill("6");
     await expect(fieldByLabel(page, "Phường")).toHaveValue(wards[0].id);
 
     await page.locator("form").getByRole("button", { name: "Tạo đơn hàng" }).click();

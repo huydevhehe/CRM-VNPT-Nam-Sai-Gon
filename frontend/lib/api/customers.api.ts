@@ -37,6 +37,9 @@ interface CustomerApiRow {
   billing_phone?: string | null;
   billing_email?: string | null;
   note?: string | null;
+  referred_by_ctv_id?: string | null;
+  referred_by_ctv_name?: string | null;
+  referred_by_ctv_code?: string | null;
 }
 
 function mapCustomerRow(row: CustomerApiRow): CustomerRecord {
@@ -72,6 +75,9 @@ function mapCustomerRow(row: CustomerApiRow): CustomerRecord {
     billingPhone: row.billing_phone || undefined,
     billingEmail: row.billing_email || undefined,
     note: row.note || undefined,
+    referredByCtvId: row.referred_by_ctv_id || undefined,
+    referredByCtvName: row.referred_by_ctv_name || undefined,
+    referredByCtvCode: row.referred_by_ctv_code || undefined,
   };
 }
 
@@ -110,9 +116,22 @@ export interface CreateCustomerInput {
   billingPhone?: string;
   billingEmail?: string;
   note?: string;
+  /** Chuỗi rỗng / null khi sửa = gỡ CTV giới thiệu. */
+  referredByCtvId?: string | null;
 }
 
-export type UpdateCustomerInput = Partial<Omit<CreateCustomerInput, "amStaff" | "amCaringStaff">>;
+export type UpdateCustomerInput = Partial<CreateCustomerInput>;
+
+export interface CtvOption {
+  id: string;
+  code: string;
+  name: string;
+}
+
+/** Danh sách CTV đang hoạt động để chọn "CTV giới thiệu" (mọi nhân viên gọi được). */
+export function getCtvOptions(): Promise<CtvOption[]> {
+  return apiFetch<CtvOption[]>("/customers/ctv-options");
+}
 
 export async function getCustomer(id: string): Promise<CustomerRecord> {
   const row = await apiFetch<CustomerApiRow>(`/customers/${encodeURIComponent(id)}`);

@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState, FormEvent } from "react";
-import { UserCheck, UserPlus, Mail, Award, TrendingUp, Users, AlertTriangle, X, KeyRound, Phone, Pencil, PauseCircle, Ban, RotateCcw, Info } from "lucide-react";
+import { UserCheck, UserPlus, Mail, Award, TrendingUp, Users, AlertTriangle, X, KeyRound, Phone, Pencil, PauseCircle, Ban, RotateCcw, Info, Eye } from "lucide-react";
 import KpiCard from "@/components/admin/shared/KpiCard";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
 import StatusBadge from "@/components/admin/shared/StatusBadge";
+import StaffOverviewModal from "@/components/admin/staff/StaffOverviewModal";
 import { TableFilter } from "@/lib/table-filters";
 import { getStaff, createStaff, updateStaff, resetStaffPassword, changeStaffStatus, getStaffReferences } from "@/lib/api/staff.api";
 import { getTerritories } from "@/lib/api/territories.api";
@@ -137,6 +138,8 @@ export default function EmployeesPage() {
   const [statusLoadingRefs, setStatusLoadingRefs] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [statusSubmitting, setStatusSubmitting] = useState(false);
+
+  const [overviewStaff, setOverviewStaff] = useState<StaffRecord | null>(null);
 
   async function handleOpenStatusModal(
     staff: StaffRecord,
@@ -369,7 +372,13 @@ export default function EmployeesPage() {
             {item.name.slice(0, 2).toUpperCase()}
           </div>
           <div>
-            <div className="font-bold text-slate-900">{item.name}</div>
+            <button
+              type="button"
+              onClick={() => setOverviewStaff(item)}
+              className="text-left font-bold text-slate-900 hover:text-vnpt hover:underline"
+            >
+              {item.name}
+            </button>
             <div className="flex items-center gap-2 text-[11px] text-slate-400">
               {item.email && (
                 <span className="flex items-center gap-0.5">
@@ -486,6 +495,15 @@ export default function EmployeesPage() {
         const isActive = item.status === "Đang hoạt động";
         return (
           <div className="flex items-center gap-1.5 whitespace-nowrap">
+            <button
+              type="button"
+              onClick={() => setOverviewStaff(item)}
+              data-testid={`staff-view-${item.code}`}
+              className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300"
+            >
+              <Eye className="h-3 w-3 text-slate-500" />
+              <span>Xem</span>
+            </button>
             <button
               type="button"
               onClick={() => handleOpenEdit(item)}
@@ -1397,6 +1415,14 @@ export default function EmployeesPage() {
             )}
           </div>
         </div>
+      )}
+
+      {overviewStaff && (
+        <StaffOverviewModal
+          key={overviewStaff.id}
+          staff={overviewStaff}
+          onClose={() => setOverviewStaff(null)}
+        />
       )}
 
       {/* Modal Đổi trạng thái (Đình chỉ / Ngừng hoạt động / Mở lại) */}

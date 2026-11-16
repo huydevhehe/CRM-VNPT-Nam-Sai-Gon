@@ -90,3 +90,70 @@ export function getStaffReferences(id: string): Promise<Record<string, number>> 
 }
 
 
+
+export type AccessLevel = "Toàn quyền" | "Chỉ dữ liệu của mình" | "Chỉ xem" | "Không có quyền";
+export type PermissionRoleName = "Admin" | "AM" | "AM Bán chăm";
+
+export interface PermissionModuleRecord {
+  key: string;
+  label: string;
+  note: string;
+  access: Record<PermissionRoleName, AccessLevel>;
+}
+
+export interface PermissionRoleInfo {
+  role: PermissionRoleName;
+  label: string;
+  badge: string;
+  description: string;
+}
+
+export interface PermissionMatrix {
+  levels: AccessLevel[];
+  roles: PermissionRoleInfo[];
+  modules: PermissionModuleRecord[];
+}
+
+export interface RolePermission {
+  key: string;
+  label: string;
+  level: AccessLevel;
+  note: string;
+}
+
+export type StaffCustomerRelation = "Bán hàng" | "CSKH" | "Bán hàng + CSKH";
+
+export interface StaffOverviewCustomer {
+  id: string;
+  code: string | null;
+  name: string;
+  customerGroup: string | null;
+  relation: StaffCustomerRelation;
+  teamName: string | null;
+  activeServices: number;
+}
+
+export interface StaffOverview {
+  staff: {
+    id: string;
+    code: string;
+    name: string;
+    role: string;
+    status: string;
+    territory: string;
+    email: string;
+    phone: string | null;
+    staffType: string | null;
+  };
+  permissions: RolePermission[];
+  customers: StaffOverviewCustomer[];
+  stats: { customers: number; leads: number; orders: number; openTasks: number };
+}
+
+export function getPermissionMatrix(): Promise<PermissionMatrix> {
+  return apiFetch<PermissionMatrix>("/staff/permissions");
+}
+
+export function getStaffOverview(id: string): Promise<StaffOverview> {
+  return apiFetch<StaffOverview>(`/staff/${encodeURIComponent(id)}/overview`);
+}

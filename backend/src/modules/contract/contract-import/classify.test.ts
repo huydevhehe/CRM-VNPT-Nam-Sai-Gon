@@ -17,6 +17,7 @@ function makeRow(overrides: Partial<ContractImportRow> = {}): ContractImportRow 
     customerName: "",
     subscriberCodes: [],
     totalValue: null,
+    termMonths: null,
     channel: "",
     amStaff: "",
     serviceGroup: "",

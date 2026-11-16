@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { loginAs } from "./fixtures/auth";
-import { ADMIN, API_URL, apiLogin, bearer } from "./api/helpers";
+import { ADMIN, API_URL, apiLogin, bearer, createApprovedCtv } from "./api/helpers";
 
 const LABEL_PTM = "KH PTM";
 const LABEL_KHDN = "KH địa bàn";
@@ -82,7 +82,7 @@ test.describe("Khách hàng PTM / KHDN chăm trên /admin/customers", () => {
     await expect(page.getByRole("button", { name: "Điều chuyển CSKH" })).toHaveCount(0);
   });
 
-  test("tạo khách loại PTM địa bàn với Team, Kênh bán, liên hệ/thanh toán — dòng mới hiện badge địa bàn, cột Kênh bán, cột Team", async ({
+  test("tạo khách loại PTM địa bàn với Team, AM, CTV giới thiệu, Kênh bán — dòng mới hiện badge địa bàn, cột Kênh bán, cột Team, AM, CTV và chưa có dịch vụ", async ({
     page,
     request,
   }) => {
@@ -100,6 +100,12 @@ test.describe("Khách hàng PTM / KHDN chăm trên /admin/customers", () => {
     const territoriesRes = await request.get(`${API_URL}/territories`, { headers: bearer(token) });
     const territories = (await territoriesRes.json()).data as Array<{ id: string; ward_name: string }>;
     const territory = territories[0];
+    const ctv = await createApprovedCtv(request, token);
+    const ctvListRes = await request.get(`${API_URL}/customers/ctv-options`, { headers: bearer(token) });
+    const ctvOption = ((await ctvListRes.json()).data as Array<{ id: string; code: string; name: string }>).find(
+      (c) => c.id === ctv.id
+    );
+    expect(ctvOption).toBeTruthy();
 
     await loginAs(page, "admin");
     await page.goto("/admin/customers");
@@ -111,6 +117,9 @@ test.describe("Khách hàng PTM / KHDN chăm trên /admin/customers", () => {
     await formModal.locator("#cf-name").fill(customerName);
     await formModal.locator("#cf-group").selectOption({ label: LABEL_PTM_DIA_BAN });
     await formModal.locator("#cf-team").selectOption({ label: teamName });
+    await formModal.locator("#cf-am-staff").selectOption({ label: "Phạm Thanh Hà" });
+    await formModal.locator("#cf-am-caring").selectOption({ label: "Nguyễn Thị Huyền Trang" });
+    await formModal.locator("#cf-ctv").selectOption(ctv.id);
     await formModal.locator("#cf-sales-channel").selectOption({ label: "Online" });
     await formModal.locator("#cf-territory").selectOption({ label: territory.ward_name });
 
@@ -123,6 +132,42 @@ test.describe("Khách hàng PTM / KHDN chăm trên /admin/customers", () => {
     await expect(row).toContainText(teamName);
     await expect(row).toContainText("Online");
     await expect(row).toContainText(territory.ward_name);
+    await expect(row).toContainText("Phạm Thanh Hà");
+    await expect(row).toContainText("Nguyễn Thị Huyền Trang");
+    await expect(row).toContainText(ctvOption!.name);
+    await expect(row).toContainText("Chưa có dịch vụ");
+    await expect(row).not.toContainText("Internet Fiber");
+  });
+
+  test("AM tạo khách: AM bán hàng bị khoá = chính mình, AM CSKH mặc định chính mình và chọn được người khác", async ({
+    page,
+  }) => {
+    const customerName = `KH UI AM Tạo ${Date.now()}`;
+
+    await loginAs(page, "am");
+    await page.goto("/admin/customers");
+    await expect(page.locator("table")).toBeVisible({ timeout: 15_000 });
+
+    await page.getByRole("button", { name: "Thêm khách hàng" }).click();
+    const formModal = page.locator("div.fixed", { hasText: "Thêm khách hàng" });
+    await expect(formModal).toBeVisible();
+
+    const amStaff = formModal.locator("#cf-am-staff");
+    await expect(amStaff).toBeDisabled();
+    await expect(amStaff).toHaveValue("Nguyễn Thị Tình");
+    const amCaring = formModal.locator("#cf-am-caring");
+    await expect(amCaring).toBeEnabled();
+    await expect(amCaring).toHaveValue("Nguyễn Thị Tình");
+    await amCaring.selectOption({ label: "Phạm Thanh Hà" });
+
+    await formModal.locator("#cf-name").fill(customerName);
+    await formModal.getByRole("button", { name: "Thêm khách hàng" }).click();
+    await expect(formModal).toBeHidden();
+
+    const row = page.locator("tbody tr", { hasText: customerName });
+    await expect(row).toBeVisible();
+    await expect(row).toContainText("Nguyễn Thị Tình");
+    await expect(row).toContainText("Phạm Thanh Hà");
   });
 
   test("Admin lọc bằng ô tìm kiếm, chọn tất cả, gán AM chăm sóc cho nhiều khách", async ({

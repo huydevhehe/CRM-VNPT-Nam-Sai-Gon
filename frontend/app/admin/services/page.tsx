@@ -1,20 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BellRing, CheckSquare, Settings2, Clock, AlertTriangle } from "lucide-react";
+import { BellRing, CheckSquare, Settings2, Clock, AlertTriangle, UploadCloud } from "lucide-react";
+import { useAuth } from "@/lib/auth/auth-context";
 import KpiCard from "@/components/admin/shared/KpiCard";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
 import StatusBadge from "@/components/admin/shared/StatusBadge";
+import ServiceImportWizard from "@/components/admin/service/ServiceImportWizard";
 import { TableFilter } from "@/lib/table-filters";
 import { getServices } from "@/lib/api/services.api";
 import { createTask } from "@/lib/api/tasks.api";
 import { ServiceRecord } from "@/lib/crm/types/crm.types";
 
 export default function ServicesPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "Admin";
   const [data, setData] = useState<ServiceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creatingCode, setCreatingCode] = useState<string | null>(null);
+  const [showImportWizard, setShowImportWizard] = useState(false);
 
   async function handleCreateTask(item: ServiceRecord) {
     setCreatingCode(item.serviceCode);
@@ -99,6 +104,7 @@ export default function ServicesPage() {
     {
       header: "Ngày bắt đầu",
       accessorKey: "startDate",
+      cell: (item) => item.startDate.replace(/^(\d{4})-(\d{2})-(\d{2}).*$/, "$3/$2/$1"),
     },
     {
       header: "Ngày hết hạn",
@@ -109,7 +115,7 @@ export default function ServicesPage() {
             item.isExpired ? "text-rose-600" : "text-amber-700"
           }`}
         >
-          {item.expirationDate}
+          {item.expirationDate.replace(/^(\d{4})-(\d{2})-(\d{2}).*$/, "$3/$2/$1")}
         </span>
       ),
     },
@@ -172,13 +178,24 @@ export default function ServicesPage() {
             Theo dõi thuê bao sắp hết hạn, tự động kích hoạt email cảnh báo nhân viên & CC Admin
           </p>
         </div>
-        <button
-          onClick={() => alert("Cấu hình mốc cảnh báo theo từng dịch vụ")}
-          className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
-        >
-          <Settings2 className="h-4 w-4" />
-          <span>Cấu hình mốc cảnh báo</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <button
+              onClick={() => setShowImportWizard(true)}
+              className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+            >
+              <UploadCloud className="h-4 w-4" />
+              <span>Nhập dịch vụ (Excel)</span>
+            </button>
+          )}
+          <button
+            onClick={() => alert("Cấu hình mốc cảnh báo theo từng dịch vụ")}
+            className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+          >
+            <Settings2 className="h-4 w-4" />
+            <span>Cấu hình mốc cảnh báo</span>
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards */}
@@ -233,7 +250,15 @@ export default function ServicesPage() {
           exportFileName="vnpt_dich_vu_canh_bao"
         />
       )}
+
+      {showImportWizard && (
+        <ServiceImportWizard
+          onClose={() => setShowImportWizard(false)}
+          onImported={() => {
+            getServices().then(setData).catch(() => {});
+          }}
+        />
+      )}
     </div>
   );
 }
-

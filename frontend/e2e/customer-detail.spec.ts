@@ -24,6 +24,16 @@ test.describe("Trang chi tiết khách hàng", () => {
 
     await expect(page.locator("h2", { hasText: customerName })).toBeVisible();
 
+    // Khách mới chưa có dữ liệu: các thẻ thống kê hiện 0, không NaN
+    const stats = page.getByLabel("Thống kê khách hàng");
+    const statValue = (label: string) =>
+      stats.getByText(label, { exact: true }).locator("xpath=following-sibling::div[1]");
+    await expect(statValue("Dịch vụ đang dùng")).toHaveText("0");
+    await expect(statValue("Sắp hết hạn")).toHaveText("0");
+    await expect(statValue("Tổng số đơn hàng")).toHaveText("0");
+    await expect(statValue("Còn phải thu")).toHaveText("0 đ");
+    await expect(stats).not.toContainText("NaN");
+
     await page.getByRole("button", { name: "Thêm dịch vụ" }).click();
     const serviceModal = page.locator("div.fixed", { hasText: "Thêm dịch vụ" });
     await expect(serviceModal).toBeVisible();
@@ -35,12 +45,14 @@ test.describe("Trang chi tiết khách hàng", () => {
     await serviceModal.getByRole("button", { name: "Lưu" }).click();
     await expect(serviceModal).toBeHidden();
 
-    const servicesSection = page.locator("section", { hasText: "Dịch vụ đang dùng" });
+    const servicesSection = page.locator("section", { has: page.getByRole("heading", { name: "Dịch vụ đang dùng" }) });
     await expect(servicesSection).toContainText(serviceName);
+    // Thêm dịch vụ xong: thống kê tự cập nhật không cần tải lại trang
+    await expect(statValue("Dịch vụ đang dùng")).toHaveText("1");
 
     // Tải lại trang chi tiết: dịch vụ vẫn còn (lấy từ backend, không chỉ state cục bộ)
     await page.reload();
-    await expect(page.locator("section", { hasText: "Dịch vụ đang dùng" })).toContainText(
+    await expect(page.locator("section", { has: page.getByRole("heading", { name: "Dịch vụ đang dùng" }) })).toContainText(
       serviceName
     );
 

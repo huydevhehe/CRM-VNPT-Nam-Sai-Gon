@@ -20,6 +20,7 @@ export type CreateContractInput = Pick<
   taxCode?: string | null;
   contractNumber?: string | null;
   signedDate?: string | null;
+  termMonths?: number | null;
 };
 
 export type UpdateContractInfoInput = Partial<CreateContractInput>;

@@ -1,5 +1,5 @@
 import { query, run, transaction } from "../../database/db.js";
-import { CUSTOMER_GROUPS, LEAD_CHANNELS } from "../../constants/org.js";
+import { CUSTOMER_GROUPS, LEAD_CHANNELS, ROLES, USER_STATUS } from "../../constants/org.js";
 import { normalizeTaxCode } from "../../utils/tax-code.js";
 
 const GROUP_LABEL: Record<string, string> = {
@@ -51,6 +51,41 @@ export class CustomerServiceError extends Error {
   }
 }
 
+export interface CustomerOperator {
+  name: string;
+  role: string;
+}
+
+export interface CtvOptionDto {
+  id: string;
+  code: string;
+  name: string;
+}
+
+async function assertActiveStaff(name: string, label: string): Promise<void> {
+  const rows = await query<any>("SELECT id, status FROM staff WHERE name = ?", [name]);
+  if (rows.length === 0) {
+    throw new CustomerServiceError(`${label} "${name}" không tồn tại`, 400);
+  }
+  if (rows[0].status && rows[0].status !== USER_STATUS.ACTIVE) {
+    throw new CustomerServiceError(`${label} "${name}" đang bị đình chỉ hoặc đã ngừng hoạt động`, 400);
+  }
+}
+
+async function assertActiveCtv(id: string): Promise<void> {
+  const rows = await query<any>("SELECT id, status FROM users WHERE id = ? AND role = ?", [id, ROLES.CTV]);
+  if (rows.length === 0) {
+    throw new CustomerServiceError("CTV giới thiệu không tồn tại", 400);
+  }
+  if (rows[0].status && rows[0].status !== USER_STATUS.ACTIVE) {
+    throw new CustomerServiceError("CTV giới thiệu chưa được duyệt hoặc đã ngừng hoạt động", 400);
+  }
+}
+
+function trimmed(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function isValidGroup(group: unknown): group is (typeof CUSTOMER_GROUPS)[number] {
   return typeof group === "string" && (CUSTOMER_GROUPS as readonly string[]).includes(group);
 }
@@ -59,13 +94,17 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** SELECT khách hàng kèm territory_name/team_name (dùng chung cho getAll/getById/create/update). */
+const CUSTOMER_SELECT = `SELECT c.*, t.ward_name AS territory_name, ct.name AS team_name,
+         u.name AS referred_by_ctv_name, u.referral_code AS referred_by_ctv_code
+  FROM customers c
+  LEFT JOIN territories t ON t.id = c.territory_id
+  LEFT JOIN customer_teams ct ON ct.id = c.team_id
+  LEFT JOIN users u ON u.id = c.referred_by_ctv_id`;
+
+/** SELECT khách hàng kèm territory_name/team_name/CTV giới thiệu (dùng chung cho getAll/getById/create/update). */
 async function fetchCustomerWithJoins(id: string): Promise<any | undefined> {
   const rows = await query<any>(
-    `SELECT c.*, t.ward_name AS territory_name, ct.name AS team_name
-     FROM customers c
-     LEFT JOIN territories t ON t.id = c.territory_id
-     LEFT JOIN customer_teams ct ON ct.id = c.team_id
+    `${CUSTOMER_SELECT}
      WHERE c.id = ?`,
     [id]
   );
@@ -78,11 +117,7 @@ export class CustomerService {
       throw new CustomerServiceError("Nhóm khách hàng không hợp lệ", 400);
     }
 
-    let sql = `
-      SELECT c.*, t.ward_name AS territory_name, ct.name AS team_name
-      FROM customers c
-      LEFT JOIN territories t ON t.id = c.territory_id
-      LEFT JOIN customer_teams ct ON ct.id = c.team_id
+    let sql = `${CUSTOMER_SELECT}
       WHERE 1=1
     `;
     const params: any[] = [];
@@ -102,29 +137,42 @@ export class CustomerService {
     return query(sql, params);
   }
 
-  async create(data: {
-    name: string;
-    identityCode?: string;
-    type: string;
-    customerGroup: string;
-    phone?: string;
-    address?: string;
-    services?: string;
-    amStaff?: string;
-    amCaringStaff?: string;
-    handoverBatch?: string;
-    territoryId?: string;
-    customerCode?: string;
-    status?: string;
-    teamId?: string;
-    salesChannel?: string;
-    contactName?: string;
-    contactEmail?: string;
-    billingName?: string;
-    billingPhone?: string;
-    billingEmail?: string;
-    note?: string;
-  }) {
+  /** Danh sách CTV đang hoạt động để chọn "CTV giới thiệu" (mọi nhân viên đều gọi được, khác /ctv-accounts chỉ Admin). */
+  async listCtvOptions(): Promise<CtvOptionDto[]> {
+    const rows = await query<any>(
+      "SELECT id, name, referral_code FROM users WHERE role = ? AND (status IS NULL OR status = ?) ORDER BY name",
+      [ROLES.CTV, USER_STATUS.ACTIVE]
+    );
+    return rows.map((row) => ({ id: row.id, code: row.referral_code ?? "", name: row.name }));
+  }
+
+  async create(
+    data: {
+      name: string;
+      identityCode?: string;
+      type: string;
+      customerGroup: string;
+      phone?: string;
+      address?: string;
+      services?: string;
+      amStaff?: string;
+      amCaringStaff?: string;
+      handoverBatch?: string;
+      territoryId?: string;
+      customerCode?: string;
+      status?: string;
+      teamId?: string;
+      salesChannel?: string;
+      contactName?: string;
+      contactEmail?: string;
+      billingName?: string;
+      billingPhone?: string;
+      billingEmail?: string;
+      note?: string;
+      referredByCtvId?: string;
+    },
+    operator?: CustomerOperator
+  ) {
     if (!isValidGroup(data.customerGroup)) {
       throw new CustomerServiceError("Nhóm khách hàng không hợp lệ", 400);
     }
@@ -144,22 +192,45 @@ export class CustomerService {
       }
     }
 
+    const referredByCtvId = trimmed(data.referredByCtvId);
+    if (referredByCtvId) {
+      await assertActiveCtv(referredByCtvId);
+    }
+
     const handoverBatch =
       typeof data.handoverBatch === "string" ? data.handoverBatch.trim() : "";
 
+    let amStaff = trimmed(data.amStaff);
+    let amCaringStaff = trimmed(data.amCaringStaff);
+    if (operator) {
+      const actor = trimmed(operator.name);
+      if (operator.role === ROLES.ADMIN) {
+        if (amStaff) await assertActiveStaff(amStaff, "AM bán hàng");
+        if (amCaringStaff) await assertActiveStaff(amCaringStaff, "AM chăm sóc");
+      } else {
+        if (amStaff && amStaff !== actor) {
+          throw new CustomerServiceError("Bạn chỉ được tạo khách hàng với AM bán hàng là chính mình", 403);
+        }
+        amStaff = actor;
+        if (amCaringStaff && amCaringStaff !== actor) {
+          await assertActiveStaff(amCaringStaff, "AM chăm sóc");
+        }
+      }
+    }
+
     const id = `KH-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const amStaff = data.amStaff || "Nguyễn Thị Tình";
+    amStaff = amStaff || "Nguyễn Thị Tình";
     // AM chăm sóc (CSKH) là field độc lập với AM bán hàng — chỉ dùng amStaff làm
     // mặc định khi người tạo không chỉ định rõ amCaringStaff, không ép buộc trùng nhau.
-    const amCaringStaff = data.amCaringStaff || amStaff;
+    amCaringStaff = amCaringStaff || amStaff;
     const identityCode = data.identityCode ? normalizeTaxCode(data.identityCode) : "";
 
     await run(
       `INSERT INTO customers (
         id, name, identity_code, type, customer_group, phone, address, services, am_staff, am_caring_staff,
         handover_batch, handover_date, territory_id, customer_code, status, team_id, sales_channel,
-        contact_name, contact_email, billing_name, billing_phone, billing_email, note
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        contact_name, contact_email, billing_name, billing_phone, billing_email, note, referred_by_ctv_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         data.name,
@@ -168,7 +239,7 @@ export class CustomerService {
         data.customerGroup,
         data.phone || null,
         data.address || null,
-        data.services || "Internet Fiber",
+        trimmed(data.services) || null,
         amStaff,
         amCaringStaff,
         handoverBatch || null,
@@ -184,10 +255,11 @@ export class CustomerService {
         data.billingPhone || null,
         data.billingEmail || null,
         data.note || null,
+        referredByCtvId || null,
       ]
     );
 
-    // Trả kèm territory_name/team_name (giống getById) để FE không cần gọi lại
+    // Trả kèm territory_name/team_name/CTV giới thiệu (giống getById) để FE không cần gọi lại
     // GET /customers sau khi tạo mới vẫn thấy đúng badge địa bàn/Team ngay.
     const created = await fetchCustomerWithJoins(id);
 
@@ -204,10 +276,11 @@ export class CustomerService {
   }
 
   /**
-   * Sửa thông tin khách hàng. KHÔNG cho đổi am_staff/am_caring_staff qua route
-   * này (đã có route điều chuyển riêng, admin-only). Admin sửa được mọi khách;
-   * AM chỉ sửa được khách mình đang phụ trách (am_staff hoặc am_caring_staff
-   * khớp tên người gọi, so sánh đã trim).
+   * Sửa thông tin khách hàng. Admin sửa được mọi khách và được đổi AM bán hàng /
+   * AM chăm sóc. AM chỉ sửa được khách mình đang phụ trách (am_staff hoặc
+   * am_caring_staff khớp tên người gọi, so sánh đã trim); AM không đổi được AM
+   * bán hàng, và chỉ AM bán hàng của khách mới đổi được AM chăm sóc. Giá trị AM
+   * gửi lên trùng giá trị hiện tại thì bỏ qua. Luồng Điều chuyển vẫn là route riêng.
    */
   async update(
     id: string,
@@ -229,11 +302,41 @@ export class CustomerService {
       }
     }
 
-    if ("amStaff" in patch || "amCaringStaff" in patch) {
-      throw new CustomerServiceError(
-        "Không thể đổi AM phụ trách qua route này, dùng điều chuyển",
-        400
-      );
+    const isAdmin = operator.role === ROLES.ADMIN;
+    const actor = trimmed(operator.name);
+    const staffSets: { column: string; value: string | null }[] = [];
+    const staffLogs: string[] = [];
+
+    if ("amStaff" in patch) {
+      const next = trimmed(patch.amStaff);
+      if (!next) {
+        throw new CustomerServiceError("AM bán hàng không được để trống", 400);
+      }
+      const current = trimmed(existing.am_staff);
+      if (next !== current) {
+        if (!isAdmin) {
+          throw new CustomerServiceError("Chỉ Admin được đổi AM bán hàng, vui lòng nhờ Admin điều chuyển", 403);
+        }
+        await assertActiveStaff(next, "AM bán hàng");
+        staffSets.push({ column: "am_staff", value: next });
+        staffLogs.push(`AM bán hàng: ${current || "(chưa có)"} → ${next}`);
+      }
+    }
+
+    if ("amCaringStaff" in patch) {
+      const next = trimmed(patch.amCaringStaff);
+      const current = trimmed(existing.am_caring_staff);
+      if (next !== current) {
+        if (!isAdmin && trimmed(existing.am_staff) !== actor) {
+          throw new CustomerServiceError(
+            "Chỉ AM bán hàng của khách hoặc Admin được đổi AM chăm sóc",
+            403
+          );
+        }
+        if (next) await assertActiveStaff(next, "AM chăm sóc");
+        staffSets.push({ column: "am_caring_staff", value: next || null });
+        staffLogs.push(`AM chăm sóc: ${current || "(chưa có)"} → ${next || "(bỏ trống)"}`);
+      }
     }
 
     const fieldMap: Record<string, string> = {
@@ -254,6 +357,7 @@ export class CustomerService {
       billingPhone: "billing_phone",
       billingEmail: "billing_email",
       note: "note",
+      referredByCtvId: "referred_by_ctv_id",
     };
 
     if (patch.customerGroup !== undefined && !isValidGroup(patch.customerGroup)) {
@@ -278,6 +382,14 @@ export class CustomerService {
       }
     }
 
+    if ("referredByCtvId" in patch) {
+      const nextCtv = trimmed(patch.referredByCtvId);
+      patch.referredByCtvId = nextCtv || null;
+      if (nextCtv && nextCtv !== trimmed(existing.referred_by_ctv_id)) {
+        await assertActiveCtv(nextCtv);
+      }
+    }
+
     const sets: string[] = [];
     const params: any[] = [];
     for (const [key, column] of Object.entries(fieldMap)) {
@@ -286,9 +398,13 @@ export class CustomerService {
         params.push(patch[key] ?? null);
       }
     }
+    for (const { column, value } of staffSets) {
+      sets.push(`${column} = ?`);
+      params.push(value);
+    }
 
     if (sets.length === 0) {
-      return existing;
+      return fetchCustomerWithJoins(id);
     }
 
     params.push(id);
@@ -298,7 +414,9 @@ export class CustomerService {
       id,
       operator.name || "Admin",
       "Sửa thông tin khách hàng",
-      `Sửa khách ${id}: cập nhật ${Object.keys(patch).join(", ")}`
+      `Sửa khách ${id}: cập nhật ${Object.keys(patch).join(", ")}${
+        staffLogs.length > 0 ? ` (${staffLogs.join("; ")})` : ""
+      }`
     );
 
     return fetchCustomerWithJoins(id);
@@ -573,7 +691,7 @@ export class CustomerService {
               "Tập hiện hữu",
               phone || null,
               item.address || null,
-              item.services || "Internet Fiber",
+              trimmed(item.services) || null,
               amCaringStaff.trim(),
               amCaringStaff.trim(),
               batch,
