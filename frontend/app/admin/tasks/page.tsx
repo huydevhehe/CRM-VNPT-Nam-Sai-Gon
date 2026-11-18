@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState, FormEvent } from "react";
-import { CheckSquare, Plus, Clock, AlertTriangle, CheckCircle2, X } from "lucide-react";
+import { CheckSquare, Plus, Clock, AlertTriangle, CheckCircle2, X, Trash2 } from "lucide-react";
 import KpiCard from "@/components/admin/shared/KpiCard";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
 import StatusSelect from "@/components/admin/shared/StatusSelect";
+import ConfirmDeleteDialog from "@/components/admin/shared/ConfirmDeleteDialog";
 import { TableFilter } from "@/lib/table-filters";
-import { getTasks, createTask, updateTaskStatus } from "@/lib/api/tasks.api";
+import { getTasks, createTask, updateTaskStatus, deleteTask } from "@/lib/api/tasks.api";
 import { useAuth } from "@/lib/auth/auth-context";
 import { TaskRecord, TaskPriority, TaskStatus } from "@/lib/crm/types/crm.types";
 
@@ -42,6 +43,8 @@ export default function TasksPage() {
   const [form, setForm] = useState<TaskFormState>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const [deleteTarget, setDeleteTarget] = useState<TaskRecord | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -102,6 +105,13 @@ export default function TasksPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleConfirmDeleteTask() {
+    if (!deleteTarget) return;
+    await deleteTask(deleteTarget.id);
+    setData((prev) => prev.filter((item) => item.id !== deleteTarget.id));
+    setDeleteTarget(null);
   }
 
   const columns: Column<TaskRecord>[] = [
@@ -168,6 +178,24 @@ export default function TasksPage() {
         />
       ),
     },
+    ...(isAdmin
+      ? [
+          {
+            header: "Hành động",
+            cell: (item: TaskRecord) => (
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(item)}
+                data-testid="task-delete"
+                title="Xóa công việc"
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            ),
+          } as Column<TaskRecord>,
+        ]
+      : []),
   ];
 
   const taskFilters: TableFilter<TaskRecord>[] = [
@@ -389,6 +417,23 @@ export default function TasksPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDeleteDialog
+        open={deleteTarget !== null}
+        title="Xóa công việc"
+        description={
+          deleteTarget ? (
+            <>
+              Xóa công việc <strong>{deleteTarget.title}</strong> giao cho {deleteTarget.assignee}? Thao tác này
+              không thể hoàn tác.
+            </>
+          ) : (
+            ""
+          )
+        }
+        onConfirm={handleConfirmDeleteTask}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

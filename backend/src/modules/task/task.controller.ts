@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../../middleware/require-auth.js";
-import { resolveStaffScope } from "../../middleware/actor.js";
+import { requireAdmin } from "../../middleware/require-role.js";
+import { resolveActorName, resolveStaffScope } from "../../middleware/actor.js";
 import { TaskService } from "./task.service.js";
 
 export const taskRouter = Router();
@@ -47,6 +48,18 @@ taskRouter.post("/", requireAuth, async (req: Request, res: Response) => {
     res.status(201).json({ success: true, data: task });
   } catch (error: any) {
     res.status(400).json({ success: false, message: error.message });
+  }
+});
+
+// DELETE /api/tasks/:id — chỉ Admin
+taskRouter.delete("/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const operator = (await resolveActorName(req)) ?? req.user?.id ?? "Admin";
+    await taskService.remove(req.params.id, operator);
+    res.json({ success: true, message: "Đã xóa công việc" });
+  } catch (error: any) {
+    const statusCode = error.message === "Không tìm thấy công việc" ? 404 : 400;
+    res.status(statusCode).json({ success: false, message: error.message });
   }
 });
 
