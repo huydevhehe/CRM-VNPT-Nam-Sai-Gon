@@ -1,6 +1,35 @@
 import { query, run } from "../../database/db.js";
 import { SERVICE_GROUPS, PAYMENT_METHODS } from "../../constants/org.js";
 import { todayVn } from "../../utils/date-vn.js";
+import {
+  decryptInvoicePassword,
+  encryptInvoicePassword,
+  MASKED_PASSWORD,
+} from "./invoice-credential-crypto.js";
+
+/**
+ * Dịch vụ "Hóa đơn điện tử" (so khớp không phân biệt hoa thường/dấu trong tên
+ * dịch vụ, vd "Hóa đơn điện tử VNPT Invoice") mới có khối thông tin đăng nhập
+ * hệ thống hóa đơn (link/tài khoản/mật khẩu).
+ */
+export function isInvoicePortalService(serviceName: string | null | undefined): boolean {
+  if (!serviceName) return false;
+  const normalized = serviceName
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/đ/gi, "d")
+    .toLowerCase();
+  return normalized.includes("hoa don dien tu");
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 export interface ServiceRow {
   id: string;
@@ -16,6 +45,9 @@ export interface ServiceRow {
   payment_type?: string | null;
   contract_id?: string | null;
   contract_transaction_code?: string | null;
+  invoice_portal_url?: string | null;
+  invoice_portal_username?: string | null;
+  invoice_portal_password_enc?: string | null;
 }
 
 export interface ServiceRecordDto {
@@ -34,6 +66,12 @@ export interface ServiceRecordDto {
   paymentType: string | null;
   contractId: string | null;
   transactionCode: string | null;
+  /** true nếu tên dịch vụ thuộc "Hóa đơn điện tử" (FE hiện khối thông tin đăng nhập). */
+  isInvoicePortalService: boolean;
+  invoicePortalUrl: string | null;
+  invoicePortalUsername: string | null;
+  /** "••••••" nếu đã có mật khẩu, null nếu chưa nhập — KHÔNG BAO GIỜ trả plaintext ở đây. */
+  invoicePortalPasswordMasked: string | null;
 }
 
 export class ServiceServiceError extends Error {
@@ -66,6 +104,10 @@ function toServiceRecord(row: ServiceRow): ServiceRecordDto {
     paymentType: row.payment_type ?? null,
     contractId: row.contract_id ?? null,
     transactionCode: row.contract_transaction_code ?? null,
+    isInvoicePortalService: isInvoicePortalService(row.service_name),
+    invoicePortalUrl: row.invoice_portal_url ?? null,
+    invoicePortalUsername: row.invoice_portal_username ?? null,
+    invoicePortalPasswordMasked: row.invoice_portal_password_enc ? MASKED_PASSWORD : null,
   };
 }
 
@@ -129,6 +171,47 @@ export interface CreateServiceInput {
   startDate: string;
   expirationDate: string;
   staffName?: string;
+  /** Chỉ áp dụng khi tên dịch vụ thuộc "Hóa đơn điện tử" (xem isInvoicePortalService). */
+  invoicePortalUrl?: string | null;
+  invoicePortalUsername?: string | null;
+  /** Plaintext nhập từ form; server mã hóa trước khi lưu, không bao giờ lưu nguyên văn. */
+  invoicePortalPassword?: string | null;
+}
+
+/**
+ * Kiểm tra + chuẩn hóa 3 trường thông tin đăng nhập hệ thống hóa đơn.
+ * Quy tắc: có mật khẩu thì bắt buộc có tài khoản; link phải là URL hợp lệ nếu nhập.
+ * Trả về các cột cần ghi DB (password đã mã hóa hoặc "không đổi"/"xóa").
+ */
+function resolveInvoiceCredentialWrite(
+  input: Pick<CreateServiceInput, "invoicePortalUrl" | "invoicePortalUsername" | "invoicePortalPassword">,
+  current: { url: string | null; username: string | null; passwordEnc: string | null }
+): { url: string | null; username: string | null; passwordEnc: string | null } {
+  const urlTouched = input.invoicePortalUrl !== undefined;
+  const usernameTouched = input.invoicePortalUsername !== undefined;
+  const passwordTouched = input.invoicePortalPassword !== undefined;
+
+  const url = urlTouched ? (input.invoicePortalUrl ? String(input.invoicePortalUrl).trim() : null) : current.url;
+  const username = usernameTouched
+    ? input.invoicePortalUsername
+      ? String(input.invoicePortalUsername).trim()
+      : null
+    : current.username;
+
+  let passwordEnc = current.passwordEnc;
+  if (passwordTouched) {
+    const plain = input.invoicePortalPassword ? String(input.invoicePortalPassword) : "";
+    passwordEnc = plain ? encryptInvoicePassword(plain) : null;
+  }
+
+  if (url && !isValidHttpUrl(url)) {
+    throw new ServiceServiceError("Link hệ thống hóa đơn không hợp lệ (phải là URL http/https)", 400);
+  }
+  if (passwordEnc && !username) {
+    throw new ServiceServiceError("Đã nhập mật khẩu thì phải nhập Tài khoản đăng nhập", 400);
+  }
+
+  return { url, username, passwordEnc };
 }
 
 export class ServiceService {
@@ -195,11 +278,16 @@ export class ServiceService {
     const id = `SRV-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const staffName = scope ?? (input.staffName || customer.am_caring_staff || customer.am_staff || "");
 
+    const invoiceCredential = isInvoicePortalService(input.serviceName)
+      ? resolveInvoiceCredentialWrite(input, { url: null, username: null, passwordEnc: null })
+      : { url: null, username: null, passwordEnc: null };
+
     await run(
       `INSERT INTO services (
         id, customer_name, service_name, service_code, start_date, expiration_date, staff_name,
-        customer_id, service_group, package_name, payment_type
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        customer_id, service_group, package_name, payment_type,
+        invoice_portal_url, invoice_portal_username, invoice_portal_password_enc
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         customer.name,
@@ -212,6 +300,9 @@ export class ServiceService {
         input.serviceGroup,
         input.packageName || null,
         input.paymentType,
+        invoiceCredential.url,
+        invoiceCredential.username,
+        invoiceCredential.passwordEnc,
       ]
     );
 
@@ -266,7 +357,11 @@ export class ServiceService {
       throw new ServiceServiceError("Ngày kết thúc phải sau hoặc bằng ngày bắt đầu", 400);
     }
 
-    const fieldMap: Record<keyof CreateServiceInput, string> = {
+    type PlainField = Exclude<
+      keyof CreateServiceInput,
+      "invoicePortalUrl" | "invoicePortalUsername" | "invoicePortalPassword"
+    >;
+    const fieldMap: Record<PlainField, string> = {
       customerId: "customer_id",
       serviceGroup: "service_group",
       serviceName: "service_name",
@@ -280,11 +375,34 @@ export class ServiceService {
 
     const sets: string[] = [];
     const params: any[] = [];
-    for (const [key, column] of Object.entries(fieldMap) as [keyof CreateServiceInput, string][]) {
+    for (const [key, column] of Object.entries(fieldMap) as [PlainField, string][]) {
       if (key in patch) {
         sets.push(`${column} = ?`);
         params.push((patch as any)[key] ?? null);
       }
+    }
+
+    const nextServiceName = patch.serviceName !== undefined ? patch.serviceName : existing.service_name;
+    if (
+      isInvoicePortalService(nextServiceName) &&
+      (patch.invoicePortalUrl !== undefined ||
+        patch.invoicePortalUsername !== undefined ||
+        patch.invoicePortalPassword !== undefined)
+    ) {
+      const invoiceCredential = resolveInvoiceCredentialWrite(patch, {
+        url: existing.invoice_portal_url ?? null,
+        username: existing.invoice_portal_username ?? null,
+        passwordEnc: existing.invoice_portal_password_enc ?? null,
+      });
+      sets.push("invoice_portal_url = ?", "invoice_portal_username = ?", "invoice_portal_password_enc = ?");
+      params.push(invoiceCredential.url, invoiceCredential.username, invoiceCredential.passwordEnc);
+    } else if (
+      !isInvoicePortalService(nextServiceName) &&
+      (existing.invoice_portal_url || existing.invoice_portal_username || existing.invoice_portal_password_enc)
+    ) {
+      // Đổi tên dịch vụ ra khỏi nhóm "Hóa đơn điện tử": xóa luôn thông tin đăng nhập cũ để không treo dữ liệu nhạy cảm không còn dùng.
+      sets.push("invoice_portal_url = ?", "invoice_portal_username = ?", "invoice_portal_password_enc = ?");
+      params.push(null, null, null);
     }
 
     if (sets.length > 0) {
@@ -316,5 +434,38 @@ export class ServiceService {
     if (customerId) {
       await refreshCustomerSummary(customerId);
     }
+  }
+
+  /**
+   * Chỉ Admin: giải mã mật khẩu hệ thống hóa đơn điện tử để xem. Ghi audit log
+   * (ai xem, dịch vụ nào, lúc nào) — không bao giờ trả plaintext qua các API khác.
+   */
+  async revealInvoiceCredential(
+    id: string,
+    actor: string
+  ): Promise<{ url: string | null; username: string | null; password: string | null }> {
+    const rows = await query<ServiceRow>(`${SERVICE_SELECT} WHERE s.id = ?`, [id]);
+    if (rows.length === 0) {
+      throw new ServiceServiceError("Không tìm thấy dịch vụ", 404);
+    }
+    const row = rows[0];
+    if (!isInvoicePortalService(row.service_name)) {
+      throw new ServiceServiceError("Dịch vụ này không thuộc nhóm Hóa đơn điện tử", 400);
+    }
+
+    const password = row.invoice_portal_password_enc
+      ? decryptInvoicePassword(row.invoice_portal_password_enc)
+      : null;
+
+    await run(
+      "INSERT INTO invoice_credential_audit_logs (id, service_id, action, actor, created_at) VALUES (?, ?, ?, ?, ?)",
+      [`ICL-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, id, "Xem mật khẩu hóa đơn", actor, new Date().toISOString()]
+    );
+
+    return {
+      url: row.invoice_portal_url ?? null,
+      username: row.invoice_portal_username ?? null,
+      password,
+    };
   }
 }

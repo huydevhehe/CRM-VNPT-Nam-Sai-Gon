@@ -4,13 +4,21 @@ import { initDatabase, query, run } from "../../database/db.js";
 import { applySchemaExtensions, backfillServicesFromContracts } from "../../database/schema-extensions.js";
 import { ContractService } from "../contract/contract.service.js";
 import { ServiceService, ServiceServiceError } from "./service.service.js";
-import { addMonthsIso, normalizeDateIso } from "./contract-service-sync.js";
+import { addMonthsIso, normalizeDateIso, syncServicesFromContract } from "./contract-service-sync.js";
 
 await initDatabase();
 await applySchemaExtensions();
 
 const contractService = new ContractService();
 const serviceService = new ServiceService();
+
+// AM phát triển là bắt buộc khi tạo đơn mới: các test tạo đơn dùng sẵn một AM mặc định.
+const SYNC_DEFAULT_AM = "AM Sync Mặc Định";
+await run(
+  `INSERT INTO staff (id, code, name, role, territory, status) VALUES (?, ?, ?, ?, ?, ?)
+   ON CONFLICT (id) DO NOTHING`,
+  ["S-SYNC-DEFAULT", "NV-SYNC-DEF", SYNC_DEFAULT_AM, "AM", "Phường 1", "ACTIVE"]
+);
 
 let counter = 0;
 function uid(): string {
@@ -42,7 +50,9 @@ async function customerSummary(customerId: string) {
 }
 
 async function createOrder(customerId: string, extra: Record<string, unknown> = {}) {
-  return contractService.create({
+  // amStaff: null = mô phỏng đơn cũ chưa có AM: tạo bằng AM mặc định rồi gỡ AM đi.
+  const legacyWithoutAm = extra.amStaff === null;
+  const order = await contractService.create({
     transactionCode: `GD-SYNC-${uid()}`,
     subscriberCodes: ["TB-1", "TB-2", "TB-3"],
     totalValue: 1000000,
@@ -54,8 +64,14 @@ async function createOrder(customerId: string, extra: Record<string, unknown> = 
     serviceName: "Internet Fiber",
     packageName: "Home Net 2",
     paymentMethod: "Trả hàng tháng",
+    contractTemplate: "hoa_don_dien_tu",
     ...extra,
+    amStaff: legacyWithoutAm ? SYNC_DEFAULT_AM : (extra.amStaff ?? SYNC_DEFAULT_AM),
   } as any);
+  if (!legacyWithoutAm) return order;
+  await run("UPDATE contracts SET am_staff = NULL WHERE id = ?", [order.id]);
+  await syncServicesFromContract(order.id);
+  return { ...order, amStaff: null };
 }
 
 test("addMonthsIso clamps to the end of shorter months", () => {
@@ -129,6 +145,7 @@ test("service name falls back to package name then a default; AM of the order wi
     packageName: null,
     serviceGroup: null,
     paymentMethod: null,
+    amStaff: null,
     transactionCode: `GD-SYNC-B-${uid()}`,
   });
 
@@ -205,7 +222,7 @@ test("changing term, signed date or order fields re-syncs generated services", a
 
   await contractService.updateInfo(
     order.id,
-    { termMonths: 24, signedDate: "2026-05-31", serviceName: "SmartCA", paymentMethod: "Trả trước" },
+    { termMonths: 24, signedDate: "2026-05-31", serviceName: "SmartCA", paymentMethod: "Trả trước", prepaidMonths: 12 },
     { role: "admin" }
   );
 

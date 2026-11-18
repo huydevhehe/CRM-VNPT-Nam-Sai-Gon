@@ -35,6 +35,11 @@ export interface CreateServiceInput {
   startDate: string;
   expirationDate: string;
   staffName?: string;
+  /** Chỉ áp dụng khi tên dịch vụ thuộc "Hóa đơn điện tử". */
+  invoicePortalUrl?: string | null;
+  invoicePortalUsername?: string | null;
+  /** Plaintext nhập từ form; để trống = không đổi (sửa) hoặc không đặt (tạo mới). */
+  invoicePortalPassword?: string | null;
 }
 
 export function createService(data: CreateServiceInput): Promise<ServiceRecord> {
@@ -58,4 +63,17 @@ export async function deleteService(id: string): Promise<void> {
   await apiFetch<{ message: string }>(`/services/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
+}
+
+export interface InvoiceCredentialRevealDto {
+  url: string | null;
+  username: string | null;
+  password: string | null;
+}
+
+/** Chỉ Admin: giải mã mật khẩu hệ thống hóa đơn để xem (ghi audit log phía server). */
+export function revealInvoiceCredential(serviceId: string): Promise<InvoiceCredentialRevealDto> {
+  return apiFetch<InvoiceCredentialRevealDto>(
+    `/services/${encodeURIComponent(serviceId)}/invoice-credential/reveal`
+  );
 }
