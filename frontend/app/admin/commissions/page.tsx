@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { Percent, ShieldAlert, ArrowDownLeft, ArrowUpRight, Clock, AlertTriangle, Edit3, Wallet, X } from "lucide-react";
+import { ShieldAlert, ArrowDownLeft, ArrowUpRight, Clock, AlertTriangle, Edit3, Wallet, X } from "lucide-react";
 import KpiCard from "@/components/admin/shared/KpiCard";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
 import StatusSelect from "@/components/admin/shared/StatusSelect";
@@ -31,6 +31,36 @@ function formatMoney(value: number | null): string {
   return `${value.toLocaleString("vi-VN")} ₫`;
 }
 
+type PayoutState = "none" | "partial" | "full";
+
+/** Trạng thái chi tính từ số liệu: Chưa chi / Chi một phần / Đã chi hết (không lưu DB). */
+function getPayoutState(item: Pick<CommissionRecord, "amount" | "paidOutAmount">): PayoutState {
+  const paid = item.paidOutAmount ?? 0;
+  if (paid <= 0) return "none";
+  if (paid >= item.amount) return "full";
+  return "partial";
+}
+
+const PAYOUT_STATE_META: Record<PayoutState, { label: string; className: string }> = {
+  none: { label: "Chưa chi", className: "bg-slate-100 text-slate-600" },
+  partial: { label: "Chi một phần", className: "bg-amber-50 text-amber-700" },
+  full: { label: "Đã chi hết", className: "bg-emerald-50 text-emerald-700" },
+};
+
+function PayoutStateBadge({ item }: { item: Pick<CommissionRecord, "amount" | "paidOutAmount"> }) {
+  const state = getPayoutState(item);
+  const meta = PAYOUT_STATE_META[state];
+  return (
+    <span
+      data-testid="commission-payout-state"
+      data-state={state}
+      className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold ${meta.className}`}
+    >
+      {meta.label}
+    </span>
+  );
+}
+
 export default function CommissionsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "Admin";
@@ -57,6 +87,18 @@ export default function CommissionsPage() {
   const [payoutDateInput, setPayoutDateInput] = useState<string>("");
   const [payoutError, setPayoutError] = useState<string | null>(null);
   const [payoutSaving, setPayoutSaving] = useState(false);
+
+  // Tổng hợp từ chính dữ liệu bảng (không dùng số cứng).
+  const totals = data.reduce(
+    (acc, row) => {
+      acc.received += row.amount;
+      acc.paid += row.paidOutAmount ?? 0;
+      acc[getPayoutState(row)] += 1;
+      return acc;
+    },
+    { received: 0, paid: 0, none: 0, partial: 0, full: 0 }
+  );
+  const totalRemaining = totals.received - totals.paid;
 
   function openEditModal(item: CommissionRecord) {
     setEditingItem(item);
@@ -255,10 +297,10 @@ export default function CommissionsPage() {
       ),
     },
     {
-      header: "Hoa hồng phải chi",
+      header: "Hoa hồng nhận",
       accessorKey: "amount",
       cell: (item) => (
-        <div>
+        <div title="Hoa hồng nhận (trước đây gọi là “Hoa hồng phải chi”)">
           <span className="font-bold text-slate-900">{formatMoney(item.amount)}</span>
           {item.note && (
             <p className="text-[11px] text-slate-500 italic mt-0.5">{item.note}</p>
@@ -267,14 +309,17 @@ export default function CommissionsPage() {
       ),
     },
     {
-      header: "Đã chi hoa hồng",
+      header: "Đã chi",
       accessorKey: "paidOutAmount",
       cell: (item) => (
-        <div>
+        <div title="Đã chi (trước đây gọi là “Đã chi hoa hồng”)">
           <span className="font-semibold text-slate-800">{formatMoney(item.paidOutAmount)}</span>
           {item.paidOutDate && (
             <p className="text-[11px] text-slate-400">{item.paidOutDate}</p>
           )}
+          <div className="mt-0.5">
+            <PayoutStateBadge item={item} />
+          </div>
         </div>
       ),
     },
@@ -282,9 +327,12 @@ export default function CommissionsPage() {
       header: "Còn lại",
       accessorKey: "remaining",
       cell: (item) => (
-        <span className={`font-bold ${item.remaining < 0 ? "text-rose-600" : "text-emerald-700"}`}>
-          {formatMoney(item.remaining)}
-        </span>
+        <div title="Còn lại = Hoa hồng nhận − Đã chi">
+          <span className={`font-bold ${item.remaining < 0 ? "text-rose-600" : "text-emerald-700"}`}>
+            {formatMoney(item.remaining)}
+          </span>
+          <p className="text-[10px] text-slate-400">= nhận − đã chi</p>
+        </div>
       ),
     },
     {
@@ -363,12 +411,12 @@ export default function CommissionsPage() {
       cell: (item) => formatMoney(item.totalCustomerPaid),
     },
     {
-      header: "Tổng hoa hồng phải chi",
+      header: "Tổng hoa hồng nhận",
       accessorKey: "totalCommission",
       cell: (item) => formatMoney(item.totalCommission),
     },
     {
-      header: "Tổng đã chi hoa hồng",
+      header: "Tổng đã chi",
       accessorKey: "totalPaidOut",
       cell: (item) => formatMoney(item.totalPaidOut),
     },
@@ -397,29 +445,33 @@ export default function CommissionsPage() {
             </span>
           </div>
           <p className="text-xs text-slate-500">
-            Theo dõi hoa hồng đã nhận từ Sales nội bộ và số tiền chi trả cho từng đối tác/kênh
+            Theo dõi hoa hồng nhận, số đã chi và số còn lại cho từng đối tác/kênh
           </p>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/* KPI Cards: số thật cộng từ bảng bên dưới */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" data-testid="commission-kpi-cards">
         <KpiCard
-          title="HOA HỒNG NỘI BỘ ĐÃ NHẬN"
-          value="86,5 tr ₫"
-          subtitle="Từ nguồn Sales giao"
+          title="HOA HỒNG NHẬN"
+          value={loading ? "—" : formatMoney(totals.received)}
+          subtitle={loading ? "Đang tải..." : `Tổng của ${data.length} bản ghi`}
           icon={ArrowDownLeft}
         />
         <KpiCard
-          title="HOA HỒNG CHI KÊNH"
-          value="42,8 tr ₫"
-          subtitle="Chi cho đại lý & đối tác"
+          title="ĐÃ CHI"
+          value={loading ? "—" : formatMoney(totals.paid)}
+          subtitle={
+            loading
+              ? "Đang tải..."
+              : `Chi hết ${totals.full} · một phần ${totals.partial} · chưa chi ${totals.none}`
+          }
           icon={ArrowUpRight}
         />
         <KpiCard
-          title="CHỜ ĐỐI SOÁT"
-          value="8,2 tr ₫"
-          subtitle="Đang kiểm tra chứng từ"
+          title="CÒN LẠI"
+          value={loading ? "—" : formatMoney(totalRemaining)}
+          subtitle="Còn lại = Hoa hồng nhận − Đã chi"
           icon={Clock}
         />
         <KpiCard
@@ -429,6 +481,14 @@ export default function CommissionsPage() {
           icon={ShieldAlert}
         />
       </div>
+
+      {/* Giải thích nhãn cho người dùng quen cách gọi cũ */}
+      <p className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-2.5 text-xs text-slate-600" data-testid="commission-legend">
+        <strong className="text-slate-800">Cách đọc:</strong> <strong>Hoa hồng nhận</strong> là số hoa hồng phát sinh của đơn
+        (cột cũ “Hoa hồng phải chi”); <strong>Đã chi</strong> là số đã chi trả (cột cũ “Đã chi hoa hồng”);{" "}
+        <strong>Còn lại = Hoa hồng nhận − Đã chi</strong>. Nhãn chi: <em>Chưa chi</em> (đã chi = 0),{" "}
+        <em>Chi một phần</em> (0 &lt; đã chi &lt; nhận), <em>Đã chi hết</em> (đã chi ≥ nhận).
+      </p>
 
       {/* Tabs */}
       <div className="flex gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-1 w-fit">
@@ -533,7 +593,7 @@ export default function CommissionsPage() {
 
               <div>
                 <label className="text-form-label mb-1.5 block text-slate-700">
-                  Số tiền hoa hồng (VNĐ) <span className="text-rose-500">*</span>
+                  Hoa hồng nhận (VNĐ) <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="number"
@@ -629,7 +689,7 @@ export default function CommissionsPage() {
 
               <div>
                 <label className="text-form-label mb-1.5 block text-slate-700">
-                  Đã chi hoa hồng (VNĐ) <span className="text-rose-500">*</span>
+                  Đã chi (VNĐ) <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="number"
