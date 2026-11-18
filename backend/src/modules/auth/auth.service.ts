@@ -146,9 +146,11 @@ export class AuthService {
       throw new HttpError(404, "Không tìm thấy người dùng");
     }
 
+    // Sai mật khẩu hiện tại là lỗi nhập liệu (400), KHÔNG trả 401: frontend coi
+    // 401 là "phiên hết hạn" và tự đăng xuất người dùng đang đổi mật khẩu.
     const isValid = await bcrypt.compare(String(currentPassword), user.password_hash);
     if (!isValid) {
-      throw new HttpError(401, "Mật khẩu hiện tại không đúng");
+      throw new HttpError(400, "Mật khẩu hiện tại không đúng");
     }
 
     const nextPass = typeof newPassword === "string" ? newPassword : "";
@@ -157,6 +159,10 @@ export class AuthService {
     }
     if (nextPass.length > 72) {
       throw new HttpError(400, "Mật khẩu mới tối đa 72 ký tự");
+    }
+
+    if (nextPass === String(currentPassword)) {
+      throw new HttpError(400, "Mật khẩu mới phải khác mật khẩu hiện tại");
     }
 
     const newHash = await bcrypt.hash(nextPass, 10);

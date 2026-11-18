@@ -1,7 +1,9 @@
 "use client";
 
-import { Menu, Search, Bell, Shield } from "lucide-react";
-import { useState } from "react";
+import { Menu, Search, Bell, Shield, ChevronDown, KeyRound, LogOut } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
 
 function initialsOf(name: string): string {
@@ -25,8 +27,36 @@ export default function AdminTopbar({
 }: AdminTopbarProps) {
   const [selectedMonth, setSelectedMonth] = useState("2026-10");
   const [selectedStaff, setSelectedStaff] = useState("all");
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const router = useRouter();
   const isAdmin = user?.role === "Admin";
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Menu người dùng: đóng khi bấm ra ngoài hoặc nhấn Esc.
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handlePointerDown(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [menuOpen]);
+
+  function handleLogout() {
+    setMenuOpen(false);
+    logout();
+    router.replace("/login");
+  }
 
   return (
     <header className="sticky top-0 z-30 flex h-18 items-center justify-between border-b border-slate-200 bg-white/95 px-5 backdrop-blur-xs lg:px-8">
@@ -84,20 +114,63 @@ export default function AdminTopbar({
           <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-blue-600" />
         </button>
 
-        {/* User profile */}
-        <div className="flex items-center gap-2.5 pl-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-100 font-bold text-vnpt">
-            {initialsOf(user?.name ?? "")}
-          </div>
-          <div className="hidden text-left xl:block">
-            <div className="text-xs font-bold text-slate-800">
-              {user?.name ?? ""}
+        {/* User profile + menu người dùng */}
+        <div ref={menuRef} className="relative pl-2">
+          <button
+            type="button"
+            data-testid="user-menu-trigger"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+            className="flex items-center gap-2.5 rounded-xl p-1 pr-2 text-left hover:bg-slate-50"
+          >
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-100 font-bold text-vnpt">
+              {initialsOf(user?.name ?? "")}
             </div>
-            <div className="flex items-center gap-1 text-[10px] text-slate-500">
-              <Shield className="h-2.5 w-2.5 text-blue-600" />
-              <span>{isAdmin ? "Admin Toàn quyền" : `${user?.role ?? ""} · Dữ liệu được giao`}</span>
+            <div className="hidden xl:block">
+              <div className="text-xs font-bold text-slate-800">
+                {user?.name ?? ""}
+              </div>
+              <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                <Shield className="h-2.5 w-2.5 text-blue-600" />
+                <span>{isAdmin ? "Admin Toàn quyền" : `${user?.role ?? ""} · Dữ liệu được giao`}</span>
+              </div>
             </div>
-          </div>
+            <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+          </button>
+
+          {menuOpen && (
+            <div
+              role="menu"
+              data-testid="user-menu"
+              className="absolute right-0 top-full z-40 mt-2 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+            >
+              <div className="border-b border-slate-100 px-3 py-2">
+                <div className="truncate text-xs font-bold text-slate-800">{user?.name ?? ""}</div>
+                <div className="text-[10px] text-slate-500">{user?.role ?? ""}</div>
+              </div>
+              <Link
+                href="/doi-mat-khau"
+                role="menuitem"
+                data-testid="user-menu-change-password"
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <KeyRound className="h-3.5 w-3.5 text-slate-400" />
+                Đổi mật khẩu
+              </Link>
+              <button
+                type="button"
+                role="menuitem"
+                data-testid="user-menu-logout"
+                onClick={handleLogout}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <LogOut className="h-3.5 w-3.5 text-slate-400" />
+                Đăng xuất
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </header>
