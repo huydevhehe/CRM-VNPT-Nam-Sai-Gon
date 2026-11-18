@@ -2,6 +2,7 @@ import { query } from "../../database/db.js";
 import { getRolePermissions, type RolePermission } from "../../constants/permissions.js";
 import { todayVn } from "../../utils/date-vn.js";
 import { HttpError } from "../auth/auth.service.js";
+import { listStaffWards, type StaffWardDto } from "./staff-territory.service.js";
 
 export type StaffCustomerRole = "Bán hàng" | "CSKH" | "Bán hàng + CSKH";
 
@@ -29,6 +30,8 @@ export interface StaffOverviewDto {
   };
   permissions: RolePermission[];
   customers: StaffOverviewCustomer[];
+  /** Tất cả phường nhân viên đang phụ trách (một nhân viên có thể phụ trách nhiều phường). */
+  territories: StaffWardDto[];
   stats: { customers: number; leads: number; orders: number; openTasks: number };
 }
 
@@ -99,6 +102,8 @@ export async function getStaffOverview(id: string): Promise<StaffOverviewDto> {
     activeServices: Number(row.active_services ?? 0),
   }));
 
+  const territories = await listStaffWards(name, staff.territory);
+
   const [leads, orders, openTasks] = await Promise.all([
     countWhere("SELECT COUNT(*) AS count FROM leads WHERE TRIM(staff_name) = ?", [name]),
     countWhere("SELECT COUNT(*) AS count FROM contracts WHERE TRIM(am_staff) = ?", [name]),
@@ -119,6 +124,7 @@ export async function getStaffOverview(id: string): Promise<StaffOverviewDto> {
     },
     permissions: getRolePermissions(staff.role),
     customers,
+    territories,
     stats: { customers: customers.length, leads, orders, openTasks },
   };
 }
