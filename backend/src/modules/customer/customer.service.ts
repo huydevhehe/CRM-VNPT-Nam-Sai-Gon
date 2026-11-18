@@ -1,6 +1,10 @@
 import { query, run, transaction } from "../../database/db.js";
 import { CUSTOMER_GROUPS, LEAD_CHANNELS, ROLES, USER_STATUS } from "../../constants/org.js";
 import { normalizeTaxCode } from "../../utils/tax-code.js";
+import { validateChannelDetail, ChannelSourceError } from "../channel-source/channel-source.service.js";
+import fs from "fs";
+import path from "path";
+import { config } from "../../config/index.js";
 
 const GROUP_LABEL: Record<string, string> = {
   "Tự phát triển": "KH PTM",
@@ -28,7 +32,8 @@ export interface BatchCustomerItem {
 }
 
 export interface CustomerBatchInput {
-  territoryId: string;
+  /** Tùy chọn kể từ feedback 17/11; bắt buộc chỉ khi mode = "replace". */
+  territoryId?: string | null;
   amCaringStaff: string;
   handoverBatch: string;
   mode: "append" | "replace";
@@ -45,7 +50,7 @@ export interface CustomerBatchResult {
 export class CustomerServiceError extends Error {
   constructor(
     message: string,
-    public readonly status: 400 | 403 | 404
+    public readonly status: 400 | 403 | 404 | 409
   ) {
     super(message);
   }
@@ -90,16 +95,33 @@ function isValidGroup(group: unknown): group is (typeof CUSTOMER_GROUPS)[number]
   return typeof group === "string" && (CUSTOMER_GROUPS as readonly string[]).includes(group);
 }
 
+/** Chuyển lỗi kiểm tra "Chi tiết kênh" (dùng chung với Lead/Đơn hàng) thành lỗi của Khách hàng. */
+async function validateCustomerChannelDetail(
+  input: { channel: string; channelSourceId?: string | null; referredByCtvId?: string | null },
+  options?: { keepInactiveSourceId?: string | null; keepCtvId?: string | null }
+) {
+  try {
+    return await validateChannelDetail(input, options);
+  } catch (error) {
+    if (error instanceof ChannelSourceError) {
+      throw new CustomerServiceError(error.message, error.status === 403 ? 403 : error.status === 404 ? 404 : 400);
+    }
+    throw error;
+  }
+}
+
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
 const CUSTOMER_SELECT = `SELECT c.*, t.ward_name AS territory_name, ct.name AS team_name,
-         u.name AS referred_by_ctv_name, u.referral_code AS referred_by_ctv_code
+         u.name AS referred_by_ctv_name, u.referral_code AS referred_by_ctv_code,
+         cs.name AS channel_source_name
   FROM customers c
   LEFT JOIN territories t ON t.id = c.territory_id
   LEFT JOIN customer_teams ct ON ct.id = c.team_id
-  LEFT JOIN users u ON u.id = c.referred_by_ctv_id`;
+  LEFT JOIN users u ON u.id = c.referred_by_ctv_id
+  LEFT JOIN channel_sources cs ON cs.id = c.channel_source_id`;
 
 /** SELECT khách hàng kèm territory_name/team_name/CTV giới thiệu (dùng chung cho getAll/getById/create/update). */
 async function fetchCustomerWithJoins(id: string): Promise<any | undefined> {
@@ -170,6 +192,7 @@ export class CustomerService {
       billingEmail?: string;
       note?: string;
       referredByCtvId?: string;
+      channelSourceId?: string;
     },
     operator?: CustomerOperator
   ) {
@@ -192,10 +215,14 @@ export class CustomerService {
       }
     }
 
-    const referredByCtvId = trimmed(data.referredByCtvId);
-    if (referredByCtvId) {
-      await assertActiveCtv(referredByCtvId);
-    }
+    // Kênh bán + chi tiết (nguồn Online/đối tác/CTV) — cùng cơ chế với Lead/Đơn hàng.
+    const channelDetail = await validateCustomerChannelDetail({
+      channel: data.salesChannel ?? "",
+      channelSourceId: data.channelSourceId,
+      referredByCtvId: data.referredByCtvId,
+    });
+    const referredByCtvId = channelDetail.referredByCtvId;
+    const channelSourceId = channelDetail.channelSourceId;
 
     const handoverBatch =
       typeof data.handoverBatch === "string" ? data.handoverBatch.trim() : "";
@@ -229,8 +256,9 @@ export class CustomerService {
       `INSERT INTO customers (
         id, name, identity_code, type, customer_group, phone, address, services, am_staff, am_caring_staff,
         handover_batch, handover_date, territory_id, customer_code, status, team_id, sales_channel,
-        contact_name, contact_email, billing_name, billing_phone, billing_email, note, referred_by_ctv_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        contact_name, contact_email, billing_name, billing_phone, billing_email, note, referred_by_ctv_id,
+        channel_source_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         data.name,
@@ -256,6 +284,7 @@ export class CustomerService {
         data.billingEmail || null,
         data.note || null,
         referredByCtvId || null,
+        channelSourceId || null,
       ]
     );
 
@@ -382,12 +411,36 @@ export class CustomerService {
       }
     }
 
-    if ("referredByCtvId" in patch) {
-      const nextCtv = trimmed(patch.referredByCtvId);
-      patch.referredByCtvId = nextCtv || null;
-      if (nextCtv && nextCtv !== trimmed(existing.referred_by_ctv_id)) {
-        await assertActiveCtv(nextCtv);
-      }
+    // Kênh bán + chi tiết (nguồn Online/đối tác/CTV): chỉ chạy lại validate khi
+    // thực sự đụng tới kênh/nguồn/CTV, để dữ liệu cũ chưa có chi tiết không bị
+    // bắt buộc điền khi chỉ sửa trường khác (giống Lead).
+    const channelTouched =
+      "salesChannel" in patch || "channelSourceId" in patch || "referredByCtvId" in patch;
+    if (channelTouched) {
+      const nextChannel = "salesChannel" in patch ? String(patch.salesChannel ?? "") : existing.sales_channel ?? "";
+      const channelChanged = nextChannel !== (existing.sales_channel ?? "");
+      const sourceId =
+        "channelSourceId" in patch
+          ? patch.channelSourceId
+            ? String(patch.channelSourceId)
+            : null
+          : channelChanged
+            ? null
+            : existing.channel_source_id ?? null;
+      const ctvId =
+        "referredByCtvId" in patch
+          ? patch.referredByCtvId
+            ? String(patch.referredByCtvId)
+            : null
+          : channelChanged
+            ? null
+            : existing.referred_by_ctv_id ?? null;
+      const detail = await validateCustomerChannelDetail(
+        { channel: nextChannel, channelSourceId: sourceId, referredByCtvId: ctvId },
+        { keepInactiveSourceId: existing.channel_source_id ?? null, keepCtvId: existing.referred_by_ctv_id ?? null }
+      );
+      patch.channelSourceId = detail.channelSourceId;
+      patch.referredByCtvId = detail.referredByCtvId;
     }
 
     const sets: string[] = [];
@@ -397,6 +450,10 @@ export class CustomerService {
         sets.push(`${column} = ?`);
         params.push(patch[key] ?? null);
       }
+    }
+    if (channelTouched) {
+      sets.push("channel_source_id = ?");
+      params.push(patch.channelSourceId ?? null);
     }
     for (const { column, value } of staffSets) {
       sets.push(`${column} = ?`);
@@ -605,12 +662,16 @@ export class CustomerService {
   ): Promise<CustomerBatchResult> {
     const { territoryId, amCaringStaff, handoverBatch, mode, customers } = payload ?? {};
 
-    if (!territoryId) {
-      throw new CustomerServiceError("Vui lòng chọn Địa bàn / Phường", 400);
+    // Phường/địa bàn không còn bắt buộc (feedback khách 17/11) — chế độ "replace"
+    // vẫn cần Phường vì nó xác lập lại TOÀN BỘ tập khách của một Phường cụ thể.
+    if (!territoryId && mode === "replace") {
+      throw new CustomerServiceError("Chế độ xác lập lại theo đợt cần chọn Địa bàn / Phường", 400);
     }
-    const terrRows = await query("SELECT id FROM territories WHERE id = ?", [territoryId]);
-    if (terrRows.length === 0) {
-      throw new CustomerServiceError("Địa bàn không tồn tại", 404);
+    if (territoryId) {
+      const terrRows = await query("SELECT id FROM territories WHERE id = ?", [territoryId]);
+      if (terrRows.length === 0) {
+        throw new CustomerServiceError("Địa bàn không tồn tại", 404);
+      }
     }
 
     if (!amCaringStaff || typeof amCaringStaff !== "string") {
@@ -739,5 +800,68 @@ export class CustomerService {
         totalProcessed: customers.length,
       };
     });
+  }
+
+  /**
+   * Xóa khách hàng (chỉ Admin — kiểm tra ở controller). Chặn (409) nếu khách còn
+   * đơn hàng (và theo đó là hoa hồng liên quan, vì hoa hồng luôn gắn qua đơn
+   * hàng). Nếu chỉ còn dữ liệu phụ (giấy tờ đính kèm, dịch vụ nhập tay) thì xóa
+   * cùng transaction, kèm xóa file giấy tờ trên đĩa, và ghi audit log.
+   */
+  async delete(id: string, operator: string = "Admin"): Promise<{ message: string }> {
+    const existing = await query<{ id: string; name: string }>("SELECT id, name FROM customers WHERE id = ?", [id]);
+    if (!existing.length) {
+      throw new CustomerServiceError("Không tìm thấy khách hàng", 404);
+    }
+    const customer = existing[0];
+
+    const contractRows = await query<{ total: string }>(
+      "SELECT COUNT(*) AS total FROM contracts WHERE customer_id = ?",
+      [id]
+    );
+    const contractCount = Number(contractRows[0]?.total ?? 0);
+    if (contractCount > 0) {
+      throw new CustomerServiceError(
+        `Khách hàng còn ${contractCount} đơn hàng (và hoa hồng liên quan nếu có), hãy xóa đơn hàng trước khi xóa khách`,
+        409
+      );
+    }
+
+    const docRows = await query<{ stored_name: string }>(
+      "SELECT stored_name FROM customer_documents WHERE customer_id = ?",
+      [id]
+    );
+
+    await transaction(async (tx) => {
+      await tx.run("DELETE FROM customer_documents WHERE customer_id = ?", [id]);
+      await tx.run("DELETE FROM services WHERE customer_id = ? AND contract_id IS NULL", [id]);
+      await tx.run("DELETE FROM customers WHERE id = ?", [id]);
+      await tx.run(
+        'INSERT INTO audit_logs (id, "user", action, details) VALUES (?, ?, ?, ?)',
+        [
+          `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          operator,
+          "Xóa khách hàng",
+          `Xóa khách ${id} (${customer.name})`,
+        ]
+      );
+    });
+
+    // Xóa file giấy tờ trên đĩa SAU khi DB đã commit (không để treo file nếu transaction rollback).
+    const docsDir = path.join(config.uploadDir, "customer-docs", id);
+    for (const doc of docRows) {
+      try {
+        fs.rmSync(path.join(docsDir, doc.stored_name), { force: true });
+      } catch {
+        // Bỏ qua lỗi xóa từng file lẻ (vd đã bị xóa tay trước đó) — không chặn việc xóa khách.
+      }
+    }
+    try {
+      fs.rmdirSync(docsDir);
+    } catch {
+      // Thư mục có thể không rỗng/không tồn tại — bỏ qua.
+    }
+
+    return { message: `Đã xóa khách hàng "${customer.name}"` };
   }
 }

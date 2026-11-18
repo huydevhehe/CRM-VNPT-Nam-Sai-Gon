@@ -15,15 +15,19 @@ import {
   CheckCircle2,
   Users2,
   Pencil,
+  Trash2,
 } from "lucide-react";
 import KpiCard from "@/components/admin/shared/KpiCard";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
 import StatusBadge from "@/components/admin/shared/StatusBadge";
+import ConfirmDeleteDialog from "@/components/admin/shared/ConfirmDeleteDialog";
+import { formatChannelDetail } from "@/lib/crm/channel-detail";
 import { CustomerRecord, TerritoryRecord } from "@/lib/crm/types/crm.types";
 import {
   getCustomers,
   createCustomer,
   updateCustomer,
+  deleteCustomer,
   transferCustomer,
   transferCaringStaff,
   importCustomerBatchExcel,
@@ -46,6 +50,7 @@ import CustomerForm, {
   EMPTY_CUSTOMER_FORM,
   customerToFormValues,
   ctvOptionsWithCurrent,
+  buildChannelPatch,
 } from "@/components/admin/customer/CustomerForm";
 import CustomerImportWizard from "@/components/admin/customer/CustomerImportWizard";
 
@@ -62,6 +67,8 @@ export default function CustomersPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [editTarget, setEditTarget] = useState<CustomerRecord | null>(null);
+
+  const [deleteTarget, setDeleteTarget] = useState<CustomerRecord | null>(null);
 
   const [transferTarget, setTransferTarget] = useState<CustomerRecord | null>(null);
   const [transferStaff, setTransferStaff] = useState("");
@@ -222,8 +229,8 @@ export default function CustomersPage() {
       setBatchError("Vui lòng chọn file Excel");
       return;
     }
-    if (!batchTerritoryId) {
-      setBatchError("Vui lòng chọn Địa bàn / Phường");
+    if (!batchTerritoryId && batchMode === "replace") {
+      setBatchError("Chế độ xác lập lại theo đợt cần chọn Địa bàn / Phường");
       return;
     }
     if (!batchAmCaringStaff.trim()) {
@@ -241,7 +248,7 @@ export default function CustomersPage() {
 
     try {
       const res = await importCustomerBatchExcel(batchFile, {
-        territoryId: batchTerritoryId,
+        territoryId: batchTerritoryId || undefined,
         amCaringStaff: batchAmCaringStaff.trim(),
         handoverBatch: batchHandoverBatch.trim(),
         mode: batchMode,
@@ -276,6 +283,7 @@ export default function CustomersPage() {
         amStaff: values.amStaff || undefined,
         amCaringStaff: values.amCaringStaff || undefined,
         referredByCtvId: values.referredByCtvId || undefined,
+        channelSourceId: values.channelSourceId || undefined,
         salesChannel: values.salesChannel || undefined,
         territoryId: values.territoryId || undefined,
         phone: values.phone || undefined,
@@ -305,6 +313,10 @@ export default function CustomersPage() {
     setSubmitting(true);
 
     try {
+      // Kênh/chi tiết kênh/CTV: chỉ gửi khi người dùng thực sự đổi (dù rỗng), để
+      // sửa các trường khác không bị bắt buộc điền lại chi tiết kênh của dữ liệu cũ.
+      const channelPatch = buildChannelPatch(editTarget, values);
+
       const updated = await updateCustomer(editTarget.id, {
         name: values.name,
         identityCode: values.identityCode || undefined,
@@ -315,8 +327,6 @@ export default function CustomersPage() {
         teamId: values.teamId || undefined,
         amStaff: values.amStaff || undefined,
         amCaringStaff: values.amCaringStaff || undefined,
-        referredByCtvId: values.referredByCtvId || null,
-        salesChannel: values.salesChannel || undefined,
         territoryId: values.territoryId || undefined,
         phone: values.phone || undefined,
         address: values.address || undefined,
@@ -326,6 +336,7 @@ export default function CustomersPage() {
         billingName: values.billingName || undefined,
         billingPhone: values.billingPhone || undefined,
         billingEmail: values.billingEmail || undefined,
+        ...channelPatch,
       });
 
       setData((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
@@ -335,6 +346,13 @@ export default function CustomersPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleConfirmDeleteCustomer() {
+    if (!deleteTarget) return;
+    await deleteCustomer(deleteTarget.id);
+    setData((prev) => prev.filter((c) => c.id !== deleteTarget.id));
+    setDeleteTarget(null);
   }
 
   // Đổi AM bán hàng (am_staff, người phát triển) — không đổi người chăm sóc.
@@ -441,9 +459,15 @@ export default function CustomersPage() {
     {
       header: "Kênh bán",
       accessorKey: "salesChannel",
-      cell: (item) => (
-        <span className="text-xs text-slate-700">{item.salesChannel || "—"}</span>
-      ),
+      cell: (item) => {
+        const detail = formatChannelDetail(item.salesChannel || "", item.channelSourceName, item.referredByCtvName);
+        return (
+          <div className="text-xs">
+            <span className="text-slate-700">{item.salesChannel || "—"}</span>
+            {detail !== "—" && <div className="text-[11px] text-slate-500">{detail}</div>}
+          </div>
+        );
+      },
     },
     {
       header: "Mã định danh (MST / CCCD)",
@@ -596,6 +620,13 @@ export default function CustomersPage() {
                 >
                   <ArrowRightLeft className="h-3 w-3" />
                   Điều chuyển CSKH
+                </button>
+                <button
+                  onClick={() => setDeleteTarget(item)}
+                  className="flex items-center gap-1 rounded-lg border border-rose-200 px-2 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 transition-colors"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Xóa
                 </button>
               </div>
             ),
@@ -825,18 +856,25 @@ export default function CustomersPage() {
             </p>
 
             {bulkTarget === "team" ? (
-              <select
-                value={bulkValue}
-                onChange={(e) => setBulkValue(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
-              >
-                <option value="">— Chọn team —</option>
-                {teams.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
+              <>
+                <select
+                  value={bulkValue}
+                  onChange={(e) => setBulkValue(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
+                >
+                  <option value="">— Chọn team —</option>
+                  {teams.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                {teams.length === 0 && (
+                  <p className="mt-2 text-[11px] font-medium text-amber-700">
+                    Chưa có Team nào — bấm &quot;Quản lý Team&quot; ở đầu trang để tạo trước khi gán.
+                  </p>
+                )}
+              </>
             ) : (
               <input
                 list="customer-staff-names"
@@ -1118,15 +1156,21 @@ export default function CustomersPage() {
                     htmlFor="batch-territory-select"
                     className="mb-1 block text-xs font-semibold text-slate-600"
                   >
-                    Địa bàn / Phường <span className="text-rose-500">*</span>
+                    Địa bàn / Phường{" "}
+                    {batchMode === "replace" ? (
+                      <span className="text-rose-500">*</span>
+                    ) : (
+                      <span className="text-slate-400">(tùy chọn)</span>
+                    )}
                   </label>
                   <select
                     id="batch-territory-select"
-                    required
+                    required={batchMode === "replace"}
                     value={batchTerritoryId}
                     onChange={(e) => setBatchTerritoryId(e.target.value)}
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
                   >
+                    <option value="">— Không gán Phường —</option>
                     {territories.map((t) => (
                       <option key={t.id} value={t.id}>
                         {t.wardName}
@@ -1282,6 +1326,23 @@ export default function CustomersPage() {
           <option key={n} value={n} />
         ))}
       </datalist>
+
+      <ConfirmDeleteDialog
+        open={deleteTarget !== null}
+        title="Xóa khách hàng"
+        description={
+          deleteTarget ? (
+            <>
+              Xóa khách hàng <strong>{deleteTarget.name}</strong>? Giấy tờ đính kèm và dịch vụ nhập tay của khách sẽ
+              bị xóa theo. Thao tác này không thể hoàn tác.
+            </>
+          ) : (
+            ""
+          )
+        }
+        onConfirm={handleConfirmDeleteCustomer}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

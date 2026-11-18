@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { initDatabase, run } = await import("../../database/db.js");
+const { initDatabase, run, query } = await import("../../database/db.js");
 const { CustomerService, CustomerServiceError } = await import("./customer.service.js");
 
 await initDatabase();
@@ -345,10 +345,13 @@ test("referred CTV: create/update validate the CTV and the DTO carries its name 
     [pendingCtvId, `ctv_cus_p_${suffix}`, `CTV Chờ Duyệt ${suffix}`, "CTV", "Chờ duyệt", `REFP${suffix}`]
   );
 
+  // T6: "Kênh bán" dùng chung cơ chế chi tiết kênh với Lead/Đơn hàng — kênh
+  // "CTV giới thiệu" bắt buộc đi kèm referredByCtvId, không còn là 2 trường rời rạc.
   const created = await service.create({
     name: `Công ty Có CTV ${suffix}`,
     type: "Doanh nghiệp",
     customerGroup: "Tự phát triển",
+    salesChannel: "CTV giới thiệu",
     referredByCtvId: ctvId,
   });
   assert.equal(created.customer.referred_by_ctv_id, ctvId);
@@ -359,6 +362,23 @@ test("referred CTV: create/update validate the CTV and the DTO carries its name 
   assert.ok(options.some((o) => o.id === ctvId && o.code === `REF${suffix}`));
   assert.ok(!options.some((o) => o.id === pendingCtvId));
 
+  // Kênh CTV giới thiệu mà không chọn CTV -> 400.
+  await assert.rejects(
+    async () => {
+      await service.create({
+        name: `Công ty CTV Thiếu ${suffix}`,
+        type: "Doanh nghiệp",
+        customerGroup: "Tự phát triển",
+        salesChannel: "CTV giới thiệu",
+      });
+    },
+    (err: any) => {
+      assert.ok(err instanceof CustomerServiceError);
+      assert.equal(err.status, 400);
+      return true;
+    }
+  );
+
   for (const badId of ["CTV-KHONG-TON-TAI", pendingCtvId, "KH-NOT-A-CTV"]) {
     await assert.rejects(
       async () => {
@@ -366,6 +386,7 @@ test("referred CTV: create/update validate the CTV and the DTO carries its name 
           name: `Công ty CTV Sai ${suffix}`,
           type: "Doanh nghiệp",
           customerGroup: "Tự phát triển",
+          salesChannel: "CTV giới thiệu",
           referredByCtvId: badId,
         });
       },
@@ -377,17 +398,44 @@ test("referred CTV: create/update validate the CTV and the DTO carries its name 
     );
   }
 
+  // Kênh khác CTV mà vẫn gắn CTV -> 400 (CTV chỉ gắn với đúng kênh "CTV giới thiệu").
+  await assert.rejects(
+    async () => {
+      await service.create({
+        name: `Công ty Kênh Khác Vẫn Gắn CTV ${suffix}`,
+        type: "Doanh nghiệp",
+        customerGroup: "Tự phát triển",
+        salesChannel: "Online",
+        referredByCtvId: ctvId,
+      });
+    },
+    (err: any) => {
+      assert.ok(err instanceof CustomerServiceError);
+      assert.equal(err.status, 400);
+      return true;
+    }
+  );
+
   const plain = await service.create({
     name: `Công ty Gắn CTV Sau ${suffix}`,
     type: "Doanh nghiệp",
     customerGroup: "Tự phát triển",
   });
   const admin = { name: "Admin", role: "Admin" };
-  const attached = await service.update(plain.customer.id, { referredByCtvId: ctvId }, admin);
+  const attached = await service.update(
+    plain.customer.id,
+    { salesChannel: "CTV giới thiệu", referredByCtvId: ctvId },
+    admin
+  );
   assert.equal(attached.referred_by_ctv_id, ctvId);
   assert.equal(attached.referred_by_ctv_name, `CTV Giới Thiệu ${suffix}`);
 
-  const cleared = await service.update(plain.customer.id, { referredByCtvId: "" }, admin);
+  // Đổi kênh ra khỏi CTV giới thiệu (và gỡ CTV cùng lúc) -> gỡ sạch.
+  const cleared = await service.update(
+    plain.customer.id,
+    { salesChannel: "", referredByCtvId: "" },
+    admin
+  );
   assert.equal(cleared.referred_by_ctv_id, null);
   assert.equal(cleared.referred_by_ctv_name, null);
 
@@ -401,6 +449,11 @@ test("referred CTV: create/update validate the CTV and the DTO carries its name 
       return true;
     }
   );
+
+  // Sửa trường khác không đụng kênh/CTV: dữ liệu chi tiết kênh cũ giữ nguyên, không bị bắt buộc lại.
+  const untouched = await service.update(plain.customer.id, { note: "Ghi chú không liên quan" }, admin);
+  assert.equal(untouched.note, "Ghi chú không liên quan");
+  assert.equal(untouched.referred_by_ctv_id, null);
 });
 
 test("update by owning AM succeeds and does not change am_staff/am_caring_staff", async () => {
@@ -498,5 +551,155 @@ test("getById returns 404 for unknown id", async () => {
       assert.equal(err.status, 404);
       return true;
     }
+  );
+});
+
+// --- T6: Kênh bán hiện "kênh con" (chi tiết nguồn/đối tác) ---
+
+test("salesChannel Online/Đối tác requires a matching channel_sources entry and the DTO carries its name", async () => {
+  const service = new CustomerService();
+  const suffix = Date.now();
+
+  await run(
+    "INSERT INTO channel_sources (id, kind, name, active, sort_order, created_at) VALUES (?, 'online', ?, TRUE, 1, ?)",
+    [`CHS-CUS-${suffix}`, `Zalo Ads KH ${suffix}`, new Date().toISOString()]
+  );
+
+  await assert.rejects(
+    async () => {
+      await service.create({
+        name: `Công ty Online Thiếu Nguồn ${suffix}`,
+        type: "Doanh nghiệp",
+        customerGroup: "Tự phát triển",
+        salesChannel: "Online",
+      });
+    },
+    (err: any) => {
+      assert.ok(err instanceof CustomerServiceError);
+      assert.equal(err.status, 400);
+      return true;
+    }
+  );
+
+  const created = await service.create({
+    name: `Công ty Online Có Nguồn ${suffix}`,
+    type: "Doanh nghiệp",
+    customerGroup: "Tự phát triển",
+    salesChannel: "Online",
+    channelSourceId: `CHS-CUS-${suffix}`,
+  });
+  assert.equal(created.customer.channel_source_id, `CHS-CUS-${suffix}`);
+  assert.equal(created.customer.channel_source_name, `Zalo Ads KH ${suffix}`);
+});
+
+// --- T6: xóa Khách hàng (Admin-only, chặn khi còn đơn hàng) ---
+
+test("delete: removes a customer without orders, blocks (409) one with orders", async () => {
+  const service = new CustomerService();
+  const suffix = Date.now();
+
+  const free = await service.create({
+    name: `Công ty Xóa Được ${suffix}`,
+    type: "Doanh nghiệp",
+    customerGroup: "Tự phát triển",
+  });
+  const result = await service.delete(free.customer.id, "Admin Test");
+  assert.match(result.message, /Đã xóa khách hàng/);
+  await assert.rejects(
+    async () => service.getById(free.customer.id),
+    (err: any) => {
+      assert.ok(err instanceof CustomerServiceError);
+      assert.equal(err.status, 404);
+      return true;
+    }
+  );
+
+  const withOrder = await service.create({
+    name: `Công ty Có Đơn ${suffix}`,
+    type: "Doanh nghiệp",
+    customerGroup: "Tự phát triển",
+  });
+  await run(
+    `INSERT INTO contracts (
+      id, transaction_code, customer_name, subscriber_codes, total_value, channel,
+      deployment_status, payment_status, document_status, has_revenue, customer_id, am_staff
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      `HD-DEL-${suffix}`,
+      `GD-DEL-${suffix}`,
+      withOrder.customer.name,
+      "[]",
+      1000000,
+      "Trực tiếp",
+      "Chưa triển khai",
+      "Chưa thanh toán",
+      "Soạn thảo",
+      0,
+      withOrder.customer.id,
+      "AM Test",
+    ]
+  );
+
+  await assert.rejects(
+    async () => service.delete(withOrder.customer.id, "Admin Test"),
+    (err: any) => {
+      assert.ok(err instanceof CustomerServiceError);
+      assert.equal(err.status, 409);
+      assert.match(err.message, /còn 1 đơn hàng/);
+      return true;
+    }
+  );
+  // Vẫn còn trong DB vì bị chặn.
+  const stillThere = await service.getById(withOrder.customer.id);
+  assert.equal(stillThere.id, withOrder.customer.id);
+});
+
+test("delete returns 404 for unknown id", async () => {
+  const service = new CustomerService();
+  await assert.rejects(
+    async () => service.delete("KH-KHONG-TON-TAI", "Admin Test"),
+    (err: any) => {
+      assert.ok(err instanceof CustomerServiceError);
+      assert.equal(err.status, 404);
+      return true;
+    }
+  );
+});
+
+// --- T6: bỏ bắt buộc Phường/địa bàn ở nhập đợt KHDN-chăm ("append") ---
+
+test("importBatch: territoryId is optional for append mode, still required for replace", async () => {
+  const service = new CustomerService();
+  const suffix = Date.now();
+  const staffName = `AM-NoTer-${suffix}`;
+  await run(
+    "INSERT INTO staff (id, name, code, role, status) VALUES (?, ?, ?, ?, ?)",
+    [`STF-NOTER-${suffix}`, staffName, `NV-NOTER-${suffix}`, "AM Bán chăm", "Đang hoạt động"]
+  );
+
+  const result = await service.importBatch({
+    territoryId: null,
+    amCaringStaff: staffName,
+    handoverBatch: `DOT-NOTER-${suffix}`,
+    mode: "append",
+    customers: [{ identityCode: `MST-NOTER-${suffix}`, name: "Khách Không Phường" }],
+  });
+  assert.equal(result.createdCount, 1);
+
+  const [row] = await query<any>("SELECT territory_id FROM customers WHERE identity_code = ?", [
+    `MST-NOTER-${suffix}`,
+  ]);
+  assert.equal(row.territory_id, null);
+
+  await assert.rejects(
+    async () =>
+      service.importBatch({
+        territoryId: null,
+        amCaringStaff: staffName,
+        handoverBatch: `DOT-NOTER-REP-${suffix}`,
+        mode: "replace",
+        customers: [{ identityCode: `MST-NOTER-${suffix}`, name: "Khách Không Phường" }],
+      }),
+    /cần chọn Địa bàn/
   );
 });

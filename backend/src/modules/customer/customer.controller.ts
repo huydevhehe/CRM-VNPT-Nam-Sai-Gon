@@ -183,6 +183,17 @@ customerRouter.get("/:id", async (req: Request, res: Response) => {
   }
 });
 
+// DELETE /api/customers/:id — chỉ Admin. 409 nếu khách còn đơn hàng liên quan.
+customerRouter.delete("/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const operator = req.user?.name ?? req.user?.id ?? "Admin";
+    const result = await customerService.delete(req.params.id, operator);
+    res.json({ success: true, message: result.message });
+  } catch (error: any) {
+    sendError(res, error);
+  }
+});
+
 customerRouter.patch("/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;

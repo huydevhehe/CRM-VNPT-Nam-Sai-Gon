@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { ADMIN, AM, API_URL, apiLogin, bearer, createCustomerForOrder } from "./helpers";
+import { ADMIN, AM, API_URL, apiLogin, bearer, createCustomerForOrder, getDefaultAmName } from "./helpers";
 
 /**
  * Tạo buffer "giả làm .xlsx" là CSV UTF-8 có BOM — SheetJS tự nhận diện và
@@ -83,6 +83,7 @@ test.describe("API Import dịch vụ khách đang dùng (POST /api/services/imp
     const orderRes = await request.post(`${API_URL}/contracts`, {
       headers: bearer(adminToken),
       data: {
+        amStaff: await getDefaultAmName(request, adminToken),
         transactionCode,
         customerId: orderCustomer.id,
         subscriberCodes: [orderCode],
