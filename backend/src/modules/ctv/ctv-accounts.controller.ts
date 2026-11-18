@@ -55,3 +55,14 @@ ctvAccountsRouter.patch("/:id/reject", async (req: Request, res: Response) => {
     sendError(res, error);
   }
 });
+
+// DELETE /api/ctv-accounts/:id — chỉ xóa được khi CTV chưa phát sinh dữ liệu
+ctvAccountsRouter.delete("/:id", async (req: Request, res: Response) => {
+  try {
+    const operator = req.user?.name || req.user?.id || "Admin";
+    await service.remove(req.params.id, operator);
+    res.json({ success: true, message: "Đã xóa tài khoản CTV" });
+  } catch (error) {
+    sendError(res, error);
+  }
+});

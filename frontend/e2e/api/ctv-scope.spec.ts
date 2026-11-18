@@ -7,6 +7,7 @@ import {
   bearer,
   createApprovedCtv,
   createCustomerForOrder,
+  getDefaultAmName,
 } from "./helpers";
 
 const STAFF = "Nguyễn Thị Tình";
@@ -86,6 +87,7 @@ test.describe("API /api/ctv — dữ liệu theo từng CTV", () => {
     const contractRes = await request.post(`${API_URL}/contracts`, {
       headers: bearer(adminToken),
       data: {
+        amStaff: await getDefaultAmName(request, adminToken),
         transactionCode: contractCode,
         customerId: customerA.id,
         subscriberCodes: ["0901234567"],
@@ -242,6 +244,7 @@ test.describe("API /api/ctv — dữ liệu theo từng CTV", () => {
     const contractRes = await request.post(`${API_URL}/contracts`, {
       headers: bearer(adminToken),
       data: {
+        amStaff: await getDefaultAmName(request, adminToken),
         transactionCode,
         customerId: customerOk.id,
         subscriberCodes: ["0901234567"],

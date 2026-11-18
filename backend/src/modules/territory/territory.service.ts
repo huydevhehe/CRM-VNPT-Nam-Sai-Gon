@@ -593,12 +593,16 @@ export class TerritoryService {
     return mapOfficial({ ...current, full_name: fullName, phone });
   }
 
-  async deleteOfficial(officialId: string) {
-    const rows = await query("SELECT id FROM ward_officials WHERE id = ?", [officialId]);
+  async deleteOfficial(officialId: string, operator: string = "Admin") {
+    const rows = await query<any>("SELECT id, full_name FROM ward_officials WHERE id = ?", [officialId]);
     if (rows.length === 0) {
       throw notFound("Không tìm thấy cán bộ");
     }
     await run("DELETE FROM ward_officials WHERE id = ?", [officialId]);
+    await run(
+      'INSERT INTO audit_logs (id, "user", action, details) VALUES (?, ?, ?, ?)',
+      [newId("LOG"), operator, "Xóa cán bộ phường", `Xóa cán bộ ${rows[0].full_name} (ID ${officialId})`]
+    );
     return { id: officialId };
   }
 
@@ -663,12 +667,51 @@ export class TerritoryService {
     });
   }
 
-  async deleteQuarter(quarterId: string) {
-    const rows = await query("SELECT id FROM quarters WHERE id = ?", [quarterId]);
+  /**
+   * Xóa cứng Phường/Địa bàn. Chặn nếu còn Lead hoặc Đơn hàng gắn vào phường này
+   * (dữ liệu quan trọng); cán bộ/khu phố/đầu mối liên hệ của phường (phụ, không
+   * quan trọng) được xóa cùng trong 1 transaction.
+   */
+  async deleteTerritory(id: string, operator: string = "Admin") {
+    await this.requireTerritory(id);
+
+    return transaction(async (tx: TransactionClient) => {
+      const [leads, contracts] = await Promise.all([
+        tx.query<{ n: string }>("SELECT COUNT(*) AS n FROM leads WHERE territory_id = ?", [id]),
+        tx.query<{ n: string }>("SELECT COUNT(*) AS n FROM contracts WHERE territory_id = ?", [id]),
+      ]);
+      const leadCount = Number(leads[0]?.n ?? 0);
+      const contractCount = Number(contracts[0]?.n ?? 0);
+      if (leadCount > 0 || contractCount > 0) {
+        throw conflict(
+          `Phường còn ${leadCount} Lead và ${contractCount} đơn hàng gắn vào, không thể xóa. Hãy gỡ/chuyển dữ liệu trước.`
+        );
+      }
+
+      await tx.run("DELETE FROM ward_contacts WHERE territory_id = ?", [id]);
+      await tx.run("DELETE FROM ward_officials WHERE territory_id = ?", [id]);
+      await tx.run("DELETE FROM quarters WHERE territory_id = ?", [id]);
+      await tx.run("DELETE FROM territories WHERE id = ?", [id]);
+
+      await tx.run(
+        'INSERT INTO audit_logs (id, "user", action, details) VALUES (?, ?, ?, ?)',
+        [newId("LOG"), operator, "Xóa phường", `Xóa phường/địa bàn ID ${id}`]
+      );
+
+      return { id };
+    });
+  }
+
+  async deleteQuarter(quarterId: string, operator: string = "Admin") {
+    const rows = await query<any>("SELECT id, name FROM quarters WHERE id = ?", [quarterId]);
     if (rows.length === 0) {
       throw notFound("Không tìm thấy khu phố");
     }
     await run("DELETE FROM quarters WHERE id = ?", [quarterId]);
+    await run(
+      'INSERT INTO audit_logs (id, "user", action, details) VALUES (?, ?, ?, ?)',
+      [newId("LOG"), operator, "Xóa khu phố", `Xóa khu phố ${rows[0].name} (ID ${quarterId})`]
+    );
     return { id: quarterId };
   }
 }

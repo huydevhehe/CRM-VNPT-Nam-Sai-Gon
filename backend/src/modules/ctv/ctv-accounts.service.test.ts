@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { initDatabase, query } from "../../database/db.js";
+import { initDatabase, query, run } from "../../database/db.js";
 import { applySchemaExtensions } from "../../database/schema-extensions.js";
 import { CtvAccountsService } from "./ctv-accounts.service.js";
 import { AuthService, HttpError } from "../auth/auth.service.js";
@@ -140,4 +140,75 @@ test("registerCtv still creates pending account (regression check)", async () =>
   assert.equal(rows.length, 1);
   assert.equal(rows[0].status, USER_STATUS.PENDING);
   assert.equal(Boolean(rows[0].must_change_password), false);
+});
+
+test("remove deletes CTV account with no generated data", async () => {
+  const service = new CtvAccountsService();
+  const suffix = Date.now();
+  const ctv = await service.createByAdmin(
+    {
+      username: `ctv_del_${suffix}`,
+      password: "Password@123",
+      name: `CTV Xóa Được ${suffix}`,
+      phone: `09${String(suffix).slice(-8)}`,
+    },
+    "Admin"
+  );
+
+  await service.remove(ctv.id, "Admin Test");
+
+  const rows = await query("SELECT id FROM users WHERE id = ?", [ctv.id]);
+  assert.equal(rows.length, 0);
+});
+
+test("remove 404 on unknown id", async () => {
+  const service = new CtvAccountsService();
+  await assert.rejects(
+    async () => {
+      await service.remove("USR-KHONG-TON-TAI", "Admin Test");
+    },
+    (err: unknown) => {
+      assert.ok(err instanceof HttpError);
+      assert.equal(err.status, 404);
+      return true;
+    }
+  );
+});
+
+test("remove 409 when CTV already referred a lead", async () => {
+  const service = new CtvAccountsService();
+  const suffix = Date.now();
+  const ctv = await service.createByAdmin(
+    {
+      username: `ctv_haslead_${suffix}`,
+      password: "Password@123",
+      name: `CTV Có Lead ${suffix}`,
+      phone: `09${String(suffix + 3).slice(-8)}`,
+    },
+    "Admin"
+  );
+
+  const leadId = `LEAD-CTVDEL-${suffix}`;
+  await run(
+    `INSERT INTO leads (id, customer_name, phone, group_name, channel, staff_name, referred_by_ctv_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [leadId, `KH CTV Lead ${suffix}`, `090${String(suffix).slice(-7)}`, "Lead KH mới", "CTV giới thiệu", "Nguyễn Thị Tình", ctv.id]
+  );
+
+  await assert.rejects(
+    async () => {
+      await service.remove(ctv.id, "Admin Test");
+    },
+    (err: unknown) => {
+      assert.ok(err instanceof HttpError);
+      assert.equal(err.status, 409);
+      assert.match(err.message, /Lead 1/);
+      return true;
+    }
+  );
+
+  const stillThere = await query("SELECT id FROM users WHERE id = ?", [ctv.id]);
+  assert.equal(stillThere.length, 1);
+
+  await run("DELETE FROM leads WHERE id = ?", [leadId]);
 });

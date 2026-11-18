@@ -13,6 +13,8 @@ import type { CtvOption } from "@/lib/api/customers.api";
 import { CUSTOMER_GROUP_LABEL } from "@/lib/crm/constants/org.constants";
 import { LEAD_CHANNELS } from "@/lib/crm/constants/org.constants";
 import CustomerDocuments from "./CustomerDocuments";
+import ChannelDetailPicker from "@/components/admin/shared/ChannelDetailPicker";
+import { ChannelDetailValue, channelNeedsDetail } from "@/lib/crm/channel-detail";
 
 const TYPE_OPTIONS: CustomerType[] = ["Doanh nghiệp", "Hộ kinh doanh", "Cá nhân"];
 const GROUP_OPTIONS: CustomerGroup[] = ["Tự phát triển", "Tập hiện hữu", "PTM địa bàn"];
@@ -28,6 +30,7 @@ export interface CustomerFormValues {
   amStaff: string;
   amCaringStaff: string;
   referredByCtvId: string;
+  channelSourceId: string;
   salesChannel: string;
   territoryId: string;
   address: string;
@@ -51,6 +54,7 @@ export const EMPTY_CUSTOMER_FORM: CustomerFormValues = {
   amStaff: "",
   amCaringStaff: "",
   referredByCtvId: "",
+  channelSourceId: "",
   salesChannel: "",
   territoryId: "",
   address: "",
@@ -75,6 +79,7 @@ export function customerToFormValues(customer: CustomerRecord): CustomerFormValu
     amStaff: customer.amStaff || "",
     amCaringStaff: customer.amCaringStaff || "",
     referredByCtvId: customer.referredByCtvId || "",
+    channelSourceId: customer.channelSourceId || "",
     salesChannel: customer.salesChannel || "",
     territoryId: customer.territoryId || "",
     address: customer.address || "",
@@ -85,6 +90,31 @@ export function customerToFormValues(customer: CustomerRecord): CustomerFormValu
     billingName: customer.billingName || "",
     billingPhone: customer.billingPhone || "",
     billingEmail: customer.billingEmail || "",
+  };
+}
+
+/**
+ * So khớp kênh bán/chi tiết kênh/CTV của form với khách đang sửa, chỉ trả về các
+ * trường đã THỰC SỰ thay đổi (kể cả đổi về rỗng) để gửi lên API. Nhờ vậy sửa các
+ * trường khác (vd ghi chú) không bị bắt buộc điền lại chi tiết kênh của dữ liệu cũ
+ * chưa có, và khi người dùng chủ động đổi/xoá kênh thì server vẫn chạy lại kiểm tra.
+ */
+export function buildChannelPatch(
+  customer: CustomerRecord,
+  values: CustomerFormValues
+): { salesChannel?: string; channelSourceId?: string | null; referredByCtvId?: string | null } {
+  const currentChannel = customer.salesChannel || "";
+  const currentSourceId = customer.channelSourceId || "";
+  const currentCtvId = customer.referredByCtvId || "";
+  const changed =
+    values.salesChannel !== currentChannel ||
+    values.channelSourceId !== currentSourceId ||
+    values.referredByCtvId !== currentCtvId;
+  if (!changed) return {};
+  return {
+    salesChannel: values.salesChannel,
+    channelSourceId: values.channelSourceId || null,
+    referredByCtvId: values.referredByCtvId || null,
   };
 }
 
@@ -293,6 +323,11 @@ export default function CustomerForm({
                     </option>
                   ))}
                 </select>
+                {teams.length === 0 && (
+                  <p className="mt-1 text-[11px] text-amber-600">
+                    Chưa có Team — bấm &quot;Quản lý Team&quot; ở trang Khách hàng để tạo.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -347,7 +382,14 @@ export default function CustomerForm({
                 <select
                   id="cf-sales-channel"
                   value={values.salesChannel}
-                  onChange={(e) => set("salesChannel", e.target.value)}
+                  onChange={(e) =>
+                    setValues((prev) => ({
+                      ...prev,
+                      salesChannel: e.target.value,
+                      channelSourceId: "",
+                      referredByCtvId: "",
+                    }))
+                  }
                   className={inputClass}
                 >
                   <option value="">— Chưa xác định —</option>
@@ -377,25 +419,24 @@ export default function CustomerForm({
                 </select>
               </div>
 
-              <div className="col-span-2">
-                <label htmlFor="cf-ctv" className={labelClass}>
-                  CTV giới thiệu
-                </label>
-                <select
-                  id="cf-ctv"
-                  value={values.referredByCtvId}
-                  onChange={(e) => set("referredByCtvId", e.target.value)}
-                  className={inputClass}
-                >
-                  <option value="">— Không có CTV giới thiệu —</option>
-                  {ctvOptions.map((ctv) => (
-                    <option key={ctv.id} value={ctv.id}>
-                      {ctv.name}
-                      {ctv.code ? ` (${ctv.code})` : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {channelNeedsDetail(values.salesChannel) && (
+                <div className="col-span-2">
+                  <ChannelDetailPicker
+                    channel={values.salesChannel}
+                    value={{
+                      channelSourceId: values.channelSourceId,
+                      referredByCtvId: values.referredByCtvId,
+                    }}
+                    onChange={(detail: ChannelDetailValue) =>
+                      setValues((prev) => ({
+                        ...prev,
+                        channelSourceId: detail.channelSourceId,
+                        referredByCtvId: detail.referredByCtvId,
+                      }))
+                    }
+                  />
+                </div>
+              )}
 
               <div className="col-span-2">
                 <label htmlFor="cf-address" className={labelClass}>

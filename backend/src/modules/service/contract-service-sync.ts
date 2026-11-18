@@ -78,6 +78,14 @@ interface ExistingService {
   staff_name: string | null;
 }
 
+interface ServiceLineItem {
+  id: string;
+  subscriber_code: string | null;
+  service_name: string | null;
+  service_group: string | null;
+  package_name: string | null;
+}
+
 function parseCodes(raw: string): string[] {
   let parsed: unknown;
   try {
@@ -128,7 +136,41 @@ export async function syncServicesFromContract(
       )
     : [];
   const customer = customerRows[0];
-  const codes = customer ? parseCodes(contract.subscriber_codes) : [];
+
+  // T8 (STT 10): ưu tiên đọc từng dòng `contract_items` (mỗi dòng dịch vụ một
+  // mã thuê bao riêng, có thể có tên dịch vụ/gói cước/nhóm riêng theo dòng).
+  // Đơn chưa có dòng nào (chưa migrate / chưa từng qua create-update mới) thì
+  // dùng lại đúng cách cũ (subscriber_codes + các cột tóm tắt của đơn).
+  const itemRows = customer
+    ? await db.query<ServiceLineItem>(
+        `SELECT id, subscriber_code, service_name, service_group, package_name
+         FROM contract_items WHERE contract_id = ? AND line_type = 'service' ORDER BY line_no`,
+        [contractId]
+      )
+    : [];
+
+  interface LineSource {
+    code: string;
+    serviceName: string | null;
+    serviceGroup: string | null;
+    packageName: string | null;
+  }
+
+  const lines: LineSource[] = itemRows.length
+    ? itemRows
+        .filter((i) => i.subscriber_code && i.subscriber_code.trim())
+        .map((i) => ({
+          code: (i.subscriber_code as string).trim(),
+          serviceName: i.service_name ?? null,
+          serviceGroup: i.service_group ?? null,
+          packageName: i.package_name ?? null,
+        }))
+    : (customer ? parseCodes(contract.subscriber_codes) : []).map((code) => ({
+        code,
+        serviceName: null,
+        serviceGroup: null,
+        packageName: null,
+      }));
 
   const startDate =
     normalizeDateIso(contract.signed_date) ?? normalizeDateIso(contract.created_date) ?? todayVn();
@@ -147,13 +189,15 @@ export async function syncServicesFromContract(
       [customer.id]
     );
 
-    for (const code of codes) {
+    for (const line of lines) {
+      const code = line.code;
       const target =
         linked.find((s) => s.customer_id === customer.id && s.service_code === code && !kept.has(s.id)) ??
         atCustomer.find((s) => s.service_code === code && !kept.has(s.id)) ??
         linked.find((s) => s.service_code === code && !kept.has(s.id));
 
       const serviceName =
+        line.serviceName?.trim() ||
         contract.service_name?.trim() ||
         contract.package_name?.trim() ||
         target?.service_name ||
@@ -164,8 +208,8 @@ export async function syncServicesFromContract(
         customer.am_caring_staff?.trim() ||
         target?.staff_name ||
         "";
-      const serviceGroup = contract.service_group || target?.service_group || null;
-      const packageName = contract.package_name || target?.package_name || null;
+      const serviceGroup = line.serviceGroup || contract.service_group || target?.service_group || null;
+      const packageName = line.packageName || contract.package_name || target?.package_name || null;
       const paymentType = contract.payment_method || target?.payment_type || null;
 
       if (target) {

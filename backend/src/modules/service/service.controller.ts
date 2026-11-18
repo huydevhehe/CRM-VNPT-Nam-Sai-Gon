@@ -130,3 +130,18 @@ serviceRouter.delete("/:id", requireAdmin, async (req: Request, res: Response) =
     sendError(res, error);
   }
 });
+
+// GET /api/services/:id/invoice-credential/reveal — chỉ Admin, xem mật khẩu hệ thống hóa đơn (có audit log).
+serviceRouter.get(
+  "/:id/invoice-credential/reveal",
+  requireAdmin,
+  async (req: Request, res: Response) => {
+    try {
+      const actor = (req as any).user?.name ?? (req as any).user?.id ?? "Admin";
+      const data = await serviceService.revealInvoiceCredential(req.params.id, actor);
+      res.json({ success: true, data });
+    } catch (error: any) {
+      sendError(res, error);
+    }
+  }
+);

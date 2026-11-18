@@ -79,12 +79,27 @@ test.describe("Bắt đổi mật khẩu nhân viên mới (API)", () => {
     });
     const token = (await loginRes.json()).data.token;
 
-    // Sai mật khẩu hiện tại -> 401
+    // Không có token -> 401
+    const noToken = await request.post(`${API_URL}/auth/change-password`, {
+      data: { currentPassword: defaultPassword, newPassword: "NewSecurePassword1" },
+    });
+    expect(noToken.status()).toBe(401);
+
+    // Sai mật khẩu hiện tại -> 400 (không phải 401, vì FE coi 401 là hết phiên và tự đăng xuất)
     const wrongCurrent = await request.post(`${API_URL}/auth/change-password`, {
       headers: bearer(token),
       data: { currentPassword: "wrong-password", newPassword: "NewSecurePassword1" },
     });
-    expect(wrongCurrent.status()).toBe(401);
+    expect(wrongCurrent.status()).toBe(400);
+    expect((await wrongCurrent.json()).message).toBe("Mật khẩu hiện tại không đúng");
+
+    // Mật khẩu mới trùng mật khẩu hiện tại -> 400
+    const samePass = await request.post(`${API_URL}/auth/change-password`, {
+      headers: bearer(token),
+      data: { currentPassword: defaultPassword, newPassword: defaultPassword },
+    });
+    expect(samePass.status()).toBe(400);
+    expect((await samePass.json()).message).toBe("Mật khẩu mới phải khác mật khẩu hiện tại");
 
     // Mật khẩu mới quá ngắn -> 400
     const shortPass = await request.post(`${API_URL}/auth/change-password`, {

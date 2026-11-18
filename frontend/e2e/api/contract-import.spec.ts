@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { ADMIN, AM, API_URL, apiLogin, bearer, createCustomerForOrder } from "./helpers";
+import { ADMIN, AM, API_URL, apiLogin, bearer, createCustomerForOrder, getDefaultAmName } from "./helpers";
 
 /**
  * Tạo buffer "giả làm .xlsx" là CSV UTF-8 có BOM — SheetJS tự nhận diện và
@@ -20,15 +20,68 @@ function buildContractCsvBuffer(rows: Record<string, string>[], headers: string[
   return Buffer.concat([bom, Buffer.from(lines.join("\n") + "\n", "utf8")]);
 }
 
-const HEADERS = ["Mã giao dịch", "Tên khách hàng", "MST khách hàng", "Giá trị đơn hàng", "Kênh", "Gói cước"];
+const HEADERS = [
+  "Mã giao dịch",
+  "Tên khách hàng",
+  "MST khách hàng",
+  "Mã thuê bao",
+  "Giá trị đơn hàng",
+  "Kênh",
+  "Gói cước",
+  "AM phụ trách",
+];
 
 test.describe("API Import hợp đồng từ Excel (POST /api/contracts/import/preview, /commit)", () => {
   let adminToken: string;
   let amToken: string;
+  let amName: string;
 
   test.beforeAll(async ({ request }) => {
     adminToken = await apiLogin(request, ADMIN.username, ADMIN.password);
     amToken = await apiLogin(request, AM.username, AM.password);
+    amName = await getDefaultAmName(request, adminToken);
+  });
+
+  test("dòng đơn hàng thiếu AM phát triển bị báo lỗi ở bước kiểm tra", async ({ request }) => {
+    const suffix = Date.now();
+    const customer = await createCustomerForOrder(request, adminToken, {
+      name: `Công ty Import Thiếu AM ${suffix}`,
+    });
+    const buffer = buildContractCsvBuffer(
+      [
+        {
+          "Mã giao dịch": `GD-NOAM-${suffix}`,
+          "Tên khách hàng": customer.name,
+          "Mã thuê bao": `0900000001${suffix}`.slice(-10),
+          "Giá trị đơn hàng": "1000",
+          Kênh: "Online",
+        },
+        {
+          "Mã giao dịch": `GD-HASAM-${suffix}`,
+          "Tên khách hàng": customer.name,
+          "Mã thuê bao": `0900000002${suffix}`.slice(-10),
+          "Giá trị đơn hàng": "1000",
+          Kênh: "Online",
+          "AM phụ trách": amName,
+        },
+      ],
+      HEADERS
+    );
+    const res = await request.post(`${API_URL}/contracts/import/preview`, {
+      headers: bearer(adminToken),
+      multipart: { file: { name: "import.xlsx", mimeType: "text/csv", buffer } },
+    });
+    expect(res.status()).toBe(200);
+    const { rows, summary } = (await res.json()).data as {
+      rows: { row: { transactionCode: string }; status: string; notes: string[] }[];
+      summary: { new: number; error: number };
+    };
+    expect(summary.new).toBe(1);
+    expect(summary.error).toBe(1);
+    const missing = rows.find((r) => r.row.transactionCode === `GD-NOAM-${suffix}`);
+    expect(missing?.status).toBe("error");
+    expect(missing?.notes[0]).toBe("Thiếu AM phát triển (bắt buộc)");
+    expect(rows.find((r) => r.row.transactionCode === `GD-HASAM-${suffix}`)?.status).toBe("new");
   });
 
   test("AM gọi preview nhận lỗi 403", async ({ request }) => {
@@ -62,14 +115,22 @@ test.describe("API Import hợp đồng từ Excel (POST /api/contracts/import/p
       identityCode: mst,
     });
 
+    // Kênh "Online" bắt buộc chọn nguồn Online (T6) kể cả khi tạo đơn qua payload cũ.
+    const channelSourcesRes = await request.get(`${API_URL}/channel-sources?kind=online`, {
+      headers: bearer(adminToken),
+    });
+    const onlineSourceId = (await channelSourcesRes.json()).data?.[0]?.id;
+
     const existingRes = await request.post(`${API_URL}/contracts`, {
       headers: bearer(adminToken),
       data: {
+        amStaff: await getDefaultAmName(request, adminToken),
         transactionCode: existingCode,
         customerId: oldCustomer.id,
         subscriberCodes: ["0900000000"],
         totalValue: 100000,
         channel: "Online",
+        channelSourceId: onlineSourceId,
       },
     });
     expect(existingRes.status()).toBe(201);
@@ -80,25 +141,31 @@ test.describe("API Import hợp đồng từ Excel (POST /api/contracts/import/p
           "Mã giao dịch": existingCode,
           "Tên khách hàng": `Tên không có trong hệ thống ${suffix}`,
           "MST khách hàng": "",
+          "Mã thuê bao": "0900000000",
           "Giá trị đơn hàng": "250000",
           Kênh: "",
           "Gói cước": "Home Net 2",
+          "AM phụ trách": amName,
         },
         {
           "Mã giao dịch": newCode,
           "Tên khách hàng": `Tên khác trong file ${suffix}`,
           "MST khách hàng": mst,
+          "Mã thuê bao": `0911${String(suffix).slice(-6)}`,
           "Giá trị đơn hàng": "500000",
           Kênh: "Online",
           "Gói cước": "",
+          "AM phụ trách": amName,
         },
         {
           "Mã giao dịch": noCustomerCode,
           "Tên khách hàng": `Công ty Không Tồn Tại ${suffix}`,
           "MST khách hàng": "",
+          "Mã thuê bao": `0922${String(suffix).slice(-6)}`,
           "Giá trị đơn hàng": "1000",
           Kênh: "Online",
           "Gói cước": "",
+          "AM phụ trách": amName,
         },
       ],
       HEADERS

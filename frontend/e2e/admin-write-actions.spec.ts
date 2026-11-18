@@ -62,12 +62,16 @@ test.describe("Hành động ghi dữ liệu trên trang Admin (Task 3-10)", () 
       .getByRole("button", { name: "Tạo đơn hàng" });
 
     await fieldByLabel(page, "Mã giao dịch").fill(transactionCode);
-    await fieldByLabel(page, "Mã thuê bao (phân tách bởi dấu phẩy)").fill(
-      "0909000111"
-    );
+    // Kênh "Chiến dịch" không yêu cầu chọn chi tiết kênh (khác Online/Đối tác/CTV — T6),
+    // tránh test này phải biết trước danh mục "Nguồn Online" của T1.
+    await fieldByLabel(page, "Kênh phát triển").selectOption("Chiến dịch");
+    await page.getByTestId("item-subscriber-code-0").fill("0909000111");
 
-    const totalValueInput = fieldByLabel(page, "Giá trị đơn hàng (₫)");
+    // T9 (STT 10): đơn giá nằm trên từng dòng dịch vụ (MoneyInput dùng chung với T2).
+    const totalValueInput = page.getByTestId("item-unit-price-0");
     await totalValueInput.fill("1500000");
+    // Ô tiền tự hiện dấu chấm phân cách hàng nghìn ngay khi nhập.
+    await expect(totalValueInput).toHaveValue("1.500.000");
 
     // Chưa chọn khách hàng: bị chặn với thông báo bắt buộc, modal không đóng.
     await submitButton.click();
@@ -78,22 +82,19 @@ test.describe("Hành động ghi dữ liệu trên trang Admin (Task 3-10)", () 
     await page.getByRole("button", { name: new RegExp(customerName) }).click();
     await expect(page.getByTestId("selected-customer")).toContainText(customerName);
 
+    // Ô tiền không cho nhập số âm: dấu trừ bị bỏ, chỉ còn chữ số.
     await totalValueInput.fill("-1000000");
+    await expect(totalValueInput).toHaveValue("1.000.000");
 
+    // AM phát triển là bắt buộc: chưa chọn thì bị chặn, modal không đóng.
     await submitButton.click();
-
-    // Giá trị âm phải bị chặn (browser constraint validation với min=0 hoặc
-    // lỗi backend trả về) — modal "Tạo đơn hàng" không được đóng, và chưa có
-    // dòng mới nào xuất hiện trong bảng với mã giao dịch này.
     await page.waitForTimeout(300);
     await expect(modalHeading).toBeVisible();
+    const amSelect = fieldByLabel(page, "AM phát triển");
+    expect(await amSelect.evaluate((el: HTMLSelectElement) => el.validity.valid)).toBe(false);
 
-    const isValueInputValid = await totalValueInput.evaluate(
-      (el: HTMLInputElement) => el.validity.valid
-    );
-    expect(isValueInputValid).toBe(false);
-
-    // Sửa lại giá trị hợp lệ (dương) và submit lại — lần này phải tạo thành công.
+    // Chọn AM, nhập lại giá trị hợp lệ và submit lại — lần này phải tạo thành công.
+    await amSelect.selectOption({ index: 1 });
     await totalValueInput.fill("1500000");
     await submitButton.click();
 
@@ -151,6 +152,8 @@ test.describe("Hành động ghi dữ liệu trên trang Admin (Task 3-10)", () 
     // "AM Phụ trách" là <select> (dropdown AM + "🎲 Ngẫu nhiên"), không phải input.
     // "Giá trị dự kiến (₫)" đã bị bỏ khỏi form tạo (Đợt 1, Task 3) nên không còn điền ở đây.
     await fieldByLabel(page, "AM Phụ trách").selectOption("Nguyễn Thị Tình");
+    // Kênh mặc định là Online: bắt buộc chọn nguồn Online ("Chi tiết kênh").
+    await page.getByTestId("channel-detail-select").selectOption({ label: "Zalo Ads" });
 
     await page.getByRole("button", { name: "Tạo Lead", exact: true }).click();
     await expect(

@@ -145,8 +145,9 @@ test.describe("Hành trình CTV đầu-cuối", () => {
       await fieldByLabel(page, "Chọn từ Lead chốt thành công (tùy chọn)").selectOption(lead.id);
       await expect(page.getByTestId("selected-customer")).toContainText(customerName);
       await fieldByLabel(page, "Mã giao dịch").fill(transactionCode);
-      await fieldByLabel(page, "Giá trị đơn hàng (₫)").fill(String(CONTRACT_VALUE));
-      await fieldByLabel(page, "Mã thuê bao (phân tách bởi dấu phẩy)").fill("0901234567");
+      // T9 (STT 10): đơn giá + mã thuê bao nằm trên dòng dịch vụ đầu tiên của đơn.
+      await page.getByTestId("item-unit-price-0").fill(String(CONTRACT_VALUE));
+      await page.getByTestId("item-subscriber-code-0").fill("0901234567");
 
       await page.locator("form").getByRole("button", { name: "Tạo đơn hàng" }).click();
       await expect(page.getByRole("heading", { name: "Tạo đơn hàng" })).not.toBeVisible({

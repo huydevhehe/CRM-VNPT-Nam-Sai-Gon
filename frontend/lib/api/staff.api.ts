@@ -18,13 +18,17 @@ export type UpdateStaffInput = Partial<
     | "shortName"
     | "note"
   >
->;
+> & {
+  /** Danh sách id phường phụ trách; gửi lên thì thay thế hoàn toàn danh sách hiện tại. */
+  territoryIds?: string[];
+};
 
 export type CreateStaffInput = Pick<
   StaffRecord,
   "code" | "name" | "role"
 > & {
   territory?: string;
+  territoryIds?: string[];
   email?: string;
   hrmCode?: string;
   staffType?: StaffType;
@@ -133,6 +137,15 @@ export interface StaffOverviewCustomer {
   activeServices: number;
 }
 
+export interface StaffOverviewTerritory {
+  id: string;
+  wardName: string;
+  householdCount: number;
+  quarterCount: number;
+  /** "assigned": gán ở trang Địa bàn. "profile": chỉ ghi trong hồ sơ nhân viên, phường chưa gán cho ai. */
+  source: "assigned" | "profile";
+}
+
 export interface StaffOverview {
   staff: {
     id: string;
@@ -147,6 +160,7 @@ export interface StaffOverview {
   };
   permissions: RolePermission[];
   customers: StaffOverviewCustomer[];
+  territories: StaffOverviewTerritory[];
   stats: { customers: number; leads: number; orders: number; openTasks: number };
 }
 

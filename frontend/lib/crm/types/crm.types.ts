@@ -82,6 +82,8 @@ export interface CustomerRecord {
   referredByCtvId?: string;
   referredByCtvName?: string;
   referredByCtvCode?: string;
+  channelSourceId?: string | null;
+  channelSourceName?: string | null;
 }
 
 // 4. Service & Alert
@@ -101,6 +103,12 @@ export interface ServiceRecord {
   paymentType?: string | null;
   contractId?: string | null;
   transactionCode?: string | null;
+  /** true nếu dịch vụ thuộc nhóm "Hóa đơn điện tử" (hiện khối thông tin đăng nhập). */
+  isInvoicePortalService?: boolean;
+  invoicePortalUrl?: string | null;
+  invoicePortalUsername?: string | null;
+  /** "••••••" nếu đã có mật khẩu; không bao giờ là plaintext. */
+  invoicePortalPasswordMasked?: string | null;
 }
 
 // 5. Lead
@@ -116,7 +124,53 @@ export interface LeadRecord {
   demandDescription: string;
   territoryId?: string;
   referredByCtvId?: string;
-  referredByCtvName?: string;
+  referredByCtvName?: string | null;
+  channelSourceId?: string | null;
+  channelSourceName?: string | null;
+  channelSourceKind?: "online" | "partner" | null;
+  note?: string | null;
+  /** Yêu cầu quay lại bước trước đang chờ Admin duyệt. */
+  pendingStageRequest?: LeadPendingStageRequest | null;
+}
+
+export interface LeadPendingStageRequest {
+  id: string;
+  toStatus: LeadStatus;
+  reason: string;
+  requestedBy: string;
+  createdAt: string | null;
+}
+
+export type ContractLineType = "service" | "device";
+
+/** Khớp `ContractItemDto` ở `backend/src/modules/contract/contract-items.ts`. */
+export interface ContractItemRecord {
+  id: string;
+  lineNo: number;
+  lineType: ContractLineType;
+  serviceGroup: string | null;
+  serviceName: string | null;
+  packageName: string | null;
+  subscriberCode: string | null;
+  quantity: number;
+  unitPrice: number;
+  amount: number;
+  termMonths: number | null;
+  startDate: string | null;
+  note: string | null;
+  legacy: boolean;
+}
+
+export interface ContractItemInput {
+  lineType: ContractLineType;
+  serviceGroup?: string | null;
+  serviceName?: string | null;
+  packageName?: string | null;
+  subscriberCode?: string | null;
+  quantity?: number | null;
+  unitPrice: number;
+  termMonths?: number | null;
+  startDate?: string | null;
   note?: string | null;
 }
 
@@ -145,7 +199,25 @@ export interface ContractRecord {
   contractNumber?: string | null;
   signedDate?: string | null;
   termMonths?: number | null;
+  prepaidMonths?: number | null;
   collectedAmount?: number;
+  channelSourceId?: string | null;
+  channelSourceName?: string | null;
+  /** Thông điệp hoa hồng CTV ngay sau khi lưu (vd đã có hoa hồng CTV khác, hoặc không có CTV nên không phát sinh). */
+  commissionNotice?: string | null;
+  /** Các dòng dịch vụ/thiết bị của đơn (T9, STT 10). Luôn có ít nhất 1 dòng. */
+  items?: ContractItemRecord[];
+  /** Mẫu hợp đồng (T10, STT 11) — null cho đơn cũ, bắt buộc khi tạo mới. */
+  contractTemplate?: string | null;
+}
+
+/** Một mẫu trong bộ hợp đồng chuẩn (T10, STT 11). `available = false` -> chưa có file mẫu, chỉ hiển thị "Chưa có mẫu". */
+export interface ContractTemplateOption {
+  key: string;
+  label: string;
+  available: boolean;
+  file?: string;
+  supportsItemsTable?: boolean;
 }
 
 // 7. Commission
@@ -256,6 +328,8 @@ export interface StaffRecord {
   statusChangedBy?: string | null;
   /** Doanh thu tính từ đơn hàng; chỉ có khi lấy qua getStaff() với tham số month. */
   revenue?: StaffRevenue;
+  /** Tên các phường nhân viên đang phụ trách (một nhân viên có thể phụ trách nhiều phường). */
+  territories?: string[];
 }
 
 // 10. Task

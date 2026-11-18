@@ -12,6 +12,7 @@ test("nhận diện các trang chỉ Admin, kể cả đường dẫn con", () =
     "/admin/settings",
     "/admin/system-settings",
     "/admin/system-settings/smtp",
+    "/admin/channel-sources",
   ]) {
     assert.equal(isAdminOnlyPath(path), true, path);
   }

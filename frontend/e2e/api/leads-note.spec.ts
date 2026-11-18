@@ -17,7 +17,7 @@ test.describe("API Cập nhật ghi chú Lead (PATCH /api/leads/:id/note)", () =
         customerName: `KH Lead Note API ${Date.now()}`,
         phone: "0901234567",
         group: "Lead KH mới",
-        channel: "Online",
+        channel: "Chiến dịch",
         staffName: "Nguyễn Thị Tình",
       },
     });

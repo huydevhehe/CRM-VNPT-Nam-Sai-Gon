@@ -28,6 +28,7 @@ function makeRow(overrides: Partial<Record<string, string | number>> = {}) {
     billingEmail: "",
     teamName: "",
     salesChannel: "",
+    channelDetailName: "",
     note: "",
     ...overrides,
   } as any;
@@ -202,4 +203,53 @@ test("create fails for row that became duplicate after preview", async () => {
   assert.equal(result.created, 0);
   assert.equal(result.errors.length, 1);
   assert.match(result.errors[0].message, /trùng/);
+});
+
+test("create: optional channelDetailName resolves against channel_sources; mismatch warns but does not block", async () => {
+  const { run } = await import("../../../database/db.js");
+  const suffix = Date.now();
+  const sourceId = `CHS-IMPORT-${suffix}`;
+  await run(
+    "INSERT INTO channel_sources (id, kind, name, active, sort_order, created_at) VALUES (?, 'online', ?, TRUE, 1, ?)",
+    [sourceId, `Zalo Ads Import ${suffix}`, new Date().toISOString()]
+  );
+
+  const matchRow = makeRow({
+    name: `Công ty Chi Tiết Kênh Khớp ${suffix}`,
+    salesChannel: "Online",
+    channelDetailName: `Zalo Ads Import ${suffix}`,
+  });
+  const mismatchRow = makeRow({
+    rowNumber: 3,
+    name: `Công ty Chi Tiết Kênh Không Khớp ${suffix}`,
+    salesChannel: "Online",
+    channelDetailName: `Nguồn Không Tồn Tại ${suffix}`,
+  });
+
+  const result = await importService.commit(
+    {
+      territoryId: null,
+      decisions: [
+        { row: matchRow, action: "create" },
+        { row: mismatchRow, action: "create" },
+      ],
+    },
+    "Admin Test"
+  );
+
+  assert.equal(result.created, 2);
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.warnings.length, 1);
+  assert.equal(result.warnings[0].rowNumber, 3);
+  assert.match(result.warnings[0].message, /không khớp danh mục/);
+
+  const [matched] = await query<any>("SELECT channel_source_id FROM customers WHERE name = ?", [
+    matchRow.name,
+  ]);
+  assert.equal(matched.channel_source_id, sourceId);
+
+  const [unmatched] = await query<any>("SELECT channel_source_id FROM customers WHERE name = ?", [
+    mismatchRow.name,
+  ]);
+  assert.equal(unmatched.channel_source_id, null);
 });

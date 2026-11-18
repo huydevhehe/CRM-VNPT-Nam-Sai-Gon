@@ -1,6 +1,7 @@
 import type { TransactionClient } from "../../../database/pg-adapter.js";
 import { todayVn } from "../../../utils/date-vn.js";
 import { normalizeTaxCode } from "../../../utils/tax-code.js";
+import { CHANNEL_KIND_BY_CHANNEL, CTV_CHANNEL } from "../../channel-source/channel-source.service.js";
 import { classifyRows, type ExistingCustomer } from "./classify.js";
 import type { ImportRow } from "./parse.js";
 
@@ -26,6 +27,66 @@ export interface CommitResult {
   kept: number;
   skipped: number;
   errors: { rowNumber: number; message: string }[];
+  /** "Chi tiết kênh" không khớp danh mục — không chặn, chỉ cảnh báo từng dòng. */
+  warnings: { rowNumber: number; message: string }[];
+}
+
+interface ChannelDetailResolution {
+  channelSourceId: string | null;
+  referredByCtvId: string | null;
+  warning: string | null;
+}
+
+/**
+ * Khớp tên "Chi tiết kênh" (cột tùy chọn trong file Excel) với danh mục kênh
+ * theo tên (không phân biệt hoa/thường), dựa trên "Kênh bán" của cùng dòng.
+ * Không khớp -> KHÔNG chặn dòng, chỉ trả về cảnh báo để hiển thị cho người nhập.
+ */
+async function resolveChannelDetail(
+  tx: TransactionClient,
+  row: ImportRow
+): Promise<ChannelDetailResolution> {
+  const detailName = (row.channelDetailName ?? "").trim();
+  if (!detailName) {
+    return { channelSourceId: null, referredByCtvId: null, warning: null };
+  }
+
+  const kind = CHANNEL_KIND_BY_CHANNEL[row.salesChannel];
+  if (kind) {
+    const rows = await tx.query<{ id: string }>(
+      "SELECT id FROM channel_sources WHERE kind = ? AND active = TRUE AND LOWER(name) = LOWER(?)",
+      [kind, detailName]
+    );
+    if (rows.length) {
+      return { channelSourceId: rows[0].id, referredByCtvId: null, warning: null };
+    }
+    return {
+      channelSourceId: null,
+      referredByCtvId: null,
+      warning: `Dòng ${row.rowNumber}: "Chi tiết kênh" ("${detailName}") không khớp danh mục, đã bỏ qua`,
+    };
+  }
+
+  if (row.salesChannel === CTV_CHANNEL) {
+    const rows = await tx.query<{ id: string }>(
+      "SELECT id FROM users WHERE role = 'CTV' AND LOWER(name) = LOWER(?)",
+      [detailName]
+    );
+    if (rows.length) {
+      return { channelSourceId: null, referredByCtvId: rows[0].id, warning: null };
+    }
+    return {
+      channelSourceId: null,
+      referredByCtvId: null,
+      warning: `Dòng ${row.rowNumber}: không tìm thấy CTV "${detailName}", đã bỏ qua "Chi tiết kênh"`,
+    };
+  }
+
+  return {
+    channelSourceId: null,
+    referredByCtvId: null,
+    warning: `Dòng ${row.rowNumber}: kênh "${row.salesChannel || "(trống)"}" không có chi tiết, đã bỏ qua "Chi tiết kênh"`,
+  };
 }
 
 const EXISTING_SELECT = `
@@ -51,7 +112,8 @@ async function findTeamId(tx: TransactionClient, teamName: string): Promise<stri
 async function insertCustomerFromRow(
   tx: TransactionClient,
   row: ImportRow,
-  opts: { territoryId: string | null; handoverBatch?: string; staffName: string | null; customerGroup?: string }
+  opts: { territoryId: string | null; handoverBatch?: string; staffName: string | null; customerGroup?: string },
+  channelDetail: ChannelDetailResolution
 ): Promise<ExistingCustomer> {
   const id = `KH-IMP-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const taxCode = row.taxCode ? normalizeTaxCode(row.taxCode) : "";
@@ -64,8 +126,9 @@ async function insertCustomerFromRow(
     `INSERT INTO customers (
       id, name, identity_code, type, customer_group, phone, address, services, am_staff, am_caring_staff,
       handover_batch, handover_date, territory_id, customer_code, status, team_id, sales_channel,
-      contact_name, contact_email, billing_name, billing_phone, billing_email, note
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      contact_name, contact_email, billing_name, billing_phone, billing_email, note,
+      channel_source_id, referred_by_ctv_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       row.name,
@@ -90,6 +153,8 @@ async function insertCustomerFromRow(
       row.billingPhone || null,
       row.billingEmail || null,
       row.note || null,
+      channelDetail.channelSourceId,
+      channelDetail.referredByCtvId,
     ]
   );
 
@@ -117,7 +182,8 @@ async function applyUseNew(
   tx: TransactionClient,
   customerId: string,
   row: ImportRow,
-  opts: { territoryId: string | null; handoverBatch?: string; staffName?: string | null; customerGroup?: string }
+  opts: { territoryId: string | null; handoverBatch?: string; staffName?: string | null; customerGroup?: string },
+  channelDetail: ChannelDetailResolution
 ): Promise<void> {
   const sets: string[] = [];
   const params: unknown[] = [];
@@ -145,6 +211,13 @@ async function applyUseNew(
   addIfNonEmpty("billing_email", row.billingEmail);
   addIfNonEmpty("sales_channel", row.salesChannel);
   addIfNonEmpty("note", row.note);
+  if (channelDetail.channelSourceId) {
+    sets.push("channel_source_id = ?", "referred_by_ctv_id = ?");
+    params.push(channelDetail.channelSourceId, null);
+  } else if (channelDetail.referredByCtvId) {
+    sets.push("channel_source_id = ?", "referred_by_ctv_id = ?");
+    params.push(null, channelDetail.referredByCtvId);
+  }
 
   const teamId = await findTeamId(tx, row.teamName);
   if (teamId) {
@@ -190,6 +263,7 @@ export async function commitImportRows(
   let kept = 0;
   let skipped = 0;
   const errors: { rowNumber: number; message: string }[] = [];
+  const warnings: { rowNumber: number; message: string }[] = [];
 
   const liveExisting = await tx.query<ExistingCustomer>(EXISTING_SELECT);
 
@@ -218,12 +292,20 @@ export async function commitImportRows(
         }
       }
 
-      const newCustomer = await insertCustomerFromRow(tx, row, {
-        territoryId,
-        handoverBatch,
-        staffName: decision.staffName ?? null,
-        customerGroup: decision.customerGroup,
-      });
+      const channelDetail = await resolveChannelDetail(tx, row);
+      if (channelDetail.warning) warnings.push({ rowNumber: row.rowNumber, message: channelDetail.warning });
+
+      const newCustomer = await insertCustomerFromRow(
+        tx,
+        row,
+        {
+          territoryId,
+          handoverBatch,
+          staffName: decision.staffName ?? null,
+          customerGroup: decision.customerGroup,
+        },
+        channelDetail
+      );
       liveExisting.push(newCustomer);
       created++;
       continue;
@@ -252,12 +334,21 @@ export async function commitImportRows(
         continue;
       }
 
-      await applyUseNew(tx, target.id, row, {
-        territoryId,
-        handoverBatch,
-        staffName: decision.staffName,
-        customerGroup: decision.customerGroup,
-      });
+      const channelDetail = await resolveChannelDetail(tx, row);
+      if (channelDetail.warning) warnings.push({ rowNumber: row.rowNumber, message: channelDetail.warning });
+
+      await applyUseNew(
+        tx,
+        target.id,
+        row,
+        {
+          territoryId,
+          handoverBatch,
+          staffName: decision.staffName,
+          customerGroup: decision.customerGroup,
+        },
+        channelDetail
+      );
       updated++;
       continue;
     }
@@ -265,5 +356,5 @@ export async function commitImportRows(
     errors.push({ rowNumber: row.rowNumber, message: `Hành động không hợp lệ: ${action}` });
   }
 
-  return { created, updated, kept, skipped, errors };
+  return { created, updated, kept, skipped, errors, warnings };
 }

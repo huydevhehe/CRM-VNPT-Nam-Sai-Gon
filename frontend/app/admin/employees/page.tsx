@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState, FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, FormEvent } from "react";
 import { UserCheck, UserPlus, Mail, Award, TrendingUp, Users, AlertTriangle, X, KeyRound, Phone, Pencil, PauseCircle, Ban, RotateCcw, Info, Eye } from "lucide-react";
 import KpiCard from "@/components/admin/shared/KpiCard";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
 import StatusBadge from "@/components/admin/shared/StatusBadge";
 import StaffOverviewModal from "@/components/admin/staff/StaffOverviewModal";
+import WardMultiSelect from "@/components/admin/staff/WardMultiSelect";
 import { TableFilter } from "@/lib/table-filters";
 import { getStaff, createStaff, updateStaff, resetStaffPassword, changeStaffStatus, getStaffReferences } from "@/lib/api/staff.api";
 import { getTerritories } from "@/lib/api/territories.api";
@@ -13,6 +14,24 @@ import { StaffRecord, StaffType, TerritoryRecord } from "@/lib/crm/types/crm.typ
 
 const ROLE_OPTIONS: StaffRecord["role"][] = ["AM", "AM Bán chăm", "Admin"];
 const STAFF_TYPE_OPTIONS: StaffType[] = ["Chính thức", "Cộng tác viên"];
+
+// Bộ lọc trạng thái: mặc định chỉ hiện nhân viên đang hoạt động.
+const STATUS_FILTER_ALL = "Tất cả";
+const DEFAULT_STATUS_FILTER = "Đang hoạt động";
+const STATUS_FILTER_OPTIONS = ["Đang hoạt động", "Đình chỉ", "Ngừng hoạt động", STATUS_FILTER_ALL] as const;
+type StatusFilter = (typeof STATUS_FILTER_OPTIONS)[number];
+
+/** Id các phường đang gán cho nhân viên (kể cả phường ghi trong hồ sơ cũ mà chưa ai phụ trách). */
+function wardIdsOfStaff(staff: StaffRecord, territories: TerritoryRecord[]): string[] {
+  const names = new Set(staff.territories ?? []);
+  const me = staff.name.trim();
+  return territories
+    .filter((t) => {
+      const owner = (t.staffName ?? "").trim();
+      return names.has(t.wardName) && (owner === "" || owner === me);
+    })
+    .map((t) => t.id);
+}
 
 function currentMonthVnClient(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -45,6 +64,7 @@ interface StaffFormState {
   hrmCode: string;
   role: StaffRecord["role"];
   territory: string;
+  territoryIds: string[];
   email: string;
   phone: string;
   birthDate: string;
@@ -63,6 +83,7 @@ const EMPTY_FORM: StaffFormState = {
   hrmCode: "",
   role: ROLE_OPTIONS[0],
   territory: "",
+  territoryIds: [],
   email: "",
   phone: "",
   birthDate: "",
@@ -80,6 +101,8 @@ export default function EmployeesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [revenueMonth, setRevenueMonth] = useState(currentMonthVnClient);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(DEFAULT_STATUS_FILTER);
+  const [wardFilter, setWardFilter] = useState("");
 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<StaffFormState>(EMPTY_FORM);
@@ -96,6 +119,7 @@ export default function EmployeesPage() {
     hrmCode: string;
     role: StaffRecord["role"];
     territory: string;
+    territoryIds: string[];
     email: string;
     phone: string;
     birthDate: string;
@@ -109,6 +133,7 @@ export default function EmployeesPage() {
     hrmCode: "",
     role: "AM",
     territory: "",
+    territoryIds: [],
     email: "",
     phone: "",
     birthDate: "",
@@ -198,6 +223,7 @@ export default function EmployeesPage() {
       hrmCode: staff.hrmCode || "",
       role: staff.role,
       territory: staff.territory || "",
+      territoryIds: wardIdsOfStaff(staff, territories),
       email: staff.email || "",
       phone: staff.phone || "",
       birthDate: staff.birthDate || "",
@@ -221,7 +247,9 @@ export default function EmployeesPage() {
         staffType: editForm.staffType,
         hrmCode: editForm.hrmCode.trim() || undefined,
         role: editForm.role,
-        territory: editForm.territory.trim() || undefined,
+        ...(territories.length > 0
+          ? { territoryIds: editForm.territoryIds }
+          : { territory: editForm.territory.trim() || undefined }),
         email: editForm.email.trim() || undefined,
         phone: editForm.phone.trim() || undefined,
         birthDate: editForm.birthDate.trim() || undefined,
@@ -232,6 +260,8 @@ export default function EmployeesPage() {
 
       setData((prev) => prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)));
       setEditingStaff(null);
+      // Phường có thể vừa được chuyển từ nhân viên khác sang: tải lại để các dòng khác cập nhật theo.
+      void loadData(true);
     } catch (err) {
       setEditError(err instanceof Error ? err.message : "Không thể cập nhật nhân viên");
     } finally {
@@ -278,42 +308,33 @@ export default function EmployeesPage() {
     }
   }
 
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadData() {
-      setLoading(true);
+  const loadData = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
       setError(null);
       try {
         const [staffRes, territoriesRes] = await Promise.allSettled([
           getStaff({ month: revenueMonth }),
           getTerritories(),
         ]);
-        if (isMounted) {
-          if (staffRes.status === "fulfilled") setData(staffRes.value);
-          if (territoriesRes.status === "fulfilled") setTerritories(territoriesRes.value);
-        }
+        if (staffRes.status === "fulfilled") setData(staffRes.value);
+        if (territoriesRes.status === "fulfilled") setTerritories(territoriesRes.value);
       } catch (err) {
-        if (isMounted) {
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Không thể tải dữ liệu Nhân viên. Vui lòng thử lại."
-          );
-        }
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Không thể tải dữ liệu Nhân viên. Vui lòng thử lại."
+        );
       } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
+        if (!silent) setLoading(false);
       }
-    }
+    },
+    [revenueMonth]
+  );
 
-    loadData();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [revenueMonth]);
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -338,7 +359,9 @@ export default function EmployeesPage() {
         staffType: form.staffType,
         hrmCode: form.hrmCode.trim() || undefined,
         role: form.role,
-        territory: form.territory.trim() || undefined,
+        ...(territories.length > 0
+          ? { territoryIds: form.territoryIds }
+          : { territory: form.territory.trim() || undefined }),
         email: form.email.trim() || undefined,
         phone: form.phone.trim() || undefined,
         birthDate: form.birthDate.trim() || undefined,
@@ -350,6 +373,7 @@ export default function EmployeesPage() {
       });
 
       setData((prev) => [created, ...prev]);
+      void loadData(true);
       setShowForm(false);
       setForm(EMPTY_FORM);
       setCreatedUsername(created.code);
@@ -428,7 +452,25 @@ export default function EmployeesPage() {
     {
       header: "Địa bàn phụ trách",
       accessorKey: "territory",
-      cell: (item) => <span className="font-semibold text-vnpt">{item.territory || "—"}</span>,
+      cell: (item) => {
+        const wards = item.territories ?? [];
+        if (wards.length === 0) return <span className="font-semibold text-vnpt">{item.territory || "—"}</span>;
+        const shown = wards.slice(0, 2);
+        return (
+          <div className="flex items-center gap-1" title={wards.join(", ")} data-testid={`staff-wards-${item.code}`}>
+            {shown.map((w) => (
+              <span key={w} className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[11px] font-semibold text-vnpt">
+                {w}
+              </span>
+            ))}
+            {wards.length > shown.length && (
+              <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">
+                +{wards.length - shown.length}
+              </span>
+            )}
+          </div>
+        );
+      },
     },
     {
       header: "Khách được giao",
@@ -566,17 +608,28 @@ export default function EmployeesPage() {
       label: "Loại",
       getValue: (r) => r.staffType || "Chính thức",
     },
-    {
-      id: "status",
-      label: "Trạng thái",
-      getValue: (r) => r.status,
-    },
-    {
-      id: "territory",
-      label: "Phường",
-      getValue: (r) => r.territory || "—",
-    },
   ];
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { [STATUS_FILTER_ALL]: data.length };
+    for (const s of data) counts[s.status] = (counts[s.status] ?? 0) + 1;
+    return counts;
+  }, [data]);
+
+  const wardOptions = useMemo(
+    () => [...territories].map((t) => t.wardName).sort((a, b) => a.localeCompare(b, "vi")),
+    [territories]
+  );
+
+  const visibleStaff = useMemo(
+    () =>
+      data.filter((s) => {
+        if (statusFilter !== STATUS_FILTER_ALL && s.status !== statusFilter) return false;
+        if (wardFilter && !(s.territories ?? []).includes(wardFilter)) return false;
+        return true;
+      }),
+    [data, statusFilter, wardFilter]
+  );
 
   const derivedShortName = deriveShortNameClient(form.name);
 
@@ -621,8 +674,8 @@ export default function EmployeesPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           title="TỔNG NHÂN SỰ"
-          value={String(data.length)}
-          subtitle="AM & AM Bán chăm địa bàn"
+          value={String(statusCounts["Đang hoạt động"] ?? 0)}
+          subtitle={`Đang hoạt động (tổng ${data.length} gồm cả đình chỉ/ngừng)`}
           icon={UserCheck}
         />
         <KpiCard
@@ -660,11 +713,59 @@ export default function EmployeesPage() {
         </div>
       ) : (
         <>
+          <div
+            className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-slate-200/80 bg-white px-5 py-3"
+            data-testid="staff-filter-bar"
+          >
+            <div className="flex items-center gap-2">
+              <label htmlFor="staff-status-filter" className="text-xs font-semibold text-slate-600">
+                Trạng thái:
+              </label>
+              <select
+                id="staff-status-filter"
+                data-testid="staff-status-filter"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                className="h-9 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 text-xs font-semibold text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-hidden"
+              >
+                {STATUS_FILTER_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt} ({statusCounts[opt] ?? 0})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="staff-ward-filter" className="text-xs font-semibold text-slate-600">
+                Phường phụ trách:
+              </label>
+              <select
+                id="staff-ward-filter"
+                data-testid="staff-ward-filter"
+                value={wardFilter}
+                onChange={(e) => setWardFilter(e.target.value)}
+                className="h-9 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 text-xs text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-hidden"
+              >
+                <option value="">Tất cả phường</option>
+                {wardOptions.map((w) => (
+                  <option key={w} value={w}>
+                    {w}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="text-[11px] text-slate-500" data-testid="staff-filter-summary">
+              Đang hiển thị <strong>{visibleStaff.length}</strong> / {data.length} nhân viên
+              {statusFilter === DEFAULT_STATUS_FILTER && (statusCounts["Đình chỉ"] ?? 0) + (statusCounts["Ngừng hoạt động"] ?? 0) > 0
+                ? ` · đang ẩn ${(statusCounts["Đình chỉ"] ?? 0) + (statusCounts["Ngừng hoạt động"] ?? 0)} nhân viên đình chỉ/ngừng`
+                : ""}
+            </p>
+          </div>
           <DataTable
             title="Danh sách nhân viên & Chỉ tiêu"
             subtitle="Chi tiết tỷ lệ hoàn thành thu nợ, gia hạn và doanh thu từng nhân viên"
             columns={columns}
-            data={data}
+            data={visibleStaff}
             filters={staffFilters}
             searchPlaceholder="Tìm theo tên nhân viên, mã NV, SĐT, địa bàn..."
             exportFileName="vnpt_nhan_vien"
@@ -784,18 +885,12 @@ export default function EmployeesPage() {
                       Phường phụ trách
                     </label>
                     {territories.length > 0 ? (
-                      <select
-                        value={form.territory}
-                        onChange={(e) => setForm({ ...form, territory: e.target.value })}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
-                      >
-                        <option value="">— Chưa gắn địa bàn —</option>
-                        {territories.map((t) => (
-                          <option key={t.id} value={t.wardName}>
-                            {t.wardName}
-                          </option>
-                        ))}
-                      </select>
+                      <WardMultiSelect
+                        testId="create-ward-select"
+                        territories={territories}
+                        value={form.territoryIds}
+                        onChange={(ids) => setForm({ ...form, territoryIds: ids })}
+                      />
                     ) : (
                       <input
                         placeholder="VD: Phường Tân Phong"
@@ -1115,18 +1210,13 @@ export default function EmployeesPage() {
                       Phường phụ trách
                     </label>
                     {territories.length > 0 ? (
-                      <select
-                        value={editForm.territory}
-                        onChange={(e) => setEditForm({ ...editForm, territory: e.target.value })}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
-                      >
-                        <option value="">— Chưa gắn địa bàn —</option>
-                        {territories.map((t) => (
-                          <option key={t.id} value={t.wardName}>
-                            {t.wardName}
-                          </option>
-                        ))}
-                      </select>
+                      <WardMultiSelect
+                        testId="edit-ward-select"
+                        territories={territories}
+                        value={editForm.territoryIds}
+                        onChange={(ids) => setEditForm({ ...editForm, territoryIds: ids })}
+                        currentStaffName={editingStaff.name}
+                      />
                     ) : (
                       <input
                         placeholder="VD: Phường Tân Phong"

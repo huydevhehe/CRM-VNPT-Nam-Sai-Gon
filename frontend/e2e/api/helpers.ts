@@ -107,6 +107,26 @@ export async function createApprovedCtv(
   };
 }
 
+let cachedDefaultAmName: string | null = null;
+
+/**
+ * Tên AM dùng làm "AM phát triển" mặc định khi tạo đơn qua API (AM phát triển là bắt buộc).
+ * Ưu tiên AM đăng nhập mẫu (VNPT-AM-01), nếu không có thì lấy AM đầu tiên trong danh sách nhân viên.
+ */
+export async function getDefaultAmName(
+  request: APIRequestContext,
+  adminToken: string
+): Promise<string> {
+  if (cachedDefaultAmName) return cachedDefaultAmName;
+  const res = await request.get(`${API_URL}/staff`, { headers: bearer(adminToken) });
+  expect(res.status(), "Lấy danh sách nhân viên phải trả 200").toBe(200);
+  const list = (await res.json()).data as { code: string; name: string; role: string }[];
+  const am = list.find((s) => s.code === AM.username) ?? list.find((s) => s.role === "AM");
+  if (!am) throw new Error("Không có AM nào trong dữ liệu để làm AM phát triển mặc định");
+  cachedDefaultAmName = am.name;
+  return am.name;
+}
+
 export interface TestCustomer {
   id: string;
   name: string;

@@ -4,6 +4,13 @@ import { ROLES, USER_STATUS, STAFF_TYPES, STAFF_STATUSES, INACTIVE_USER_STATUS, 
 import { HttpError } from "../auth/auth.service.js";
 import { currentMonthVn } from "../../utils/date-vn.js";
 import { computeStaffRevenue, ZERO_STAFF_REVENUE, type StaffRevenue } from "./staff-revenue.service.js";
+import {
+  getWardNamesByStaff,
+  resolveWards,
+  splitLegacyTerritory,
+  summarizeWards,
+  syncStaffTerritories,
+} from "./staff-territory.service.js";
 
 export function deriveShortName(fullName: string): string {
   const trimmed = (fullName || "").trim();
@@ -71,6 +78,8 @@ export interface StaffRecordDto {
   statusChangedBy?: string | null;
   /** Doanh thu tính từ đơn hàng (đã chốt/đã thu); chỉ có khi lấy qua getAll(). */
   revenue?: StaffRevenue;
+  /** Các phường nhân viên phụ trách (theo danh mục địa bàn); chỉ có khi lấy qua getAll(). */
+  territories?: string[];
 }
 
 export interface StaffUpdateInput {
@@ -78,6 +87,8 @@ export interface StaffUpdateInput {
   name?: string;
   role?: string;
   territory?: string;
+  /** Danh sách id phường phụ trách; nếu gửi thì thay thế hoàn toàn danh sách hiện tại. */
+  territoryIds?: string[];
   email?: string;
   hrmCode?: string | null;
   staffType?: string | null;
@@ -93,6 +104,8 @@ export interface StaffCreateInput {
   name: string;
   role: string;
   territory?: string;
+  /** Danh sách id phường phụ trách (nhiều phường); ưu tiên hơn `territory`. */
+  territoryIds?: string[];
   email?: string;
   hrmCode?: string;
   staffType?: string;
@@ -158,9 +171,12 @@ export class StaffService {
           )
         : await query<StaffRow>("SELECT * FROM staff ORDER BY code ASC");
 
+    const wardsByStaff = await getWardNamesByStaff();
+
     return rows.map((row) => {
       const dto = toStaffRecord(row);
       dto.revenue = revenueMap.get(dto.name.trim()) ?? { ...ZERO_STAFF_REVENUE };
+      dto.territories = wardsByStaff.get(dto.name.trim()) ?? splitLegacyTerritory(dto.territory);
       return dto;
     });
   }
@@ -170,7 +186,7 @@ export class StaffService {
     return rows.length ? toStaffRecord(rows[0]) : null;
   }
 
-  async create(data: StaffCreateInput): Promise<StaffCreatedDto> {
+  async create(data: StaffCreateInput, actor?: string): Promise<StaffCreatedDto> {
     const code = typeof data.code === "string" ? data.code.trim() : "";
     const name = typeof data.name === "string" ? data.name.trim() : "";
     const role = typeof data.role === "string" ? data.role.trim() : "";
@@ -232,6 +248,8 @@ export class StaffService {
       throw new HttpError(409, "Tên đăng nhập trùng với mã nhân viên đã tồn tại");
     }
 
+    const wards = data.territoryIds !== undefined ? await resolveWards(data.territoryIds) : null;
+
     const shortName = data.shortName && String(data.shortName).trim()
       ? String(data.shortName).trim()
       : deriveShortName(name);
@@ -251,7 +269,7 @@ export class StaffService {
         code,
         name,
         role,
-        data.territory || "",
+        wards ? summarizeWards(wards) : data.territory || "",
         0,
         0,
         0,
@@ -295,6 +313,10 @@ export class StaffService {
         throw new HttpError(409, "Tên đăng nhập trùng với mã nhân viên đã tồn tại");
       }
       throw error;
+    }
+
+    if (wards) {
+      await transaction((tx) => syncStaffTerritories(tx, name, wards, actor || "Admin"));
     }
 
     const created = await query<StaffRow>("SELECT * FROM staff WHERE id = ?", [id]);
@@ -379,7 +401,11 @@ export class StaffService {
       fields.push("role = ?");
       values.push(patch.role);
     }
-    if (patch.territory !== undefined) {
+    const wards = patch.territoryIds !== undefined ? await resolveWards(patch.territoryIds) : null;
+    if (wards) {
+      fields.push("territory = ?");
+      values.push(summarizeWards(wards));
+    } else if (patch.territory !== undefined) {
       fields.push("territory = ?");
       values.push(patch.territory);
     }
@@ -467,6 +493,10 @@ export class StaffService {
               `Đổi tên nhân viên từ "${oldName}" thành "${finalNewName}" (mã: ${existing[0].code})`,
             ]
           );
+        }
+
+        if (wards) {
+          await syncStaffTerritories(tx, finalNewName, wards, actor || "Admin");
         }
 
         // Đồng bộ sang tài khoản đăng nhập (username = mã nhân viên)

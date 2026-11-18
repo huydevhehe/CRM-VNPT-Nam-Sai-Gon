@@ -1,5 +1,6 @@
 import { normalizeTaxCode } from "../../../utils/tax-code.js";
 import type { ContractImportRow } from "./parse.js";
+import { ITEMS_REQUIRED_MESSAGE, normalizeContractItems } from "../contract-items.js";
 
 export interface ExistingContract {
   id: string;
@@ -31,6 +32,8 @@ export interface ClassifiedContractRow {
   customer?: ImportCustomer;
   notes: string[];
 }
+
+export const AM_REQUIRED_IMPORT_MESSAGE = "Thiếu AM phát triển (bắt buộc)";
 
 export const CUSTOMER_NOT_FOUND_MESSAGE = "Không tìm thấy khách hàng trong hệ thống (MST/tên)";
 export const CUSTOMER_AMBIGUOUS_MESSAGE =
@@ -143,6 +146,44 @@ export function classifyContractRows(
         existing: existingMatch,
         notes: [customerMatchMessage(match), ...notes],
       };
+    }
+
+    const effectiveAm = (row.amStaff ?? "").trim() || (existingMatch?.am_staff ?? "").trim();
+    if (!effectiveAm) {
+      return {
+        row,
+        status: "error",
+        existing: existingMatch,
+        customer: match.customer,
+        notes: [AM_REQUIRED_IMPORT_MESSAGE, ...notes],
+      };
+    }
+
+    // STT 10 (T9): mỗi đơn phải có >= 1 dòng dịch vụ/thiết bị. Đơn "update" chỉ sửa
+    // thông tin chung (không kèm dòng nào trong file) thì giữ nguyên dòng hiện có.
+    if (row.items.length === 0) {
+      if (!existingMatch) {
+        return {
+          row,
+          status: "error",
+          existing: existingMatch,
+          customer: match.customer,
+          notes: [ITEMS_REQUIRED_MESSAGE, ...notes],
+        };
+      }
+    } else {
+      try {
+        normalizeContractItems(row.items);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Dòng dịch vụ/thiết bị không hợp lệ";
+        return {
+          row,
+          status: "error",
+          existing: existingMatch,
+          customer: match.customer,
+          notes: [message, ...notes],
+        };
+      }
     }
 
     return {

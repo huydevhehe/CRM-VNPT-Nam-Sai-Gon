@@ -266,3 +266,10 @@ export async function deleteQuarter(quarterId: string): Promise<void> {
     method: "DELETE",
   });
 }
+
+/** Chỉ Admin. Chặn 409 nếu phường còn Lead hoặc Đơn hàng gắn vào. */
+export async function deleteTerritory(id: string): Promise<void> {
+  await apiFetch<{ id: string }>(`/territories/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}

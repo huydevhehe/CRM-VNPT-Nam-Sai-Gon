@@ -1,5 +1,5 @@
 import { query, transaction } from "../../../database/db.js";
-import { parseContractSheet, readWorkbookRows } from "./parse.js";
+import { groupContractImportLines, parseContractSheet, readWorkbookRows } from "./parse.js";
 import {
   classifyContractRows,
   type ClassifiedContractRow,
@@ -49,7 +49,8 @@ export class ContractImportService {
       throw new ContractImportServiceError(`File vượt quá giới hạn ${MAX_IMPORT_ROWS} dòng`);
     }
 
-    const { rows, errors } = parseContractSheet(rawRows);
+    const { lines, errors } = parseContractSheet(rawRows);
+    const rows = groupContractImportLines(lines);
     const [existing, customers] = await Promise.all([loadExistingContracts(), loadCustomers()]);
 
     const classified = classifyContractRows(rows, existing, customers);
@@ -57,6 +58,7 @@ export class ContractImportService {
     const errorRows: ClassifiedContractRow[] = errors.map((e) => ({
       row: {
         rowNumber: e.rowNumber,
+        rowNumbers: [e.rowNumber],
         transactionCode: "",
         customerName: "",
         subscriberCodes: [],
@@ -71,6 +73,7 @@ export class ContractImportService {
         contractNumber: "",
         signedDate: "",
         note: "",
+        items: [],
       },
       status: "error",
       notes: [e.message],

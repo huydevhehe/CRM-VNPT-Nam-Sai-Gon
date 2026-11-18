@@ -115,7 +115,7 @@ test.describe("API Quản lý Nhân viên (POST /api/staff)", () => {
         customerName: `KH Lead Cascade ${suffix}`,
         phone: "0909999888",
         group: "Lead KH mới",
-        channel: "Online",
+        channel: "Chiến dịch",
         staffName: oldName,
       },
     });

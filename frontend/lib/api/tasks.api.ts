@@ -20,3 +20,10 @@ export function updateTaskStatus(id: string, status: TaskStatus): Promise<TaskRe
     body: JSON.stringify({ status }),
   });
 }
+
+/** Chỉ Admin. */
+export async function deleteTask(id: string): Promise<void> {
+  await apiFetch<{ message: string }>(`/tasks/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}

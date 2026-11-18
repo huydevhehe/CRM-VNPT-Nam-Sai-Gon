@@ -78,7 +78,7 @@ test.describe("Phân quyền tầng API: AM không có quyền Admin", () => {
       customerName: `KH ACL ${tag} ${suffix}`,
       phone: "0901234567",
       group: "Lead KH mới",
-      channel: "Online",
+      channel: "Chiến dịch",
       ...(staffName === undefined ? {} : { staffName }),
     });
 

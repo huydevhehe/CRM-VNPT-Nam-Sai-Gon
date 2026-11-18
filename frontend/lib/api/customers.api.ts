@@ -40,6 +40,8 @@ interface CustomerApiRow {
   referred_by_ctv_id?: string | null;
   referred_by_ctv_name?: string | null;
   referred_by_ctv_code?: string | null;
+  channel_source_id?: string | null;
+  channel_source_name?: string | null;
 }
 
 function mapCustomerRow(row: CustomerApiRow): CustomerRecord {
@@ -78,6 +80,8 @@ function mapCustomerRow(row: CustomerApiRow): CustomerRecord {
     referredByCtvId: row.referred_by_ctv_id || undefined,
     referredByCtvName: row.referred_by_ctv_name || undefined,
     referredByCtvCode: row.referred_by_ctv_code || undefined,
+    channelSourceId: row.channel_source_id || undefined,
+    channelSourceName: row.channel_source_name || undefined,
   };
 }
 
@@ -118,6 +122,8 @@ export interface CreateCustomerInput {
   note?: string;
   /** Chuỗi rỗng / null khi sửa = gỡ CTV giới thiệu. */
   referredByCtvId?: string | null;
+  /** Chi tiết kênh (nguồn Online/đối tác) khi salesChannel là Online/Đối tác. */
+  channelSourceId?: string | null;
 }
 
 export type UpdateCustomerInput = Partial<CreateCustomerInput>;
@@ -165,6 +171,13 @@ export async function createCustomer(
   return mapCustomerRow(row);
 }
 
+/** Xóa khách hàng (chỉ Admin). Ném lỗi tiếng Việt từ server (409 nếu còn đơn hàng). */
+export async function deleteCustomer(id: string): Promise<void> {
+  await apiFetch<{ message: string }>(`/customers/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
 // Đổi AM bán hàng (người phát triển) — không nhận đợt giao, xem transferCaringStaff().
 export function transferCustomer(id: string, newStaff: string): Promise<void> {
   return apiFetch<void>(`/customers/${encodeURIComponent(id)}/transfer`, {
@@ -194,7 +207,8 @@ export interface BatchCustomerInputItem {
 }
 
 export interface ImportCustomerBatchInput {
-  territoryId: string;
+  /** Tùy chọn (feedback 17/11); bắt buộc chỉ khi mode = "replace". */
+  territoryId?: string;
   amCaringStaff: string;
   handoverBatch: string;
   mode: "append" | "replace";
@@ -220,7 +234,7 @@ export async function importCustomerBatch(
 export async function importCustomerBatchExcel(
   file: File,
   params: {
-    territoryId: string;
+    territoryId?: string;
     amCaringStaff: string;
     handoverBatch: string;
     mode: "append" | "replace";
@@ -228,7 +242,7 @@ export async function importCustomerBatchExcel(
 ): Promise<ImportCustomerBatchResult> {
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("territoryId", params.territoryId);
+  if (params.territoryId) formData.append("territoryId", params.territoryId);
   formData.append("amCaringStaff", params.amCaringStaff);
   formData.append("handoverBatch", params.handoverBatch);
   formData.append("mode", params.mode);

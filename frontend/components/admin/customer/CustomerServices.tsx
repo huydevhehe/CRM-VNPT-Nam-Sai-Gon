@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect, useState, FormEvent } from "react";
-import { Plus, Pencil, Trash2, X } from "lucide-react";
+import { Plus, Pencil, Trash2, X, Eye, EyeOff, Copy, Lock } from "lucide-react";
 import { ServiceRecord } from "@/lib/crm/types/crm.types";
 import {
   getCustomerServices,
   createService,
   updateService,
   deleteService,
+  revealInvoiceCredential,
 } from "@/lib/api/services.api";
 import { isExpiringSoon } from "@/lib/customer-stats";
+import { isInvoicePortalServiceName } from "@/lib/crm/invoice-portal";
+import { useAuth } from "@/lib/auth/auth-context";
 
 function formatIsoDateVn(value: string | null | undefined): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value ?? "");
@@ -27,6 +30,10 @@ interface ServiceFormState {
   paymentType: (typeof PAYMENT_METHODS)[number];
   startDate: string;
   expirationDate: string;
+  invoicePortalUrl: string;
+  invoicePortalUsername: string;
+  /** Để trống khi sửa = không đổi mật khẩu đã lưu. */
+  invoicePortalPassword: string;
 }
 
 const EMPTY_SERVICE_FORM: ServiceFormState = {
@@ -37,6 +44,9 @@ const EMPTY_SERVICE_FORM: ServiceFormState = {
   paymentType: PAYMENT_METHODS[0],
   startDate: "",
   expirationDate: "",
+  invoicePortalUrl: "",
+  invoicePortalUsername: "",
+  invoicePortalPassword: "",
 };
 
 function linkedTitle(service: ServiceRecord): string {
@@ -52,6 +62,8 @@ interface CustomerServicesProps {
 }
 
 export default function CustomerServices({ customerId, canManage, onServicesChange }: CustomerServicesProps) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "Admin";
   const [services, setServices] = useState<ServiceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +73,11 @@ export default function CustomerServices({ customerId, canManage, onServicesChan
   const [form, setForm] = useState<ServiceFormState>(EMPTY_SERVICE_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Mật khẩu hệ thống hóa đơn đã "Hiện" (chỉ giữ tạm trong state, không cache lâu dài).
+  const [revealedPasswords, setRevealedPasswords] = useState<Record<string, string>>({});
+  const [revealError, setRevealError] = useState<Record<string, string>>({});
+  const [revealingId, setRevealingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading) onServicesChange?.(services);
@@ -116,9 +133,44 @@ export default function CustomerServices({ customerId, canManage, onServicesChan
       paymentType: (service.paymentType as ServiceFormState["paymentType"]) || PAYMENT_METHODS[0],
       startDate: service.startDate,
       expirationDate: service.expirationDate,
+      invoicePortalUrl: service.invoicePortalUrl || "",
+      invoicePortalUsername: service.invoicePortalUsername || "",
+      invoicePortalPassword: "",
     });
     setFormError(null);
     setShowForm(true);
+  }
+
+  async function handleReveal(service: ServiceRecord) {
+    setRevealError((prev) => ({ ...prev, [service.id]: "" }));
+    setRevealingId(service.id);
+    try {
+      const data = await revealInvoiceCredential(service.id);
+      setRevealedPasswords((prev) => ({ ...prev, [service.id]: data.password || "" }));
+    } catch (err) {
+      setRevealError((prev) => ({
+        ...prev,
+        [service.id]: err instanceof Error ? err.message : "Không thể xem mật khẩu",
+      }));
+    } finally {
+      setRevealingId(null);
+    }
+  }
+
+  function hideRevealed(serviceId: string) {
+    setRevealedPasswords((prev) => {
+      const next = { ...prev };
+      delete next[serviceId];
+      return next;
+    });
+  }
+
+  async function copyToClipboard(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Trình duyệt chặn clipboard (vd không phải HTTPS) — bỏ qua, không chặn người dùng.
+    }
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -126,10 +178,17 @@ export default function CustomerServices({ customerId, canManage, onServicesChan
     setFormError(null);
     setSubmitting(true);
     try {
+      // Mật khẩu: để trống khi SỬA nghĩa là "không đổi" (ô mật khẩu không bao giờ
+      // hiện lại giá trị cũ) — chỉ gửi lên khi người dùng thực sự gõ mật khẩu mới.
+      const { invoicePortalPassword, ...rest } = form;
+      const payload = {
+        ...rest,
+        ...(invoicePortalPassword ? { invoicePortalPassword } : {}),
+      };
       if (editingId) {
-        await updateService(editingId, { ...form });
+        await updateService(editingId, payload);
       } else {
-        await createService({ customerId, ...form });
+        await createService({ customerId, ...payload });
       }
       setShowForm(false);
       await reload();
@@ -239,6 +298,74 @@ export default function CustomerServices({ customerId, canManage, onServicesChan
           </tbody>
         </table>
       </div>
+
+      {/* Thông tin đăng nhập hệ thống hóa đơn — chỉ hiện với dịch vụ "Hóa đơn điện tử". */}
+      {services
+        .filter((s) => s.isInvoicePortalService)
+        .map((service) => {
+          const revealed = revealedPasswords[service.id];
+          return (
+            <div
+              key={`cred-${service.id}`}
+              data-testid="invoice-credential-block"
+              className="space-y-1.5 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-xs"
+            >
+              <h4 className="flex items-center gap-1.5 font-bold text-slate-700">
+                <Lock className="h-3.5 w-3.5" />
+                Thông tin đăng nhập hệ thống hóa đơn — {service.serviceName}
+              </h4>
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
+                <InfoRow label="Link" value={service.invoicePortalUrl} />
+                <InfoRow label="Tài khoản" value={service.invoicePortalUsername} />
+                <div>
+                  <span className="text-[10px] font-semibold uppercase text-slate-400">Mật khẩu</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-slate-700">
+                      {revealed ?? service.invoicePortalPasswordMasked ?? "—"}
+                    </span>
+                    {isAdmin && service.invoicePortalPasswordMasked && (
+                      <>
+                        {revealed ? (
+                          <>
+                            <button
+                              type="button"
+                              title="Ẩn mật khẩu"
+                              onClick={() => hideRevealed(service.id)}
+                              className="rounded p-0.5 text-slate-400 hover:text-vnpt"
+                            >
+                              <EyeOff className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Sao chép"
+                              onClick={() => copyToClipboard(revealed)}
+                              className="rounded p-0.5 text-slate-400 hover:text-vnpt"
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            title="Hiện mật khẩu"
+                            disabled={revealingId === service.id}
+                            onClick={() => handleReveal(service)}
+                            className="rounded p-0.5 text-slate-400 hover:text-vnpt disabled:opacity-50"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  {revealError[service.id] && (
+                    <p className="mt-0.5 text-[11px] text-rose-500">{revealError[service.id]}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
 
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
@@ -364,6 +491,57 @@ export default function CustomerServices({ customerId, canManage, onServicesChan
                 </div>
               </div>
 
+              {isInvoicePortalServiceName(form.serviceName) && (
+                <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                  <h4 className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                    <Lock className="h-3.5 w-3.5" />
+                    Thông tin đăng nhập hệ thống hóa đơn
+                  </h4>
+                  <div>
+                    <label htmlFor="svc-inv-url" className="mb-1 block text-xs font-semibold text-slate-600">
+                      Link hệ thống
+                    </label>
+                    <input
+                      id="svc-inv-url"
+                      type="url"
+                      placeholder="https://..."
+                      value={form.invoicePortalUrl}
+                      onChange={(e) => setForm({ ...form, invoicePortalUrl: e.target.value })}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="svc-inv-user" className="mb-1 block text-xs font-semibold text-slate-600">
+                        Tài khoản
+                      </label>
+                      <input
+                        id="svc-inv-user"
+                        value={form.invoicePortalUsername}
+                        onChange={(e) => setForm({ ...form, invoicePortalUsername: e.target.value })}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="svc-inv-pass" className="mb-1 block text-xs font-semibold text-slate-600">
+                        Mật khẩu
+                      </label>
+                      <input
+                        id="svc-inv-pass"
+                        type="password"
+                        placeholder={editingId ? "Để trống = không đổi" : ""}
+                        value={form.invoicePortalPassword}
+                        onChange={(e) => setForm({ ...form, invoicePortalPassword: e.target.value })}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Mật khẩu được mã hóa khi lưu; chỉ Admin xem lại được bằng nút &quot;Hiện mật khẩu&quot;.
+                  </p>
+                </div>
+              )}
+
               {formError && (
                 <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">
                   {formError}
@@ -390,6 +568,15 @@ export default function CustomerServices({ customerId, canManage, onServicesChan
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div>
+      <span className="text-[10px] font-semibold uppercase text-slate-400">{label}</span>
+      <div className="truncate text-slate-700">{value || "—"}</div>
     </div>
   );
 }

@@ -1,16 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useState, FormEvent } from "react";
-import { AlertTriangle, Check, UserRoundCheck, X, UserPlus, KeyRound, Copy, CheckCircle } from "lucide-react";
+import { AlertTriangle, Check, UserRoundCheck, X, UserPlus, KeyRound, Copy, CheckCircle, Trash2 } from "lucide-react";
 import KpiCard from "@/components/admin/shared/KpiCard";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
 import StatusBadge from "@/components/admin/shared/StatusBadge";
+import ConfirmDeleteDialog from "@/components/admin/shared/ConfirmDeleteDialog";
 import { TableFilter } from "@/lib/table-filters";
 import {
   approveCtvAccount,
   getCtvAccounts,
   rejectCtvAccount,
   createCtvAccount,
+  deleteCtvAccount,
   CreateCtvAccountInput,
 } from "@/lib/api/ctv-accounts.api";
 import { CtvAccountRecord } from "@/lib/crm/types/crm.types";
@@ -50,6 +52,8 @@ export default function CtvAccountsPage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [createSubmitting, setCreateSubmitting] = useState(false);
   const [createdSuccess, setCreatedSuccess] = useState<CtvAccountRecord | null>(null);
+
+  const [deleteTarget, setDeleteTarget] = useState<CtvAccountRecord | null>(null);
 
   async function handleCreateSubmit(e: FormEvent) {
     e.preventDefault();
@@ -132,6 +136,13 @@ export default function CtvAccountsPage() {
     }
   }
 
+  async function handleConfirmDeleteCtv() {
+    if (!deleteTarget) return;
+    await deleteCtvAccount(deleteTarget.id);
+    setData((prev) => prev.filter((item) => item.id !== deleteTarget.id));
+    setDeleteTarget(null);
+  }
+
   const pendingCount = data.filter((item) => item.status === "Chờ duyệt").length;
   const activeCount = data.filter((item) => item.status === "Đang hoạt động").length;
   const visible = filter ? data.filter((item) => item.status === filter) : data;
@@ -196,6 +207,15 @@ export default function CtvAccountsPage() {
               Từ chối
             </button>
           )}
+          <button
+            type="button"
+            disabled={busyId === item.id}
+            onClick={() => setDeleteTarget(item)}
+            title="Xóa tài khoản CTV (chỉ khi chưa phát sinh dữ liệu)"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-60"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
         </div>
       ),
     },
@@ -468,6 +488,24 @@ export default function CtvAccountsPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDeleteDialog
+        open={deleteTarget !== null}
+        title="Xóa tài khoản CTV"
+        description={
+          deleteTarget ? (
+            <>
+              Xóa tài khoản CTV <strong>{deleteTarget.name}</strong> ({deleteTarget.username})? Chỉ xóa được khi CTV
+              chưa phát sinh Lead/đơn hàng/hoa hồng — nếu đã có dữ liệu, hãy dùng nút &quot;Từ chối&quot; để ngừng
+              hoạt động thay vì xóa.
+            </>
+          ) : (
+            ""
+          )
+        }
+        onConfirm={handleConfirmDeleteCtv}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

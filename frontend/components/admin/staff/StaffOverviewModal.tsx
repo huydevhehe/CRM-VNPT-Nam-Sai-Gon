@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { X, Search, AlertTriangle, ExternalLink } from "lucide-react";
+import { X, Search, AlertTriangle, ExternalLink, MapPin } from "lucide-react";
 import StatusBadge from "@/components/admin/shared/StatusBadge";
 import AccessBadge from "@/components/admin/staff/AccessBadge";
 import { getStaffOverview, type StaffOverview } from "@/lib/api/staff.api";
@@ -12,7 +12,7 @@ interface StaffOverviewModalProps {
   onClose: () => void;
 }
 
-type OverviewTab = "permissions" | "customers";
+type OverviewTab = "permissions" | "customers" | "territories";
 
 function normalize(value: string): string {
   return value
@@ -151,6 +151,7 @@ export default function StaffOverviewModal({ staff, onClose }: StaffOverviewModa
                 [
                   { id: "permissions", label: "Quyền" },
                   { id: "customers", label: `Khách hàng (${stats.customers})` },
+                  { id: "territories", label: `Phường phụ trách (${overview.territories.length})` },
                 ] as const
               ).map((t) => (
                 <button
@@ -201,6 +202,53 @@ export default function StaffOverviewModal({ staff, onClose }: StaffOverviewModa
                               <AccessBadge level={p.level} />
                             </td>
                             <td className="py-2 text-xs text-slate-500">{p.note}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              ) : tab === "territories" ? (
+                <div data-testid="territories-panel">
+                  <p className="mb-3 text-xs text-slate-500">
+                    Một nhân viên có thể phụ trách nhiều phường. Để thay đổi, bấm <span className="font-semibold text-slate-700">Sửa</span>{" "}
+                    ở danh sách nhân viên rồi chọn lại mục &quot;Phường phụ trách&quot;.
+                  </p>
+                  {overview.territories.length === 0 ? (
+                    <p className="py-8 text-center text-sm text-slate-500" data-testid="territories-empty">
+                      Chưa phụ trách phường nào
+                    </p>
+                  ) : (
+                    <table className="w-full text-left text-sm" data-testid="territories-table">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-xs font-bold uppercase tracking-wide text-slate-500">
+                          <th className="py-2 pr-3">Phường</th>
+                          <th className="py-2 pr-3 text-right">Số khu phố</th>
+                          <th className="py-2 pr-3 text-right">Số hộ dân</th>
+                          <th className="py-2">Ghi nhận</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {overview.territories.map((t) => (
+                          <tr key={t.id} data-testid="territory-row" className="border-b border-slate-100">
+                            <td className="py-2 pr-3">
+                              <Link
+                                href={`/admin/territories/${t.id}`}
+                                data-testid="territory-link"
+                                className="inline-flex items-center gap-1 font-semibold text-vnpt hover:underline"
+                              >
+                                <MapPin className="h-3.5 w-3.5" />
+                                {t.wardName}
+                                <ExternalLink className="h-3 w-3" />
+                              </Link>
+                            </td>
+                            <td className="py-2 pr-3 text-right text-slate-700">{t.quarterCount.toLocaleString("vi-VN")}</td>
+                            <td className="py-2 pr-3 text-right text-slate-700">{t.householdCount.toLocaleString("vi-VN")}</td>
+                            <td className="py-2 text-xs text-slate-500">
+                              {t.source === "assigned"
+                                ? "Đã gán ở trang Địa bàn"
+                                : "Chỉ có trong hồ sơ, chưa gán ở trang Địa bàn"}
+                            </td>
                           </tr>
                         ))}
                       </tbody>

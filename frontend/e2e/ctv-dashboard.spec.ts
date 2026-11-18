@@ -6,6 +6,7 @@ import {
   bearer,
   createApprovedCtv,
   createCustomerForOrder,
+  getDefaultAmName,
 } from "./api/helpers";
 
 const STAFF = "Nguyễn Thị Tình";
@@ -79,6 +80,7 @@ test.describe("Dashboard CTV chạy dữ liệu thật", () => {
     const created = await request.post(`${API_URL}/contracts`, {
       headers: bearer(adminToken),
       data: {
+        amStaff: await getDefaultAmName(request, adminToken),
         transactionCode: contractCode,
         customerId: customer.id,
         subscriberCodes: ["0901234567"],

@@ -8,6 +8,7 @@ import {
   Building2,
   User,
   Pencil,
+  Trash2,
   AlertTriangle,
   Layers,
   CalendarClock,
@@ -19,12 +20,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import StatusBadge from "@/components/admin/shared/StatusBadge";
+import ConfirmDeleteDialog from "@/components/admin/shared/ConfirmDeleteDialog";
+import { formatChannelDetail } from "@/lib/crm/channel-detail";
 import {
   CustomerRecord,
   TerritoryRecord,
   ServiceRecord,
 } from "@/lib/crm/types/crm.types";
-import { getCustomer, updateCustomer, getCtvOptions, CtvOption } from "@/lib/api/customers.api";
+import { getCustomer, updateCustomer, deleteCustomer, getCtvOptions, CtvOption } from "@/lib/api/customers.api";
 import { getStaff } from "@/lib/api/staff.api";
 import { computeCustomerStats, formatVnd } from "@/lib/customer-stats";
 import { getTerritories } from "@/lib/api/territories.api";
@@ -37,6 +40,7 @@ import CustomerForm, {
   CustomerFormValues,
   customerToFormValues,
   ctvOptionsWithCurrent,
+  buildChannelPatch,
 } from "@/components/admin/customer/CustomerForm";
 import CustomerDocuments from "@/components/admin/customer/CustomerDocuments";
 import CustomerServices from "@/components/admin/customer/CustomerServices";
@@ -61,6 +65,7 @@ export default function CustomerDetailPage() {
   const [showEdit, setShowEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -111,9 +116,11 @@ export default function CustomerDetailPage() {
     (customer && user?.name && [customer.amStaff, customer.amCaringStaff].includes(user.name));
 
   async function handleEditSubmit(values: CustomerFormValues) {
+    if (!customer) return;
     setEditError(null);
     setSubmitting(true);
     try {
+      const channelPatch = buildChannelPatch(customer, values);
       const updated = await updateCustomer(customerId, {
         name: values.name,
         identityCode: values.identityCode || undefined,
@@ -124,8 +131,6 @@ export default function CustomerDetailPage() {
         teamId: values.teamId || undefined,
         amStaff: values.amStaff || undefined,
         amCaringStaff: values.amCaringStaff || undefined,
-        referredByCtvId: values.referredByCtvId || null,
-        salesChannel: values.salesChannel || undefined,
         territoryId: values.territoryId || undefined,
         phone: values.phone || undefined,
         address: values.address || undefined,
@@ -135,6 +140,7 @@ export default function CustomerDetailPage() {
         billingName: values.billingName || undefined,
         billingPhone: values.billingPhone || undefined,
         billingEmail: values.billingEmail || undefined,
+        ...channelPatch,
       });
       setCustomer(updated);
       setShowEdit(false);
@@ -143,6 +149,11 @@ export default function CustomerDetailPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleConfirmDelete() {
+    await deleteCustomer(customerId);
+    router.push("/admin/customers");
   }
 
   if (loading) {
@@ -208,18 +219,29 @@ export default function CustomerDetailPage() {
             </div>
           </div>
         </div>
-        {canEdit && (
-          <button
-            onClick={() => {
-              setEditError(null);
-              setShowEdit(true);
-            }}
-            className="flex h-9 items-center gap-1.5 self-start rounded-xl bg-vnpt px-3.5 text-xs font-bold text-white shadow-xs hover:bg-vnpt-dark sm:self-auto"
-          >
-            <Pencil className="h-4 w-4" />
-            Sửa thông tin
-          </button>
-        )}
+        <div className="flex gap-2 self-start sm:self-auto">
+          {canEdit && (
+            <button
+              onClick={() => {
+                setEditError(null);
+                setShowEdit(true);
+              }}
+              className="flex h-9 items-center gap-1.5 rounded-xl bg-vnpt px-3.5 text-xs font-bold text-white shadow-xs hover:bg-vnpt-dark"
+            >
+              <Pencil className="h-4 w-4" />
+              Sửa thông tin
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="flex h-9 items-center gap-1.5 rounded-xl border border-rose-200 px-3.5 text-xs font-bold text-rose-600 hover:bg-rose-50"
+            >
+              <Trash2 className="h-4 w-4" />
+              Xóa
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Thống kê nhanh */}
@@ -280,6 +302,22 @@ export default function CustomerDetailPage() {
           <InfoItem label="MST / CCCD" value={customer.identityCode} />
           <InfoItem label="Trạng thái" value={customer.status} />
           <InfoItem label="Kênh bán" value={customer.salesChannel} />
+          <InfoItem
+            label="Chi tiết kênh"
+            value={
+              formatChannelDetail(
+                customer.salesChannel || "",
+                customer.channelSourceName,
+                customer.referredByCtvName
+              ) === "—"
+                ? undefined
+                : formatChannelDetail(
+                    customer.salesChannel || "",
+                    customer.channelSourceName,
+                    customer.referredByCtvName
+                  )
+            }
+          />
           <InfoItem label="AM phụ trách (bán hàng)" value={customer.amStaff} />
           <InfoItem label="AM chăm sóc (CSKH)" value={customer.amCaringStaff} />
           <InfoItem label="Team" value={customer.teamName} />
@@ -387,6 +425,19 @@ export default function CustomerDetailPage() {
           canDeleteDocuments={isAdmin}
         />
       )}
+
+      <ConfirmDeleteDialog
+        open={showDeleteConfirm}
+        title="Xóa khách hàng"
+        description={
+          <>
+            Xóa khách hàng <strong>{customer.name}</strong>? Giấy tờ đính kèm và dịch vụ nhập tay của khách sẽ bị xóa
+            theo. Thao tác này không thể hoàn tác.
+          </>
+        }
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 }

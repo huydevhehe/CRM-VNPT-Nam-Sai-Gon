@@ -22,6 +22,7 @@ function makeRow(overrides: Partial<ImportRow>): ImportRow {
     billingEmail: "",
     teamName: "",
     salesChannel: "",
+    channelDetailName: "",
     note: "",
     ...overrides,
   };

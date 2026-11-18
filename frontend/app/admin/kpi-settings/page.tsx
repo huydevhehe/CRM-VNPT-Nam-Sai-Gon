@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Settings2, RotateCcw, Calculator, AlertCircle, ClipboardCopy } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
+import KpiGuide from "./KpiGuide";
 import {
   DEFAULT_KPI_FORMULAS,
   scoreKpi,
@@ -503,6 +504,8 @@ export default function KpiSettingsPage() {
           {!isAdmin && " Chỉ Admin được sửa; bạn đang xem ở chế độ chỉ đọc."}
         </p>
       </div>
+
+      <KpiGuide formulas={formulas} />
 
       {isAdmin && (
         <div className="flex items-center gap-2 border-b border-slate-200 pb-2">

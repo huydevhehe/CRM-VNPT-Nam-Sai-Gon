@@ -43,6 +43,7 @@ staffRouter.post("/", requireAuth, requireAdmin, async (req: Request, res: Respo
       name,
       role,
       territory,
+      territoryIds,
       email,
       hrmCode,
       staffType,
@@ -60,6 +61,7 @@ staffRouter.post("/", requireAuth, requireAdmin, async (req: Request, res: Respo
       name,
       role,
       territory,
+      territoryIds,
       email,
       hrmCode,
       staffType,
@@ -70,7 +72,7 @@ staffRouter.post("/", requireAuth, requireAdmin, async (req: Request, res: Respo
       note,
       password,
       mustChangePassword,
-    });
+    }, req.user?.name);
     res.status(201).json({ success: true, data: staff });
   } catch (error: any) {
     const statusCode = error instanceof HttpError ? error.status : 400;
@@ -141,6 +143,7 @@ staffRouter.patch("/:id", requireAuth, requireAdmin, async (req: Request, res: R
       name,
       role,
       territory,
+      territoryIds,
       status,
       email,
       hrmCode,
@@ -159,6 +162,7 @@ staffRouter.patch("/:id", requireAuth, requireAdmin, async (req: Request, res: R
         name,
         role,
         territory,
+        territoryIds,
         status,
         email,
         hrmCode,

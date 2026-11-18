@@ -7,6 +7,7 @@ import {
   createApprovedCtv,
   createCustomerForOrder,
   registerCtv,
+  getDefaultAmName,
 } from "./helpers";
 
 const STAFF_A = "Nguyễn Thị Tình";
@@ -41,7 +42,7 @@ test.describe("API Lead / Hợp đồng / Hoa hồng gắn CTV và Phường", (
       customerName: `KH Lead API ${uniq()}`,
       phone: "0912345678",
       group: "Lead KH mới",
-      channel: "Online",
+      channel: "Chiến dịch",
       staffName: STAFF_A,
       expectedValue: 1000000,
       demandDescription: "Test API",
@@ -61,6 +62,7 @@ test.describe("API Lead / Hợp đồng / Hoa hồng gắn CTV và Phường", (
     return request.post(`${API_URL}/contracts`, {
       headers: bearer(token),
       data: {
+        amStaff: await getDefaultAmName(request, token),
         transactionCode: `GD-API-${uniq()}`,
         ...(customer ? { customerId: customer.id } : {}),
         subscriberCodes: ["0901234567"],

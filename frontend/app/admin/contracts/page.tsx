@@ -15,12 +15,16 @@ import {
   Download,
   UploadCloud,
   Search,
+  Trash2,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
 import KpiCard from "@/components/admin/shared/KpiCard";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
 import StatusSelect from "@/components/admin/shared/StatusSelect";
 import ContractImportWizard from "@/components/admin/contract/ContractImportWizard";
+import PaymentRequestModal from "@/components/admin/contract/PaymentRequestModal";
+import MoneyInput from "@/components/admin/shared/MoneyInput";
+import { formatMoney } from "@/lib/money";
 import {
   getContracts,
   createContract,
@@ -29,31 +33,49 @@ import {
   getContractPayments,
   addContractPayment,
   deleteContractPayment,
-  getPaymentRequestPreview,
+  getContractTemplates,
+  downloadContractExportFile,
+  deleteContract,
   ContractPaymentDto,
 } from "@/lib/api/contracts.api";
-import { API_BASE_URL, getToken } from "@/lib/api/client";
 import { getLeads, getCtvOptions, CtvOption } from "@/lib/api/leads.api";
-import { getTerritories } from "@/lib/api/territories.api";
 import { getCustomers } from "@/lib/api/customers.api";
 import { getStaff } from "@/lib/api/staff.api";
 import {
   ContractRecord,
+  ContractItemInput,
+  ContractTemplateOption,
   LeadRecord,
-  TerritoryRecord,
   CustomerRecord,
   StaffRecord,
 } from "@/lib/crm/types/crm.types";
 import { LEAD_CHANNELS } from "@/lib/crm/constants/org.constants";
+import ChannelDetailPicker from "@/components/admin/shared/ChannelDetailPicker";
+import ConfirmDeleteDialog from "@/components/admin/shared/ConfirmDeleteDialog";
+import {
+  ChannelDetailValue,
+  EMPTY_CHANNEL_DETAIL,
+  channelNeedsDetail,
+  formatChannelDetail,
+} from "@/lib/crm/channel-detail";
 
 const CHANNEL_OPTIONS: readonly string[] = LEAD_CHANNELS;
 const SERVICE_GROUPS = ["BRCĐ", "CNTT", "Di động"] as const;
-const PAYMENT_METHODS = ["Trả trước", "Trả hàng tháng"] as const;
+const PAYMENT_METHODS = ["Trả trước", "Trả hàng tháng", "Theo hợp đồng"] as const;
+const PREPAID_METHOD = "Trả trước";
+// Số tháng trả trước: 6 và 12 là phổ biến nên đứng đầu danh sách.
+const PREPAID_MONTH_OPTIONS = [12, 6, 3, 18, 24] as const;
+const POPULAR_PREPAID_MONTHS: readonly number[] = [6, 12];
+const DEFAULT_PREPAID_MONTHS = "12";
+const AM_REQUIRED_MESSAGE = "Vui lòng chọn AM phát triển";
+const PREPAID_REQUIRED_MESSAGE =
+  "Hình thức Trả trước phải chọn số tháng trả trước: 3, 6, 12, 18 hoặc 24 tháng";
 
 const CUSTOMER_REQUIRED_MESSAGE =
   "Vui lòng chọn Khách hàng. Đơn hàng bắt buộc phải gắn với một khách hàng trong hệ thống";
-const ORDER_WITHOUT_CUSTOMER_MESSAGE =
-  "Đơn hàng chưa gắn khách hàng. Vui lòng cập nhật khách hàng cho đơn trước khi xuất Đề nghị thanh toán";
+
+// T10 (STT 11): mỗi Mã giao dịch bắt buộc chọn 1 mẫu hợp đồng khi tạo mới.
+const CONTRACT_TEMPLATE_REQUIRED_MESSAGE = "Vui lòng chọn mẫu hợp đồng";
 
 const DEPLOYMENT_STATUSES: ContractRecord["deploymentStatus"][] = [
   "Chưa triển khai",
@@ -74,40 +96,105 @@ const DOCUMENT_STATUSES: ContractRecord["documentStatus"][] = [
   "Hoàn thiện bàn giao",
 ];
 
-interface OrderFormState {
-  transactionCode: string;
-  subscriberCodes: string;
-  totalValue: string;
-  channel: string;
-  leadId: string;
-  territoryId: string;
-  amStaff: string;
+// T9 (STT 10): một đơn có thể có nhiều dòng dịch vụ (mỗi dịch vụ 1 mã thuê bao)
+// và/hoặc dòng thiết bị (vd TOKEN, không có mã thuê bao).
+interface ItemFormRow {
+  lineType: "service" | "device";
   serviceGroup: string;
   serviceName: string;
   packageName: string;
+  subscriberCode: string;
+  quantity: string;
+  unitPrice: string;
+}
+
+const EMPTY_SERVICE_ITEM: ItemFormRow = {
+  lineType: "service",
+  serviceGroup: SERVICE_GROUPS[0],
+  serviceName: "",
+  packageName: "",
+  subscriberCode: "",
+  quantity: "1",
+  unitPrice: "",
+};
+
+const TOKEN_DEVICE_PRICE = 162000;
+const TOKEN_DEVICE_ITEM: ItemFormRow = {
+  lineType: "device",
+  serviceGroup: "",
+  serviceName: "TOKEN",
+  packageName: "",
+  subscriberCode: "",
+  quantity: "1",
+  unitPrice: String(TOKEN_DEVICE_PRICE),
+};
+
+const ITEMS_REQUIRED_MESSAGE = "Đơn hàng phải có ít nhất một dòng dịch vụ hoặc thiết bị";
+const SUBSCRIBER_CODE_REQUIRED_MESSAGE = "Mỗi dòng dịch vụ phải có mã thuê bao";
+const UNIT_PRICE_REQUIRED_MESSAGE = "Mỗi dòng phải có đơn giá là số và không âm";
+
+function itemLineAmount(item: ItemFormRow): number {
+  const qty = item.lineType === "device" ? Number(item.quantity || 1) : 1;
+  const price = Number(item.unitPrice || 0);
+  if (!Number.isFinite(qty) || !Number.isFinite(price)) return 0;
+  return qty * price;
+}
+
+function itemsTotal(items: ItemFormRow[]): number {
+  return items.reduce((sum, it) => sum + itemLineAmount(it), 0);
+}
+
+function itemRecordToFormRow(item: {
+  lineType: "service" | "device";
+  serviceGroup: string | null;
+  serviceName: string | null;
+  packageName: string | null;
+  subscriberCode: string | null;
+  quantity: number;
+  unitPrice: number;
+}): ItemFormRow {
+  return {
+    lineType: item.lineType,
+    serviceGroup: item.serviceGroup || (item.lineType === "service" ? SERVICE_GROUPS[0] : ""),
+    serviceName: item.serviceName || "",
+    packageName: item.packageName || "",
+    subscriberCode: item.subscriberCode || "",
+    quantity: String(item.quantity || 1),
+    unitPrice: String(item.unitPrice ?? ""),
+  };
+}
+
+interface OrderFormState {
+  transactionCode: string;
+  items: ItemFormRow[];
+  channel: string;
+  leadId: string;
+  amStaff: string;
   paymentMethod: string;
+  prepaidMonths: string;
   customerId: string;
   contractNumber: string;
   signedDate: string;
   termMonths: string;
+  detail: ChannelDetailValue;
+  /** Mẫu hợp đồng (T10, STT 11) — bắt buộc khi tạo mới. */
+  contractTemplate: string;
 }
 
 const EMPTY_FORM: OrderFormState = {
   transactionCode: "",
-  subscriberCodes: "",
-  totalValue: "",
+  items: [{ ...EMPTY_SERVICE_ITEM }],
   channel: CHANNEL_OPTIONS[0],
   leadId: "",
-  territoryId: "",
   amStaff: "",
-  serviceGroup: SERVICE_GROUPS[0],
-  serviceName: "",
-  packageName: "",
   paymentMethod: PAYMENT_METHODS[0],
+  prepaidMonths: DEFAULT_PREPAID_MONTHS,
   customerId: "",
   contractNumber: "",
   signedDate: "",
   termMonths: "",
+  detail: EMPTY_CHANNEL_DETAIL,
+  contractTemplate: "",
 };
 
 export default function ContractsPage() {
@@ -117,6 +204,9 @@ export default function ContractsPage() {
   const [data, setData] = useState<ContractRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Thông điệp hoa hồng CTV (vd không có CTV nên không phát sinh, hoặc đã có hoa hồng CTV khác
+  // nên không tự ghi đè khi đổi CTV) — hiện ngay sau khi tạo/sửa/đổi trạng thái đơn.
+  const [commissionNotice, setCommissionNotice] = useState<string | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [showImportWizard, setShowImportWizard] = useState(false);
@@ -162,15 +252,15 @@ export default function ContractsPage() {
 
   // Export Modal state
   const [exportingOrder, setExportingOrder] = useState<ContractRecord | null>(null);
-  const [exportDocNumber, setExportDocNumber] = useState("");
-  const [exportMissingFields, setExportMissingFields] = useState<string[]>([]);
-  const [loadingExportPreview, setLoadingExportPreview] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
-  const [exportBlocked, setExportBlocked] = useState<string | null>(null);
-  const [downloadingDocx, setDownloadingDocx] = useState(false);
+
+  // T10 (STT 11): bộ mẫu hợp đồng + xuất hợp đồng + xóa đơn hàng
+  const [contractTemplates, setContractTemplates] = useState<ContractTemplateOption[]>([]);
+  const [exportingContractId, setExportingContractId] = useState<string | null>(null);
+  const [contractExportError, setContractExportError] = useState<string | null>(null);
+  const [deletingOrder, setDeletingOrder] = useState<ContractRecord | null>(null);
+  const [deleteBlockedReason, setDeleteBlockedReason] = useState<string | null>(null);
 
   const [leads, setLeads] = useState<LeadRecord[]>([]);
-  const [territories, setTerritories] = useState<TerritoryRecord[]>([]);
   const [ctvOptions, setCtvOptions] = useState<CtvOption[]>([]);
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
   const [staffList, setStaffList] = useState<StaffRecord[]>([]);
@@ -186,6 +276,14 @@ export default function ContractsPage() {
   const ctvNameById = new Map(ctvOptions.map((c) => [c.id, c.name]));
 
   const editingOrder = editingId ? (data.find((d) => d.id === editingId) ?? null) : null;
+
+  // Trả trước phải có số tháng; đơn cũ "Trả trước" chưa có số tháng thì chỉ bắt buộc khi đổi hình thức/đã có số tháng.
+  const isPrepaid = form.paymentMethod === PREPAID_METHOD;
+  const legacyPrepaidWithoutMonths = Boolean(
+    editingOrder && editingOrder.paymentMethod === PREPAID_METHOD && !editingOrder.prepaidMonths
+  );
+  const prepaidRequired = isPrepaid && !legacyPrepaidWithoutMonths;
+  const prepaidMonthsPayload = isPrepaid && form.prepaidMonths ? Number(form.prepaidMonths) : null;
 
   // Admin chọn được mọi khách; AM chỉ chọn khách mình phụ trách (khớp quy tắc backend).
   const selectableCustomers = useMemo(() => {
@@ -227,17 +325,17 @@ export default function ContractsPage() {
     let isMounted = true;
     Promise.allSettled([
       getLeads(),
-      getTerritories(),
       getCtvOptions(),
       getCustomers(),
       getStaff({ status: "ACTIVE" }),
-    ]).then(([leadRes, wardRes, ctvRes, custRes, staffRes]) => {
+      getContractTemplates(),
+    ]).then(([leadRes, ctvRes, custRes, staffRes, templateRes]) => {
       if (!isMounted) return;
       if (leadRes.status === "fulfilled") setLeads(leadRes.value);
-      if (wardRes.status === "fulfilled") setTerritories(wardRes.value);
       if (ctvRes.status === "fulfilled") setCtvOptions(ctvRes.value);
       if (custRes.status === "fulfilled") setCustomers(custRes.value);
       if (staffRes.status === "fulfilled") setStaffList(staffRes.value);
+      if (templateRes.status === "fulfilled") setContractTemplates(templateRes.value);
     });
     return () => {
       isMounted = false;
@@ -302,10 +400,14 @@ export default function ContractsPage() {
       ...form,
       leadId,
       customerId: matched ? matched.id : "",
-      totalValue: String(lead.expectedValue),
+      items: [{ ...EMPTY_SERVICE_ITEM, unitPrice: String(lead.expectedValue) }],
       channel: lead.channel,
-      territoryId: lead.territoryId || "",
       amStaff: lead.staffName || "",
+      // Kế thừa chi tiết kênh + CTV của Lead; người dùng vẫn sửa được trước khi lưu.
+      detail: {
+        channelSourceId: lead.channelSourceId ?? "",
+        referredByCtvId: lead.referredByCtvId ?? "",
+      },
     });
   }
 
@@ -399,99 +501,82 @@ export default function ContractsPage() {
     }
   }
 
-  async function handleOpenExportModal(order: ContractRecord) {
+  function handleOpenExportModal(order: ContractRecord) {
     setExportingOrder(order);
-    setExportDocNumber("");
-    setExportMissingFields([]);
-    setExportError(null);
-    setExportBlocked(null);
-
-    if (!order.customerId) {
-      setExportBlocked(ORDER_WITHOUT_CUSTOMER_MESSAGE);
-      return;
-    }
-
-    setLoadingExportPreview(true);
-
-    try {
-      const preview = await getPaymentRequestPreview(order.id);
-      setExportDocNumber(preview.suggestedDocNumber || "1");
-      setExportMissingFields(preview.missingFields || []);
-    } catch (err) {
-      setExportBlocked(
-        err instanceof Error ? err.message : "Không thể tải thông tin đề nghị thanh toán"
-      );
-    } finally {
-      setLoadingExportPreview(false);
-    }
-  }
-
-  async function handleDownloadDocx(e: FormEvent) {
-    e.preventDefault();
-    if (!exportingOrder) return;
-    if (!exportDocNumber.trim()) {
-      setExportError("Vui lòng nhập Số văn bản");
-      return;
-    }
-
-    setDownloadingDocx(true);
-    setExportError(null);
-    try {
-      const token = getToken();
-      const url = `${API_BASE_URL}/contracts/${exportingOrder.id}/payment-request?docNumber=${encodeURIComponent(
-        exportDocNumber.trim()
-      )}`;
-      const res = await fetch(url, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => null);
-        throw new Error(errJson?.message || `Lỗi tải file (${res.status})`);
-      }
-
-      const blob = await res.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = downloadUrl;
-      a.download = `De-nghi-thanh-toan_${exportingOrder.transactionCode}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(downloadUrl);
-
-      setExportingOrder(null);
-    } catch (err) {
-      setExportError(err instanceof Error ? err.message : "Không thể xuất file Word");
-    } finally {
-      setDownloadingDocx(false);
-    }
   }
 
   function handleOpenEdit(order: ContractRecord) {
     setEditingId(order.id);
+    const items =
+      order.items && order.items.length > 0
+        ? order.items.map(itemRecordToFormRow)
+        : [
+            {
+              ...EMPTY_SERVICE_ITEM,
+              serviceGroup: order.serviceGroup || SERVICE_GROUPS[0],
+              serviceName: order.serviceName || "",
+              packageName: order.packageName || "",
+              subscriberCode: order.subscriberCodes[0] || "",
+              unitPrice: String(order.totalValue),
+            },
+          ];
     setForm({
       transactionCode: order.transactionCode,
-      subscriberCodes: order.subscriberCodes.join(", "),
-      totalValue: String(order.totalValue),
+      items,
       channel: order.channel,
       leadId: order.leadId || "",
-      territoryId: order.territoryId || "",
       amStaff: order.amStaff || "",
-      serviceGroup: order.serviceGroup || SERVICE_GROUPS[0],
-      serviceName: order.serviceName || "",
-      packageName: order.packageName || "",
       paymentMethod: order.paymentMethod || PAYMENT_METHODS[0],
+      prepaidMonths: order.prepaidMonths ? String(order.prepaidMonths) : "",
       customerId: order.customerId || "",
       contractNumber: order.contractNumber || "",
       signedDate: order.signedDate || "",
       termMonths: order.termMonths ? String(order.termMonths) : "",
+      detail: {
+        channelSourceId: order.channelSourceId ?? "",
+        referredByCtvId: order.referredByCtvId ?? "",
+      },
+      contractTemplate: order.contractTemplate || "",
     });
     setFormError(null);
     setCustomerQuery("");
     setCustomerPickerOpen(false);
     setLeadCustomerHint(null);
     setShowForm(true);
+  }
+
+  /** Xuất hợp đồng từ mẫu (T10, STT 11). Tải trực tiếp DOCX; báo lỗi tiếng Việt nếu mẫu chưa có file. */
+  async function handleExportContract(order: ContractRecord) {
+    setContractExportError(null);
+    setExportingContractId(order.id);
+    try {
+      const blob = await downloadContractExportFile(order.id, "docx");
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Hop-dong_${order.transactionCode}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setContractExportError(err instanceof Error ? err.message : "Không xuất được hợp đồng");
+    } finally {
+      setExportingContractId(null);
+    }
+  }
+
+  function handleOpenDelete(order: ContractRecord) {
+    setDeleteBlockedReason(null);
+    setDeletingOrder(order);
+  }
+
+  async function handleConfirmDelete() {
+    if (!deletingOrder) return;
+    const result = await deleteContract(deletingOrder.id);
+    setData((prev) => prev.filter((row) => row.id !== deletingOrder.id));
+    setDeletingOrder(null);
+    return result;
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -504,51 +589,96 @@ export default function ContractsPage() {
       return;
     }
 
+    const amStaffValue = (isAdmin ? form.amStaff : (user?.name ?? "")).trim();
+    if (!amStaffValue) {
+      setFormError(AM_REQUIRED_MESSAGE);
+      return;
+    }
+
+    if (prepaidRequired && !form.prepaidMonths) {
+      setFormError(PREPAID_REQUIRED_MESSAGE);
+      return;
+    }
+
+    // T10 (STT 11): bắt buộc chọn mẫu hợp đồng khi TẠO MỚI. Đơn cũ (sửa) thiếu
+    // mẫu vẫn sửa các trường khác được, backend sẽ chặn khi chuyển "Hoàn tất".
+    if (!editingId && !form.contractTemplate) {
+      setFormError(CONTRACT_TEMPLATE_REQUIRED_MESSAGE);
+      return;
+    }
+
+    if (form.items.length === 0) {
+      setFormError(ITEMS_REQUIRED_MESSAGE);
+      return;
+    }
+    for (const item of form.items) {
+      if (item.lineType === "service" && !item.subscriberCode.trim()) {
+        setFormError(SUBSCRIBER_CODE_REQUIRED_MESSAGE);
+        return;
+      }
+      if (item.unitPrice.trim() === "" || Number(item.unitPrice) < 0 || Number.isNaN(Number(item.unitPrice))) {
+        setFormError(UNIT_PRICE_REQUIRED_MESSAGE);
+        return;
+      }
+    }
+    const serviceCodes = form.items
+      .filter((i) => i.lineType === "service")
+      .map((i) => i.subscriberCode.trim().toLowerCase());
+    if (new Set(serviceCodes).size !== serviceCodes.length) {
+      setFormError("Mã thuê bao bị trùng giữa các dòng trong đơn");
+      return;
+    }
+
     setSubmitting(true);
 
     try {
-      const subscriberCodes = form.subscriberCodes
-        .split(",")
-        .map((code) => code.trim())
-        .filter(Boolean);
+      const items: ContractItemInput[] = form.items.map((item) => ({
+        lineType: item.lineType,
+        serviceGroup: item.lineType === "service" ? item.serviceGroup || null : null,
+        serviceName: item.serviceName || null,
+        packageName: item.lineType === "service" ? item.packageName || null : null,
+        subscriberCode: item.lineType === "service" ? item.subscriberCode.trim() : null,
+        quantity: item.lineType === "device" ? Number(item.quantity || 1) : 1,
+        unitPrice: Number(item.unitPrice || 0),
+        termMonths: form.termMonths ? Number(form.termMonths) : null,
+      }));
 
       if (editingId) {
         const updated = await updateContractInfo(editingId, {
-          subscriberCodes,
-          totalValue: Number(form.totalValue),
+          items,
           channel: form.channel,
           leadId: form.leadId || null,
-          territoryId: form.territoryId || null,
-          amStaff: isAdmin ? form.amStaff || null : (user?.name ?? null),
-          serviceGroup: form.serviceGroup || null,
-          serviceName: form.serviceName || null,
-          packageName: form.packageName || null,
+          amStaff: amStaffValue,
           paymentMethod: form.paymentMethod || null,
+          prepaidMonths: prepaidMonthsPayload,
           customerId: form.customerId,
           contractNumber: form.contractNumber || null,
           signedDate: form.signedDate || null,
           termMonths: form.termMonths ? Number(form.termMonths) : null,
+          channelSourceId: form.detail.channelSourceId || null,
+          referredByCtvId: form.detail.referredByCtvId || null,
+          contractTemplate: form.contractTemplate || null,
         });
 
         setData((prev) => prev.map((row) => (row.id === editingId ? updated : row)));
         setShowForm(false);
+        setCommissionNotice(updated.commissionNotice ?? null);
       } else {
         const created = await createContract({
           transactionCode: form.transactionCode,
-          subscriberCodes,
-          totalValue: Number(form.totalValue),
+          items,
           channel: form.channel,
           leadId: form.leadId || null,
-          territoryId: form.territoryId || null,
-          amStaff: isAdmin ? form.amStaff || null : (user?.name ?? null),
-          serviceGroup: form.serviceGroup || null,
-          serviceName: form.serviceName || null,
-          packageName: form.packageName || null,
+          amStaff: amStaffValue,
           paymentMethod: form.paymentMethod || null,
+          prepaidMonths: prepaidMonthsPayload,
           customerId: form.customerId,
           contractNumber: form.contractNumber || null,
           signedDate: form.signedDate || null,
           termMonths: form.termMonths ? Number(form.termMonths) : null,
+          channelSourceId: form.detail.channelSourceId || null,
+          referredByCtvId: form.detail.referredByCtvId || null,
+          contractTemplate: form.contractTemplate || null,
         });
 
         setData((prev) => [created, ...prev]);
@@ -620,13 +750,13 @@ export default function ContractsPage() {
       ),
     },
     {
-      header: "AM tiếp thị",
+      header: "AM phát triển",
       accessorKey: "amStaff",
       cell: (item) =>
         item.amStaff ? (
           <span className="font-medium text-slate-800">{item.amStaff}</span>
         ) : (
-          <span className="text-slate-400 italic">Chưa gán</span>
+          <span className="text-slate-400 italic">Chưa có AM</span>
         ),
     },
     {
@@ -644,17 +774,46 @@ export default function ContractsPage() {
     {
       header: "Gói cước",
       accessorKey: "packageName",
-      cell: (item) => (
-        <div>
-          <span className="font-medium text-slate-800 block">{item.packageName || "—"}</span>
-          {item.serviceName && (
-            <span className="text-[11px] text-slate-500">{item.serviceName}</span>
-          )}
-          {item.termMonths ? (
-            <span className="block text-[11px] text-slate-400">Thời hạn {item.termMonths} tháng</span>
-          ) : null}
-        </div>
-      ),
+      cell: (item) => {
+        const items = item.items ?? [];
+        const serviceCount = items.filter((i) => i.lineType === "service").length;
+        const deviceCount = items.filter((i) => i.lineType === "device").length;
+        return (
+          <div>
+            <span className="font-medium text-slate-800 block">{item.packageName || "—"}</span>
+            {item.serviceName && (
+              <span className="text-[11px] text-slate-500 block">{item.serviceName}</span>
+            )}
+            {items.length > 0 && (
+              <span className="mt-0.5 block text-[11px] font-semibold text-sky-700">
+                {serviceCount} dịch vụ{deviceCount > 0 ? ` + ${deviceCount} thiết bị` : ""}
+              </span>
+            )}
+            {item.subscriberCodes.length > 0 && (
+              <span className="block text-[11px] text-slate-400" title={item.subscriberCodes.join(", ")}>
+                Mã TB: {item.subscriberCodes.join(", ")}
+              </span>
+            )}
+            {item.termMonths ? (
+              <span className="block text-[11px] text-slate-400">Thời hạn {item.termMonths} tháng</span>
+            ) : null}
+          </div>
+        );
+      },
+    },
+    {
+      header: "Hình thức TT",
+      accessorKey: "paymentMethod",
+      cell: (item) =>
+        item.paymentMethod ? (
+          <span className="font-medium text-slate-800">
+            {item.paymentMethod === PREPAID_METHOD && item.prepaidMonths
+              ? `${item.paymentMethod} ${item.prepaidMonths} tháng`
+              : item.paymentMethod}
+          </span>
+        ) : (
+          <span className="text-slate-400">—</span>
+        ),
     },
     {
       header: "Đã thu / Giá trị",
@@ -663,9 +822,7 @@ export default function ContractsPage() {
         const collected = item.collectedAmount || 0;
         return (
           <div className="text-right">
-            <span className="font-bold text-slate-900 block">
-              {item.totalValue.toLocaleString("vi-VN")} ₫
-            </span>
+            <span className="font-bold text-slate-900 block">{formatMoney(item.totalValue)}</span>
             <span
               className={`text-[11px] font-semibold ${
                 collected >= item.totalValue
@@ -675,7 +832,7 @@ export default function ContractsPage() {
                   : "text-slate-400"
               }`}
             >
-              Đã thu: {collected.toLocaleString("vi-VN")} ₫
+              Đã thu: {formatMoney(collected)}
             </span>
           </div>
         );
@@ -686,16 +843,17 @@ export default function ContractsPage() {
       accessorKey: "channel",
     },
     {
-      header: "CTV giới thiệu",
-      accessorKey: "referredByCtvId",
-      cell: (item) =>
-        item.referredByCtvId ? (
-          <span className="font-medium text-slate-700">
-            {ctvNameById.get(item.referredByCtvId) ?? item.referredByCtvId}
-          </span>
-        ) : (
+      header: "Chi tiết kênh",
+      accessorKey: "channelSourceId",
+      cell: (item) => {
+        const ctvName = item.referredByCtvId ? (ctvNameById.get(item.referredByCtvId) ?? item.referredByCtvId) : null;
+        const text = formatChannelDetail(item.channel, item.channelSourceName, ctvName);
+        return text === "—" ? (
           <span className="text-slate-400">—</span>
-        ),
+        ) : (
+          <span className="font-medium text-slate-700">{text}</span>
+        );
+      },
     },
     {
       header: "Triển khai",
@@ -709,6 +867,7 @@ export default function ContractsPage() {
               deploymentStatus: next,
             });
             setData((prev) => prev.map((row) => (row.id === item.id ? updated : row)));
+            setCommissionNotice(updated.commissionNotice ?? null);
           }}
         />
       ),
@@ -754,12 +913,33 @@ export default function ContractsPage() {
           </button>
           <button
             type="button"
+            onClick={() => handleExportContract(item)}
+            disabled={exportingContractId === item.id}
+            className="flex h-7 items-center gap-1 rounded-lg bg-violet-50 px-2 text-xs font-semibold text-violet-700 border border-violet-200 hover:bg-violet-100 disabled:opacity-50"
+            title="Xuất hợp đồng từ mẫu"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            <span>{exportingContractId === item.id ? "Đang xuất..." : "Hợp đồng"}</span>
+          </button>
+          <button
+            type="button"
             onClick={() => handleOpenEdit(item)}
             className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
             title="Chỉnh sửa đơn hàng"
           >
             <Edit2 className="h-3.5 w-3.5" />
           </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => handleOpenDelete(item)}
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50"
+              title="Xóa đơn hàng"
+              data-testid="contract-delete-button"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       ),
     },
@@ -774,7 +954,7 @@ export default function ContractsPage() {
             Quản lý đơn hàng
           </h2>
           <p className="text-xs text-slate-500">
-            Quản lý theo mã giao dịch nguồn, AM tiếp thị, nhóm dịch vụ và tình trạng thanh toán
+            Quản lý theo mã giao dịch nguồn, AM phát triển, nhóm dịch vụ và tình trạng thanh toán
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -796,6 +976,23 @@ export default function ContractsPage() {
           </button>
         </div>
       </div>
+
+      {commissionNotice && (
+        <div
+          role="status"
+          data-testid="commission-notice"
+          className="flex items-start justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-800"
+        >
+          <span>{commissionNotice}</span>
+          <button
+            type="button"
+            onClick={() => setCommissionNotice(null)}
+            className="shrink-0 font-bold text-amber-600 hover:text-amber-800"
+          >
+            Đóng
+          </button>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -844,7 +1041,7 @@ export default function ContractsPage() {
         </div>
 
         <div className="flex items-center gap-1.5">
-          <span className="font-semibold text-slate-600">AM tiếp thị:</span>
+          <span className="font-semibold text-slate-600">AM phát triển:</span>
           <select
             value={filterAmStaff}
             onChange={(e) => setFilterAmStaff(e.target.value)}
@@ -961,7 +1158,7 @@ export default function ContractsPage() {
       ) : (
         <DataTable
           title="Danh sách đơn hàng"
-          subtitle="Theo dõi tiến độ triển khai kỹ thuật, AM tiếp thị, nhóm dịch vụ và thanh toán"
+          subtitle="Theo dõi tiến độ triển khai kỹ thuật, AM phát triển, nhóm dịch vụ và thanh toán"
           columns={columns}
           data={visibleData}
           searchPlaceholder="Tìm theo mã giao dịch, khách hàng, AM, mã thuê bao..."
@@ -1111,44 +1308,194 @@ export default function ContractsPage() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-600">
-                    Nhóm dịch vụ
+              <div className="rounded-xl border border-slate-200 p-3" data-testid="order-items-editor">
+                <div className="mb-2 flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-slate-600">
+                    Dịch vụ trong đơn <span className="text-rose-500">*</span>
                   </label>
-                  <select
-                    value={form.serviceGroup}
-                    onChange={(e) => setForm({ ...form, serviceGroup: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
-                  >
-                    {SERVICE_GROUPS.map((g) => (
-                      <option key={g} value={g}>
-                        {g}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      data-testid="add-service-line"
+                      onClick={() =>
+                        setForm({ ...form, items: [...form.items, { ...EMPTY_SERVICE_ITEM }] })
+                      }
+                      className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      <Plus className="h-3 w-3" /> Thêm dòng
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="add-token-device"
+                      onClick={() => setForm({ ...form, items: [...form.items, { ...TOKEN_DEVICE_ITEM }] })}
+                      className="flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700 hover:bg-sky-100"
+                    >
+                      <Plus className="h-3 w-3" /> Thiết bị TOKEN ({TOKEN_DEVICE_PRICE.toLocaleString("vi-VN")})
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-600">
-                    Tên dịch vụ
-                  </label>
-                  <input
-                    value={form.serviceName}
-                    onChange={(e) => setForm({ ...form, serviceName: e.target.value })}
-                    placeholder="VD: FiberVNN, VNPT CA..."
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
-                  />
+
+                <div className="space-y-2">
+                  {form.items.map((item, idx) => (
+                    <div
+                      key={idx}
+                      data-testid={`order-item-row-${idx}`}
+                      className="grid grid-cols-1 gap-2 rounded-lg border border-slate-100 bg-slate-50/50 p-2 sm:grid-cols-12 sm:items-end"
+                    >
+                      <div className="sm:col-span-2">
+                        <label className="mb-0.5 block text-[10px] font-semibold text-slate-500">Loại</label>
+                        <select
+                          data-testid={`item-line-type-${idx}`}
+                          value={item.lineType}
+                          onChange={(e) => {
+                            const lineType = e.target.value as "service" | "device";
+                            const next = [...form.items];
+                            next[idx] = {
+                              ...item,
+                              lineType,
+                              subscriberCode: lineType === "device" ? "" : item.subscriberCode,
+                              serviceGroup: lineType === "device" ? "" : item.serviceGroup || SERVICE_GROUPS[0],
+                            };
+                            setForm({ ...form, items: next });
+                          }}
+                          className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs focus:border-vnpt focus:outline-none"
+                        >
+                          <option value="service">Dịch vụ</option>
+                          <option value="device">Thiết bị</option>
+                        </select>
+                      </div>
+                      {item.lineType === "service" && (
+                        <div className="sm:col-span-2">
+                          <label className="mb-0.5 block text-[10px] font-semibold text-slate-500">
+                            Nhóm dịch vụ
+                          </label>
+                          <select
+                            value={item.serviceGroup}
+                            onChange={(e) => {
+                              const next = [...form.items];
+                              next[idx] = { ...item, serviceGroup: e.target.value };
+                              setForm({ ...form, items: next });
+                            }}
+                            className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs focus:border-vnpt focus:outline-none"
+                          >
+                            {SERVICE_GROUPS.map((g) => (
+                              <option key={g} value={g}>
+                                {g}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      <div className={item.lineType === "service" ? "sm:col-span-2" : "sm:col-span-3"}>
+                        <label className="mb-0.5 block text-[10px] font-semibold text-slate-500">
+                          Tên dịch vụ/thiết bị
+                        </label>
+                        <input
+                          value={item.serviceName}
+                          onChange={(e) => {
+                            const next = [...form.items];
+                            next[idx] = { ...item, serviceName: e.target.value };
+                            setForm({ ...form, items: next });
+                          }}
+                          placeholder="VD: FiberVNN, TOKEN..."
+                          className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs focus:border-vnpt focus:outline-none"
+                        />
+                      </div>
+                      {item.lineType === "service" ? (
+                        <>
+                          <div className="sm:col-span-2">
+                            <label className="mb-0.5 block text-[10px] font-semibold text-slate-500">
+                              Gói cước
+                            </label>
+                            <input
+                              value={item.packageName}
+                              onChange={(e) => {
+                                const next = [...form.items];
+                                next[idx] = { ...item, packageName: e.target.value };
+                                setForm({ ...form, items: next });
+                              }}
+                              placeholder="VD: Home Net 2"
+                              className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs focus:border-vnpt focus:outline-none"
+                            />
+                          </div>
+                          <div className="sm:col-span-2">
+                            <label className="mb-0.5 block text-[10px] font-semibold text-slate-500">
+                              Mã thuê bao <span className="text-rose-500">*</span>
+                            </label>
+                            <input
+                              required
+                              data-testid={`item-subscriber-code-${idx}`}
+                              value={item.subscriberCode}
+                              onChange={(e) => {
+                                const next = [...form.items];
+                                next[idx] = { ...item, subscriberCode: e.target.value };
+                                setForm({ ...form, items: next });
+                              }}
+                              placeholder="0901234567"
+                              className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs focus:border-vnpt focus:outline-none"
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <div className="sm:col-span-1">
+                          <label className="mb-0.5 block text-[10px] font-semibold text-slate-500">SL</label>
+                          <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={item.quantity}
+                            onChange={(e) => {
+                              const next = [...form.items];
+                              next[idx] = { ...item, quantity: e.target.value };
+                              setForm({ ...form, items: next });
+                            }}
+                            className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs focus:border-vnpt focus:outline-none"
+                          />
+                        </div>
+                      )}
+                      <div className="sm:col-span-2">
+                        <label className="mb-0.5 block text-[10px] font-semibold text-slate-500">
+                          Đơn giá (₫) <span className="text-rose-500">*</span>
+                        </label>
+                        <MoneyInput
+                          required
+                          data-testid={`item-unit-price-${idx}`}
+                          value={item.unitPrice}
+                          onChange={(digits) => {
+                            const next = [...form.items];
+                            next[idx] = { ...item, unitPrice: digits };
+                            setForm({ ...form, items: next });
+                          }}
+                          placeholder="VD: 300.000"
+                          className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs focus:border-vnpt focus:outline-none"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-1 sm:col-span-1">
+                        <span className="text-[11px] font-bold text-slate-700">
+                          {itemLineAmount(item).toLocaleString("vi-VN")}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label="Xóa dòng"
+                          data-testid={`remove-item-${idx}`}
+                          disabled={form.items.length <= 1}
+                          onClick={() =>
+                            setForm({ ...form, items: form.items.filter((_, i) => i !== idx) })
+                          }
+                          className="shrink-0 rounded-lg p-1 text-rose-500 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-30"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-600">
-                    Gói cước
-                  </label>
-                  <input
-                    value={form.packageName}
-                    onChange={(e) => setForm({ ...form, packageName: e.target.value })}
-                    placeholder="VD: Home Net 2, Gói 12 tháng..."
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
-                  />
+
+                <div className="mt-2 flex items-center justify-end gap-2 border-t border-slate-100 pt-2">
+                  <span className="text-xs font-semibold text-slate-500">Tổng đơn hàng:</span>
+                  <span data-testid="order-total-preview" className="text-lg font-bold text-vnpt">
+                    {formatMoney(itemsTotal(form.items))}
+                  </span>
                 </div>
               </div>
 
@@ -1159,7 +1506,15 @@ export default function ContractsPage() {
                   </label>
                   <select
                     value={form.paymentMethod}
-                    onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })}
+                    onChange={(e) => {
+                      const method = e.target.value;
+                      setForm({
+                        ...form,
+                        paymentMethod: method,
+                        prepaidMonths:
+                          method === PREPAID_METHOD ? form.prepaidMonths || DEFAULT_PREPAID_MONTHS : "",
+                      });
+                    }}
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
                   >
                     {PAYMENT_METHODS.map((m) => (
@@ -1168,18 +1523,46 @@ export default function ContractsPage() {
                       </option>
                     ))}
                   </select>
+                  {isPrepaid && (
+                    <div className="mt-2">
+                      <label className="mb-1 block text-xs font-semibold text-slate-600">
+                        Số tháng trả trước{" "}
+                        {prepaidRequired && <span className="text-rose-500">*</span>}
+                      </label>
+                      <select
+                        data-testid="prepaid-months"
+                        value={form.prepaidMonths}
+                        onChange={(e) => setForm({ ...form, prepaidMonths: e.target.value })}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
+                      >
+                        {!prepaidRequired && <option value="">— Chưa chọn —</option>}
+                        {PREPAID_MONTH_OPTIONS.map((m) => (
+                          <option key={m} value={String(m)}>
+                            {m} tháng{POPULAR_PREPAID_MONTHS.includes(m) ? " (phổ biến)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                      {legacyPrepaidWithoutMonths && !form.prepaidMonths && (
+                        <p className="mt-1 text-[11px] text-amber-700">
+                          Đơn cũ chưa có số tháng trả trước — nên chọn để đề nghị thanh toán ghi đúng.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-600">
-                    AM tiếp thị phụ trách
+                    AM phát triển <span className="text-rose-500">*</span>
                   </label>
                   <select
+                    required
+                    data-testid="am-staff"
                     value={isAdmin ? form.amStaff : (user?.name ?? "")}
                     onChange={(e) => setForm({ ...form, amStaff: e.target.value })}
                     disabled={!isAdmin}
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none disabled:bg-slate-50 disabled:text-slate-500"
                   >
-                    {isAdmin && <option value="">— Chưa gán AM —</option>}
+                    {isAdmin && <option value="">— Chọn AM phát triển —</option>}
                     {(isAdmin ? staffList : staffList.filter((s) => s.name === user?.name)).map((s) => (
                       <option key={s.id} value={s.name}>
                         {s.name} ({s.code})
@@ -1187,6 +1570,30 @@ export default function ContractsPage() {
                     ))}
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-600">
+                  Mẫu hợp đồng {!editingId && <span className="text-rose-500">*</span>}
+                </label>
+                <select
+                  value={form.contractTemplate}
+                  onChange={(e) => setForm({ ...form, contractTemplate: e.target.value })}
+                  required={!editingId}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
+                >
+                  <option value="">— Chọn mẫu hợp đồng —</option>
+                  {contractTemplates.map((t) => (
+                    <option key={t.key} value={t.key} disabled={!t.available}>
+                      {t.label}
+                      {!t.available ? " (Chưa có mẫu)" : ""}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Mỗi Mã giao dịch phải gắn đúng 1 hợp đồng theo bộ mẫu. Mẫu "Chưa có mẫu" chưa có
+                  file trong hệ thống, chưa chọn/xuất được.
+                </p>
               </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -1228,40 +1635,16 @@ export default function ContractsPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-600">
-                  Mã thuê bao (phân tách bởi dấu phẩy) <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  required
-                  value={form.subscriberCodes}
-                  onChange={(e) => setForm({ ...form, subscriberCodes: e.target.value })}
-                  placeholder="0901234567, 0909876543"
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-600">
-                    Giá trị đơn hàng (₫) <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    required
-                    type="number"
-                    min={0}
-                    value={form.totalValue}
-                    onChange={(e) => setForm({ ...form, totalValue: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
-                  />
-                </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-600">
                     Kênh phát triển
                   </label>
                   <select
                     value={form.channel}
-                    onChange={(e) => setForm({ ...form, channel: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, channel: e.target.value, detail: EMPTY_CHANNEL_DETAIL })
+                    }
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
                   >
                     {CHANNEL_OPTIONS.map((c) => (
@@ -1271,24 +1654,16 @@ export default function ContractsPage() {
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-600">
-                    Phường
-                  </label>
-                  <select
-                    value={form.territoryId}
-                    onChange={(e) => setForm({ ...form, territoryId: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
-                  >
-                    <option value="">— Chưa gán —</option>
-                    {territories.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.wardName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
               </div>
+
+              {channelNeedsDetail(form.channel) && (
+                <ChannelDetailPicker
+                  channel={form.channel}
+                  value={form.detail}
+                  onChange={(detail) => setForm({ ...form, detail })}
+                  required
+                />
+              )}
 
               {formError && (
                 <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">
@@ -1329,7 +1704,7 @@ export default function ContractsPage() {
                 <p className="text-xs text-slate-500">
                   Khách hàng: <span className="font-semibold text-slate-800">{payingOrder.customerName}</span> · Giá trị:{" "}
                   <span className="font-semibold text-slate-800">
-                    {payingOrder.totalValue.toLocaleString("vi-VN")} ₫
+                    {formatMoney(payingOrder.totalValue)}
                   </span>
                 </p>
               </div>
@@ -1350,14 +1725,9 @@ export default function ContractsPage() {
                 </div>
                 <div className="mt-1">
                   Đã thu:{" "}
-                  <b>{Number(payingOrder.collectedAmount || 0).toLocaleString("vi-VN")} ₫</b> / Giá trị đơn:{" "}
-                  <b>{payingOrder.totalValue.toLocaleString("vi-VN")} ₫</b> (Dư:{" "}
-                  <b>
-                    {(
-                      Number(payingOrder.collectedAmount || 0) - payingOrder.totalValue
-                    ).toLocaleString("vi-VN")}{" "}
-                    ₫
-                  </b>
+                  <b>{formatMoney(Number(payingOrder.collectedAmount || 0))}</b> / Giá trị đơn:{" "}
+                  <b>{formatMoney(payingOrder.totalValue)}</b> (Dư:{" "}
+                  <b>{formatMoney(Number(payingOrder.collectedAmount || 0) - payingOrder.totalValue)}</b>
                   )
                 </div>
               </div>
@@ -1368,23 +1738,21 @@ export default function ContractsPage() {
               <div>
                 <span className="block text-[11px] text-slate-500">Giá trị đơn</span>
                 <span className="text-sm font-bold text-slate-900">
-                  {payingOrder.totalValue.toLocaleString("vi-VN")} ₫
+                  {formatMoney(payingOrder.totalValue)}
                 </span>
               </div>
               <div>
                 <span className="block text-[11px] text-slate-500">Đã thu</span>
                 <span className="text-sm font-bold text-emerald-600">
-                  {Number(payingOrder.collectedAmount || 0).toLocaleString("vi-VN")} ₫
+                  {formatMoney(Number(payingOrder.collectedAmount || 0))}
                 </span>
               </div>
               <div>
                 <span className="block text-[11px] text-slate-500">Còn lại</span>
                 <span className="text-sm font-bold text-rose-600">
-                  {Math.max(
-                    0,
-                    payingOrder.totalValue - Number(payingOrder.collectedAmount || 0)
-                  ).toLocaleString("vi-VN")}{" "}
-                  ₫
+                  {formatMoney(
+                    Math.max(0, payingOrder.totalValue - Number(payingOrder.collectedAmount || 0))
+                  )}
                 </span>
               </div>
             </div>
@@ -1406,7 +1774,7 @@ export default function ContractsPage() {
                     <div key={p.id} className="flex items-center justify-between p-3 text-xs">
                       <div>
                         <div className="font-bold text-slate-900">
-                          {p.amount.toLocaleString("vi-VN")} ₫
+                          {formatMoney(p.amount)}
                         </div>
                         <div className="text-[11px] text-slate-500">
                           Ngày thu: {p.paidDate} {p.createdBy ? `· Thu bởi: ${p.createdBy}` : ""}
@@ -1437,13 +1805,12 @@ export default function ContractsPage() {
                   <label className="mb-1 block text-xs font-semibold text-slate-600">
                     Số tiền thu (₫) <span className="text-rose-500">*</span>
                   </label>
-                  <input
+                  <MoneyInput
                     required
-                    type="number"
-                    min={1}
+                    data-testid="payment-amount"
                     value={paymentAmount}
-                    onChange={(e) => setPaymentAmount(e.target.value)}
-                    placeholder="VD: 2000000"
+                    onChange={setPaymentAmount}
+                    placeholder="VD: 2.000.000"
                     className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
                   />
                 </div>
@@ -1491,122 +1858,13 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* Export Payment Request Modal */}
+      {/* Xuất đề nghị thanh toán: xem trước -> xác nhận lấy số -> tải Word/PDF */}
       {exportingOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <div className="mb-4 flex items-center justify-between border-b pb-3">
-              <div>
-                <h3 className="text-base font-bold text-slate-900">
-                  Xuất đề nghị thanh toán
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Mã GD: <span className="font-mono font-bold text-vnpt">{exportingOrder.transactionCode}</span> · Khách:{" "}
-                  <span className="font-semibold text-slate-800">{exportingOrder.customerName}</span>
-                </p>
-              </div>
-              <button
-                onClick={() => setExportingOrder(null)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {loadingExportPreview ? (
-              <div className="py-8 text-center text-xs text-slate-400">Đang chuẩn bị dữ liệu văn bản...</div>
-            ) : exportBlocked ? (
-              <div className="space-y-4">
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                  <div className="flex items-center gap-1.5 font-bold">
-                    <AlertTriangle className="h-4 w-4 text-amber-600" />
-                    Không thể xuất Đề nghị thanh toán
-                  </div>
-                  <p className="mt-1">{exportBlocked}</p>
-                </div>
-                <div className="flex justify-end gap-2 pt-2 border-t">
-                  <button
-                    type="button"
-                    onClick={() => setExportingOrder(null)}
-                    className="rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
-                  >
-                    Đóng
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const order = exportingOrder;
-                      setExportingOrder(null);
-                      handleOpenEdit(order);
-                    }}
-                    className="flex items-center gap-1.5 rounded-xl bg-vnpt px-4 py-2 text-xs font-bold text-white hover:bg-vnpt-dark"
-                  >
-                    <Edit2 className="h-4 w-4" />
-                    <span>Chỉnh sửa đơn hàng</span>
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <form onSubmit={handleDownloadDocx} className="space-y-4">
-                {/* Missing fields warning */}
-                {exportMissingFields.length > 0 && (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                    <div className="flex items-center gap-1.5 font-bold">
-                      <AlertTriangle className="h-4 w-4 text-amber-600" />
-                      Cảnh báo: Đơn hàng còn thiếu thông tin
-                    </div>
-                    <p className="mt-1">
-                      Còn thiếu: <span className="font-semibold">{exportMissingFields.join(", ")}</span>.
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-amber-700">
-                      Vẫn có thể xuất văn bản (chỗ thiếu sẽ để trống trong file Word).
-                    </p>
-                  </div>
-                )}
-
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-700">
-                    Số văn bản <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    required
-                    value={exportDocNumber}
-                    onChange={(e) => setExportDocNumber(e.target.value)}
-                    placeholder="VD: 706"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
-                  />
-                  <p className="mt-1 text-[11px] text-slate-400">
-                    Gợi ý tự động tăng theo năm hiện tại
-                  </p>
-                </div>
-
-                {exportError && (
-                  <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">
-                    {exportError}
-                  </p>
-                )}
-
-                <div className="flex justify-end gap-2 pt-2 border-t">
-                  <button
-                    type="button"
-                    onClick={() => setExportingOrder(null)}
-                    className="rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
-                  >
-                    Hủy
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={downloadingDocx}
-                    className="flex items-center gap-1.5 rounded-xl bg-vnpt px-4 py-2 text-xs font-bold text-white hover:bg-vnpt-dark disabled:opacity-60"
-                  >
-                    <Download className="h-4 w-4" />
-                    <span>{downloadingDocx ? "Đang tạo file..." : "Tải file Word"}</span>
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
+        <PaymentRequestModal
+          order={exportingOrder}
+          onClose={() => setExportingOrder(null)}
+          onEditOrder={handleOpenEdit}
+        />
       )}
 
       {/* Nhập hợp đồng từ Excel */}
@@ -1618,6 +1876,42 @@ export default function ContractsPage() {
           }}
         />
       )}
+
+      {/* Lỗi xuất hợp đồng (T10, STT 11) — vd mẫu chưa có file, đơn chưa gắn khách. */}
+      {contractExportError && (
+        <div className="fixed bottom-4 right-4 z-50 max-w-sm rounded-xl border border-rose-200 bg-white p-4 shadow-lg">
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-xs font-medium text-rose-700">{contractExportError}</p>
+            <button
+              type="button"
+              onClick={() => setContractExportError(null)}
+              className="text-slate-400 hover:text-slate-600"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Xóa đơn hàng (T10, STT 11) — chỉ Admin, cascade, chặn 409 khi đã có hoa hồng đã chi. */}
+      <ConfirmDeleteDialog
+        open={Boolean(deletingOrder)}
+        title="Xóa đơn hàng"
+        description={
+          deletingOrder ? (
+            <>
+              Xóa đơn <strong>{deletingOrder.transactionCode}</strong> của khách{" "}
+              <strong>{deletingOrder.customerName}</strong>? Toàn bộ dòng dịch vụ/thiết bị, lịch sử
+              thu tiền và lịch sử xuất đề nghị thanh toán của đơn này sẽ bị xóa theo.
+            </>
+          ) : (
+            ""
+          )
+        }
+        blockedReason={deleteBlockedReason}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeletingOrder(null)}
+      />
     </div>
   );
 }

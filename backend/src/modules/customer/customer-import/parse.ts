@@ -18,6 +18,8 @@ export interface ImportRow {
   billingEmail: string;
   teamName: string;
   salesChannel: string;
+  /** Tên hiển thị chi tiết kênh (vd "Zalo Ads", "ABC Partner", tên CTV) — tùy chọn, khớp theo tên với danh mục kênh. */
+  channelDetailName: string;
   note: string;
 }
 
@@ -89,6 +91,7 @@ const FIELD_ALIASES: FieldAliasDef[] = [
   { field: "billingEmail", aliases: ["thong tin thanh toan email"] },
   { field: "teamName", aliases: ["nhom"] },
   { field: "salesChannel", aliases: ["kenh ban"] },
+  { field: "channelDetailName", aliases: ["chi tiet kenh"] },
   { field: "note", aliases: ["ghi chu"] },
 ];
 
@@ -224,6 +227,7 @@ export function parseCustomerSheet(rows: Record<string, unknown>[]): {
       billingEmail: get("billingEmail"),
       teamName: get("teamName"),
       salesChannel: get("salesChannel"),
+      channelDetailName: get("channelDetailName"),
       note: get("note"),
     });
   });

@@ -1,5 +1,6 @@
 import type { TransactionClient } from "../../../database/pg-adapter.js";
 import {
+  AM_REQUIRED_IMPORT_MESSAGE,
   buildCustomerIndex,
   classifyContractRows,
   customerMatchMessage,
@@ -9,6 +10,12 @@ import {
 } from "./classify.js";
 import type { ContractImportRow } from "./parse.js";
 import { syncServicesFromContract } from "../../service/contract-service-sync.js";
+import {
+  deriveLegacySummary,
+  normalizeContractItems,
+  replaceContractItems,
+  sumAmount,
+} from "../contract-items.js";
 
 export type ContractCommitAction = "create" | "update" | "skip";
 
@@ -48,6 +55,13 @@ async function insertContractFromRow(
   const channel = nonEmpty(row.channel) || "Import Excel";
   const taxCode = nonEmpty(row.taxCode) || nonEmpty(customer.identity_code) || null;
 
+  // STT 10/11 (T9): mỗi đơn luôn có >= 1 dòng dịch vụ/thiết bị (đã kiểm tra ở classify),
+  // `total_value` và các cột tóm tắt cũ (service_name/package_name/subscriber_codes) suy
+  // ra từ các dòng — không tin trực tiếp giá trị thô trong file Excel.
+  const normalizedItems = normalizeContractItems(row.items);
+  const totalValue = sumAmount(normalizedItems);
+  const summary = deriveLegacySummary(normalizedItems);
+
   await tx.run(
     `INSERT INTO contracts (
       id, transaction_code, customer_name, subscriber_codes, total_value, channel,
@@ -59,17 +73,17 @@ async function insertContractFromRow(
       id,
       row.transactionCode,
       customer.name,
-      JSON.stringify(row.subscriberCodes),
-      row.totalValue ?? 0,
+      JSON.stringify(summary.subscriberCodes),
+      totalValue,
       channel,
       "Chưa triển khai",
       "Chưa thanh toán",
       "Soạn thảo",
       0,
       row.amStaff || null,
-      row.serviceGroup || null,
-      row.serviceName || null,
-      row.packageName || null,
+      summary.serviceGroup,
+      summary.serviceName,
+      summary.packageName,
       taxCode,
       row.contractNumber || null,
       row.signedDate || null,
@@ -79,19 +93,20 @@ async function insertContractFromRow(
     ]
   );
 
+  await replaceContractItems(id, normalizedItems, { db: tx });
   await syncServicesFromContract(id, tx);
 
   return {
     id,
     transaction_code: row.transactionCode,
     customer_name: customer.name,
-    subscriber_codes: JSON.stringify(row.subscriberCodes),
-    total_value: row.totalValue ?? 0,
+    subscriber_codes: JSON.stringify(summary.subscriberCodes),
+    total_value: totalValue,
     channel,
     am_staff: row.amStaff || null,
-    service_group: row.serviceGroup || null,
-    service_name: row.serviceName || null,
-    package_name: row.packageName || null,
+    service_group: summary.serviceGroup,
+    service_name: summary.serviceName,
+    package_name: summary.packageName,
     tax_code: taxCode,
     contract_number: row.contractNumber || null,
     signed_date: row.signedDate || null,
@@ -126,19 +141,38 @@ async function applyUpdate(
     sets.push("customer_id = ?", "customer_name = ?");
     params.push(customer.id, customer.name);
   }
-  if (row.subscriberCodes.length > 0) {
-    sets.push("subscriber_codes = ?");
-    params.push(JSON.stringify(row.subscriberCodes));
+
+  // STT 10 (T9): dòng Excel có khai dịch vụ/thiết bị -> thay TOÀN BỘ `contract_items`
+  // của đơn (không gộp thêm vào dòng cũ) và suy lại total_value + cột tóm tắt từ đó.
+  // Dòng chỉ sửa thông tin chung (không kèm dòng nào) -> giữ nguyên dòng hiện có.
+  const itemsProvided = row.items.length > 0;
+  let normalizedItems: ReturnType<typeof normalizeContractItems> | null = null;
+  if (itemsProvided) {
+    normalizedItems = normalizeContractItems(row.items);
+    const summary = deriveLegacySummary(normalizedItems);
+    sets.push("subscriber_codes = ?", "total_value = ?");
+    params.push(JSON.stringify(summary.subscriberCodes), sumAmount(normalizedItems));
+    if (summary.serviceGroup) {
+      sets.push("service_group = ?");
+      params.push(summary.serviceGroup);
+    }
+    if (summary.serviceName) {
+      sets.push("service_name = ?");
+      params.push(summary.serviceName);
+    }
+    if (summary.packageName) {
+      sets.push("package_name = ?");
+      params.push(summary.packageName);
+    }
   }
-  if (row.totalValue !== null) {
-    sets.push("total_value = ?");
-    params.push(row.totalValue);
-  }
+
   addIfNonEmpty("channel", row.channel);
   addIfNonEmpty("am_staff", row.amStaff);
-  addIfNonEmpty("service_group", row.serviceGroup);
-  addIfNonEmpty("service_name", row.serviceName);
-  addIfNonEmpty("package_name", row.packageName);
+  if (!itemsProvided) {
+    addIfNonEmpty("service_group", row.serviceGroup);
+    addIfNonEmpty("service_name", row.serviceName);
+    addIfNonEmpty("package_name", row.packageName);
+  }
   if (nonEmpty(row.taxCode)) {
     addIfNonEmpty("tax_code", row.taxCode);
   } else if (customer && !nonEmpty(target.tax_code)) {
@@ -151,10 +185,15 @@ async function applyUpdate(
     params.push(row.termMonths);
   }
 
-  if (sets.length === 0) return;
-  sets.push("updated_at = CURRENT_TIMESTAMP");
-  params.push(target.id);
-  await tx.run(`UPDATE contracts SET ${sets.join(", ")} WHERE id = ?`, params);
+  if (sets.length === 0 && !itemsProvided) return;
+  if (sets.length > 0) {
+    sets.push("updated_at = CURRENT_TIMESTAMP");
+    params.push(target.id);
+    await tx.run(`UPDATE contracts SET ${sets.join(", ")} WHERE id = ?`, params);
+  }
+  if (normalizedItems) {
+    await replaceContractItems(target.id, normalizedItems, { db: tx });
+  }
   await syncServicesFromContract(target.id, tx);
 }
 
@@ -202,9 +241,21 @@ export async function commitContractImportRows(
         continue;
       }
 
-      const newContract = await insertContractFromRow(tx, row, match.customer);
-      liveExisting.push(newContract);
-      created++;
+      if (!nonEmpty(row.amStaff)) {
+        errors.push({ rowNumber: row.rowNumber, message: AM_REQUIRED_IMPORT_MESSAGE });
+        continue;
+      }
+
+      try {
+        const newContract = await insertContractFromRow(tx, row, match.customer);
+        liveExisting.push(newContract);
+        created++;
+      } catch (error) {
+        errors.push({
+          rowNumber: row.rowNumber,
+          message: error instanceof Error ? error.message : "Không ghi được đơn hàng (dòng dịch vụ/thiết bị không hợp lệ)",
+        });
+      }
       continue;
     }
 
@@ -226,7 +277,20 @@ export async function commitContractImportRows(
         continue;
       }
 
-      await applyUpdate(tx, target, row, match.customer);
+      if (!nonEmpty(row.amStaff) && !nonEmpty(target.am_staff)) {
+        errors.push({ rowNumber: row.rowNumber, message: AM_REQUIRED_IMPORT_MESSAGE });
+        continue;
+      }
+
+      try {
+        await applyUpdate(tx, target, row, match.customer);
+      } catch (error) {
+        errors.push({
+          rowNumber: row.rowNumber,
+          message: error instanceof Error ? error.message : "Không cập nhật được đơn hàng (dòng dịch vụ/thiết bị không hợp lệ)",
+        });
+        continue;
+      }
       if (match.customer) target.customer_id = match.customer.id;
       updated++;
       continue;

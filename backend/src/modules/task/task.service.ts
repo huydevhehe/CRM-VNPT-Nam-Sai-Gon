@@ -95,6 +95,20 @@ export class TaskService {
     return toTaskRecord(created[0]);
   }
 
+  async remove(id: string, operator: string = "Admin"): Promise<void> {
+    const existing = await query<TaskRow>("SELECT id, title FROM tasks WHERE id = ?", [id]);
+    if (!existing.length) {
+      throw new Error("Không tìm thấy công việc");
+    }
+    await run("DELETE FROM tasks WHERE id = ?", [id]);
+    await run('INSERT INTO audit_logs (id, "user", action, details) VALUES (?, ?, ?, ?)', [
+      `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      operator,
+      "Xóa công việc",
+      `Xóa công việc ${id} (${existing[0].title})`,
+    ]);
+  }
+
   async updateStatus(id: string, status: string): Promise<TaskRecordDto> {
     if (!status) {
       throw new Error("Thiếu trạng thái cần cập nhật");

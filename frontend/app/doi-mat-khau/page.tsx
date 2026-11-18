@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Lock, KeyRound, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -8,7 +9,8 @@ import { changePassword } from "@/lib/api/auth.api";
 
 export default function DoiMatKhauPage() {
   const router = useRouter();
-  const { user, refreshUser } = useAuth();
+  const { user, loading, refreshUser } = useAuth();
+  const homePath = user?.role === "CTV" ? "/cong-tac-vien/dashboard" : "/admin/dashboard";
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -16,6 +18,13 @@ export default function DoiMatKhauPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Chưa đăng nhập thì không có gì để đổi: đưa về trang đăng nhập.
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/login");
+    }
+  }, [loading, user, router]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -34,6 +43,11 @@ export default function DoiMatKhauPage() {
       return;
     }
 
+    if (newPassword === currentPassword) {
+      setError("Mật khẩu mới phải khác mật khẩu hiện tại");
+      return;
+    }
+
     if (newPassword !== confirmPassword) {
       setError("Mật khẩu xác nhận không khớp");
       return;
@@ -47,7 +61,7 @@ export default function DoiMatKhauPage() {
       setSuccess(true);
       await refreshUser();
       setTimeout(() => {
-        router.push(user?.role === "CTV" ? "/cong-tac-vien/dashboard" : "/admin/dashboard");
+        router.push(homePath);
       }, 1500);
     } catch (err: any) {
       setError(err.message || "Không thể đổi mật khẩu. Vui lòng thử lại.");
@@ -150,6 +164,15 @@ export default function DoiMatKhauPage() {
             >
               {submitting ? "Đang xử lý..." : "Cập nhật mật khẩu"}
             </button>
+
+            {!user?.mustChangePassword && (
+              <Link
+                href={homePath}
+                className="block text-center text-xs font-semibold text-slate-500 hover:text-vnpt"
+              >
+                Quay lại trang làm việc
+              </Link>
+            )}
           </form>
         )}
       </div>

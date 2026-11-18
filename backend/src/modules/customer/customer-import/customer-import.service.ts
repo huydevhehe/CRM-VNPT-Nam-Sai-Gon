@@ -75,6 +75,7 @@ export class CustomerImportService {
         billingEmail: "",
         teamName: "",
         salesChannel: "",
+        channelDetailName: "",
         note: "",
       },
       status: "error",
