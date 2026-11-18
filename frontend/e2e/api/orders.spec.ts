@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { ADMIN, API_URL, apiLogin, bearer, createCustomerForOrder, type TestCustomer } from "./helpers";
+import { ADMIN, API_URL, apiLogin, bearer, createCustomerForOrder, type TestCustomer, getDefaultAmName } from "./helpers";
 
 test.describe("Orders API (Đơn hàng)", () => {
   test.describe.configure({ mode: "serial" });
@@ -53,6 +53,7 @@ test.describe("Orders API (Đơn hàng)", () => {
     const createRes = await request.post(`${API_URL}/contracts`, {
       headers: bearer(adminToken),
       data: {
+        amStaff: await getDefaultAmName(request, adminToken),
         transactionCode: `GD_TEST_${suffix}`,
         customerId: customer.id,
         subscriberCodes: [`TB_${suffix}`],
@@ -62,6 +63,7 @@ test.describe("Orders API (Đơn hàng)", () => {
         serviceName: "FiberVNN",
         packageName: "Home Net 2",
         paymentMethod: "Trả trước",
+        prepaidMonths: 12,
         contractNumber: `20261113/0319653211/VNPT.NSG/VNPT026696`,
         signedDate: "2026-11-13",
       },
@@ -99,6 +101,7 @@ test.describe("Orders API (Đơn hàng)", () => {
         amStaff: amKhoaName,
         serviceGroup: "CNTT",
         paymentMethod: "Trả trước",
+        prepaidMonths: 12,
       },
     });
     expect(createRes.status()).toBe(201);
@@ -140,6 +143,7 @@ test.describe("Orders API (Đơn hàng)", () => {
       data: {
         packageName: "Gói Doanh Nghiệp VIP",
         paymentMethod: "Trả trước",
+        prepaidMonths: 6,
       },
     });
     expect(updateRes.status()).toBe(200);
@@ -153,6 +157,7 @@ test.describe("Orders API (Đơn hàng)", () => {
     const createRes = await request.post(`${API_URL}/contracts`, {
       headers: bearer(adminToken),
       data: {
+        amStaff: await getDefaultAmName(request, adminToken),
         transactionCode: `GD_EXPORT_${suffix}`,
         customerId: customer.id,
         subscriberCodes: [`TB_EXP_${suffix}`],
@@ -161,6 +166,7 @@ test.describe("Orders API (Đơn hàng)", () => {
         serviceGroup: "CNTT",
         packageName: "eduOffice",
         paymentMethod: "Trả trước",
+        prepaidMonths: 12,
       },
     });
     expect(createRes.status()).toBe(201);
@@ -180,10 +186,12 @@ test.describe("Orders API (Đơn hàng)", () => {
     const previewJson = await previewRes.json();
     expect(previewJson.data.missingFields).toBeDefined();
 
-    // Export with docNumber=706
-    const exportRes = await request.get(`${API_URL}/contracts/${order.id}/payment-request?docNumber=706`, {
-      headers: bearer(adminToken),
-    });
+    // Export (luồng một bước) với số văn bản duy nhất cho lần chạy này
+    const docNumber = `E2E-${suffix}`;
+    const exportRes = await request.get(
+      `${API_URL}/contracts/${order.id}/payment-request?docNumber=${encodeURIComponent(docNumber)}`,
+      { headers: bearer(adminToken) }
+    );
     expect(exportRes.status()).toBe(200);
     expect(exportRes.headers()["content-type"]).toContain("officedocument.wordprocessingml.document");
     expect(exportRes.headers()["content-disposition"]).toContain(`De-nghi-thanh-toan_${order.transactionCode}.docx`);
@@ -199,7 +207,7 @@ test.describe("Orders API (Đơn hàng)", () => {
     });
     expect(logsRes.status()).toBe(200);
     const logsJson = await logsRes.json();
-    const foundLog = logsJson.data.find((l: any) => l.contractId === order.id && l.docNumber === "706");
+    const foundLog = logsJson.data.find((l: any) => l.contractId === order.id && l.docNumber === docNumber);
     expect(foundLog).toBeDefined();
   });
   test("create order requires a customer from the system", async ({ request }) => {
@@ -230,6 +238,7 @@ test.describe("Orders API (Đơn hàng)", () => {
     const res = await request.post(`${API_URL}/contracts`, {
       headers: bearer(adminToken),
       data: {
+        amStaff: await getDefaultAmName(request, adminToken),
         transactionCode: `GD_DERIVE_${suffix}`,
         customerId: customer.id,
         customerName: "Tên nhập tay phải bị bỏ qua",
@@ -281,6 +290,7 @@ test.describe("Orders API (Đơn hàng)", () => {
     const createRes = await request.post(`${API_URL}/contracts`, {
       headers: bearer(adminToken),
       data: {
+        amStaff: await getDefaultAmName(request, adminToken),
         transactionCode: `GD_KEEP_${suffix}`,
         customerId: customer.id,
         subscriberCodes: [`TB_KEEP_${suffix}`],
@@ -312,6 +322,7 @@ test.describe("Orders API (Đơn hàng)", () => {
     const createRes = await request.post(`${API_URL}/contracts`, {
       headers: bearer(adminToken),
       data: {
+        amStaff: await getDefaultAmName(request, adminToken),
         transactionCode: `GD_SVC_${suffix}`,
         customerId: svcCustomer.id,
         subscriberCodes: [`TB_A_${suffix}`, `TB_B_${suffix}`, `TB_C_${suffix}`],
@@ -321,6 +332,7 @@ test.describe("Orders API (Đơn hàng)", () => {
         serviceName: "FiberVNN",
         packageName: "Home Net 2",
         paymentMethod: "Trả trước",
+        prepaidMonths: 12,
         signedDate: "2026-01-31",
         termMonths: 1,
       },
@@ -377,6 +389,7 @@ test.describe("Orders API (Đơn hàng)", () => {
     const createRes = await request.post(`${API_URL}/contracts`, {
       headers: bearer(adminToken),
       data: {
+        amStaff: await getDefaultAmName(request, adminToken),
         transactionCode: `GD_DEF_${suffix}`,
         customerId: svcCustomer.id,
         subscriberCodes: [`TB_DEF_${suffix}`],
@@ -398,6 +411,7 @@ test.describe("Orders API (Đơn hàng)", () => {
     const badTerm = await request.post(`${API_URL}/contracts`, {
       headers: bearer(adminToken),
       data: {
+        amStaff: await getDefaultAmName(request, adminToken),
         transactionCode: `GD_BADTERM_${suffix}`,
         customerId: svcCustomer.id,
         subscriberCodes: [`TB_BAD_${suffix}`],

@@ -1,8 +1,28 @@
 import { apiFetch } from "./client";
 
-/** Khớp `ContractImportRow` ở `backend/src/modules/contract/contract-import/parse.ts`. */
+export type ImportLineType = "service" | "device";
+
+/** Khớp `ContractItemInput` ở `backend/src/modules/contract/contract-items.ts`. */
+export interface ImportItemInput {
+  lineType: ImportLineType;
+  serviceGroup?: string | null;
+  serviceName?: string | null;
+  packageName?: string | null;
+  subscriberCode?: string | null;
+  quantity?: number | null;
+  unitPrice: number;
+  termMonths?: number | null;
+  startDate?: string | null;
+  note?: string | null;
+}
+
+/**
+ * Khớp `ContractImportRow` ở `backend/src/modules/contract/contract-import/parse.ts`
+ * (T9, STT 10/11): một đơn đã gộp từ các dòng Excel cùng `transactionCode`.
+ */
 export interface ContractImportRow {
   rowNumber: number;
+  rowNumbers: number[];
   transactionCode: string;
   customerName: string;
   subscriberCodes: string[];
@@ -16,6 +36,7 @@ export interface ContractImportRow {
   contractNumber: string;
   signedDate: string;
   note: string;
+  items: ImportItemInput[];
 }
 
 /** Khớp `ExistingContract` ở `.../contract-import/classify.ts`. */

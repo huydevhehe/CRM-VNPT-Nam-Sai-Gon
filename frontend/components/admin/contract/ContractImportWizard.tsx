@@ -160,6 +160,10 @@ export default function ContractImportWizard({ onClose, onImported }: ContractIm
                 <b>MST khách hàng</b> trước, sau đó theo <b>Tên khách hàng</b> (đúng nguyên văn, không phân biệt
                 hoa/thường). Dòng tạo mới không khớp được khách sẽ báo lỗi.
               </p>
+              <p className="rounded-lg bg-amber-50 p-2.5 text-[11px] text-amber-800">
+                Mỗi dòng Excel là một dịch vụ hoặc một thiết bị. Các dòng cùng <b>Mã giao dịch</b> sẽ được gộp
+                thành một đơn hàng — xem sheet &quot;Hướng dẫn&quot; trong file mẫu.
+              </p>
 
               {uploadError && (
                 <div className="flex items-start gap-2 rounded-lg bg-rose-50 p-2.5 text-xs text-rose-700">
@@ -201,18 +205,35 @@ export default function ContractImportWizard({ onClose, onImported }: ContractIm
                   >
                     <div>
                       <p className="text-sm font-bold text-slate-900">
-                        Dòng {row.classified.row.rowNumber} — {row.classified.row.transactionCode || "(không có mã)"}
+                        Dòng {row.classified.row.rowNumbers.join(", ")} —{" "}
+                        {row.classified.row.transactionCode || "(không có mã)"}
                       </p>
                       {row.classified.status === "error" ? (
                         <p className="text-xs text-rose-600">{row.classified.notes.join("; ")}</p>
                       ) : (
-                        <p className="text-[11px] text-slate-500">
-                          Khách: {row.classified.row.customerName || "—"} · Giá trị:{" "}
-                          {row.classified.row.totalValue
-                            ? row.classified.row.totalValue.toLocaleString("vi-VN")
-                            : "—"}{" "}
-                          ₫
-                        </p>
+                        <>
+                          <p className="text-[11px] text-slate-500">
+                            Khách: {row.classified.row.customerName || "—"} · Giá trị:{" "}
+                            {row.classified.row.totalValue
+                              ? row.classified.row.totalValue.toLocaleString("vi-VN")
+                              : "—"}{" "}
+                            ₫
+                          </p>
+                          {row.classified.row.items.length > 0 && (
+                            <p className="mt-0.5 text-[11px] text-slate-500">
+                              {row.classified.row.items.filter((i) => i.lineType === "service").length} dịch vụ
+                              {" · "}
+                              {row.classified.row.items.filter((i) => i.lineType === "device").length} thiết bị
+                              {" — "}
+                              {row.classified.row.items
+                                .map((i) =>
+                                  i.lineType === "service" ? i.subscriberCode || i.serviceName : i.serviceName
+                                )
+                                .filter(Boolean)
+                                .join(", ")}
+                            </p>
+                          )}
+                        </>
                       )}
                       {row.classified.status !== "error" && row.classified.customer && (
                         <p className="mt-1 text-[11px] text-emerald-700">

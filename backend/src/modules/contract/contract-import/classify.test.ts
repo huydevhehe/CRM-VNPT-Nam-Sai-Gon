@@ -3,23 +3,42 @@ import assert from "node:assert/strict";
 
 import {
   classifyContractRows,
+  AM_REQUIRED_IMPORT_MESSAGE,
   CUSTOMER_AMBIGUOUS_MESSAGE,
   CUSTOMER_NOT_FOUND_MESSAGE,
   type ExistingContract,
   type ImportCustomer,
 } from "./classify.js";
+import { ITEMS_REQUIRED_MESSAGE, type ContractItemInput } from "../contract-items.js";
 import type { ContractImportRow } from "./parse.js";
 
+const DEFAULT_ITEMS: ContractItemInput[] = [
+  {
+    lineType: "service",
+    serviceGroup: null,
+    serviceName: null,
+    packageName: null,
+    subscriberCode: "0901234567",
+    quantity: 1,
+    unitPrice: 100000,
+    termMonths: null,
+    startDate: null,
+    note: null,
+  },
+];
+
 function makeRow(overrides: Partial<ContractImportRow> = {}): ContractImportRow {
+  const rowNumber = overrides.rowNumber ?? 2;
   return {
-    rowNumber: 2,
+    rowNumber,
+    rowNumbers: [rowNumber],
     transactionCode: "",
     customerName: "",
     subscriberCodes: [],
     totalValue: null,
     termMonths: null,
     channel: "",
-    amStaff: "",
+    amStaff: "AM Import",
     serviceGroup: "",
     serviceName: "",
     packageName: "",
@@ -27,6 +46,7 @@ function makeRow(overrides: Partial<ContractImportRow> = {}): ContractImportRow 
     contractNumber: "",
     signedDate: "",
     note: "",
+    items: DEFAULT_ITEMS,
     ...overrides,
   };
 }
@@ -150,4 +170,57 @@ test("update row assigns the matched customer to a contract without customer", (
 
   assert.equal(classified.status, "update");
   assert.equal(classified.customer?.id, "C-1");
+});
+
+test("new row without an AM is an error", () => {
+  const row = makeRow({ transactionCode: "GD-NOAM", customerName: "Công Ty ABC", amStaff: "  " });
+  const [classified] = classifyContractRows([row], [], CUSTOMERS);
+
+  assert.equal(classified.status, "error");
+  assert.equal(classified.notes[0], AM_REQUIRED_IMPORT_MESSAGE);
+});
+
+test("update row without an AM is fine only when the contract already has one", () => {
+  const withAm = makeExisting({ transaction_code: "GD-001", customer_id: "C-1", am_staff: "AM Cũ" });
+  const withoutAm = makeExisting({ id: "HD-2", transaction_code: "GD-002", customer_id: "C-1", am_staff: null });
+  const rows = [
+    makeRow({ rowNumber: 2, transactionCode: "GD-001", customerName: "Công Ty ABC", amStaff: "" }),
+    makeRow({ rowNumber: 3, transactionCode: "GD-002", customerName: "Công Ty ABC", amStaff: "" }),
+    makeRow({ rowNumber: 4, transactionCode: "GD-002", customerName: "Công Ty ABC", amStaff: "AM Mới" }),
+  ];
+  const [keep, missing, filled] = classifyContractRows(rows, [withAm, withoutAm], CUSTOMERS);
+
+  assert.equal(keep.status, "update");
+  assert.equal(missing.status, "error");
+  assert.equal(missing.notes[0], AM_REQUIRED_IMPORT_MESSAGE);
+  assert.equal(filled.status, "update");
+});
+
+// T9 (STT 10/11): mỗi đơn mới phải có >= 1 dòng dịch vụ/thiết bị.
+test("new row without any service/device item is an error", () => {
+  const row = makeRow({ transactionCode: "GD-NOITEM", customerName: "Công Ty ABC", items: [] });
+  const [classified] = classifyContractRows([row], [], CUSTOMERS);
+
+  assert.equal(classified.status, "error");
+  assert.equal(classified.notes[0], ITEMS_REQUIRED_MESSAGE);
+});
+
+test("update row without any item in the file keeps existing contract_items untouched (no items error)", () => {
+  const existing = makeExisting({ transaction_code: "GD-001", customer_id: "C-1" });
+  const row = makeRow({ transactionCode: "GD-001", customerName: "Công Ty ABC", items: [] });
+  const [classified] = classifyContractRows([row], [existing], CUSTOMERS);
+
+  assert.equal(classified.status, "update");
+});
+
+test("new row with an invalid item (service line without subscriber code) is an error", () => {
+  const row = makeRow({
+    transactionCode: "GD-BADITEM",
+    customerName: "Công Ty ABC",
+    items: [{ ...DEFAULT_ITEMS[0], subscriberCode: "" }],
+  });
+  const [classified] = classifyContractRows([row], [], CUSTOMERS);
+
+  assert.equal(classified.status, "error");
+  assert.match(classified.notes[0], /mã thuê bao/);
 });
