@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState, FormEvent } from "react";
 import Link from "next/link";
-import { MapPin, Building, Users, TrendingUp, AlertTriangle, ChevronDown, ChevronUp, Plus, X, Upload } from "lucide-react";
+import { MapPin, Building, Users, TrendingUp, AlertTriangle, ChevronDown, ChevronUp, Plus, X, Upload, Trash2 } from "lucide-react";
 import KpiCard from "@/components/admin/shared/KpiCard";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
+import ConfirmDeleteDialog from "@/components/admin/shared/ConfirmDeleteDialog";
 import { TerritoryRecord, StaffRecord } from "@/lib/crm/types/crm.types";
 import {
   getTerritories,
@@ -12,6 +13,7 @@ import {
   createTerritory,
   importWardContacts,
   ImportWardContactsResult,
+  deleteTerritory,
 } from "@/lib/api/territories.api";
 import { getStaff } from "@/lib/api/staff.api";
 import { TableFilter } from "@/lib/table-filters";
@@ -33,6 +35,8 @@ export default function TerritoriesPage() {
   const [wardForm, setWardForm] = useState(EMPTY_WARD_FORM);
   const [wardFormError, setWardFormError] = useState<string | null>(null);
   const [submittingWard, setSubmittingWard] = useState(false);
+
+  const [deleteTarget, setDeleteTarget] = useState<TerritoryRecord | null>(null);
 
   const [showImportForm, setShowImportForm] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -241,6 +245,13 @@ export default function TerritoriesPage() {
     }
   }
 
+  async function handleConfirmDeleteTerritory() {
+    if (!deleteTarget) return;
+    await deleteTerritory(deleteTarget.id);
+    setData((prev) => prev.filter((t) => t.id !== deleteTarget.id));
+    setDeleteTarget(null);
+  }
+
   const territoryFilters: TableFilter<TerritoryRecord>[] = [
     {
       id: "staffName",
@@ -340,6 +351,26 @@ export default function TerritoriesPage() {
         <span className="text-slate-600">{item.leadershipContact}</span>
       ),
     },
+    ...(canCreateWard
+      ? [
+          {
+            header: "Hành động",
+            cell: (item: TerritoryRecord) => (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDeleteTarget(item);
+                }}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                title="Xóa phường"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            ),
+          } as Column<TerritoryRecord>,
+        ]
+      : []),
   ];
 
   return (
@@ -610,6 +641,23 @@ export default function TerritoriesPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDeleteDialog
+        open={deleteTarget !== null}
+        title="Xóa phường"
+        description={
+          deleteTarget ? (
+            <>
+              Xóa phường <strong>{deleteTarget.wardName}</strong>? Cán bộ, khu phố, đầu mối liên hệ của phường sẽ bị
+              xóa theo. Thao tác này không thể hoàn tác.
+            </>
+          ) : (
+            ""
+          )
+        }
+        onConfirm={handleConfirmDeleteTerritory}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

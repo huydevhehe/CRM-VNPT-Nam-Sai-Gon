@@ -116,7 +116,9 @@ territoryRouter.patch("/officials/:officialId", requireAdmin, (req: Request, res
 );
 
 territoryRouter.delete("/officials/:officialId", requireAdmin, (req: Request, res: Response) =>
-  handle(res, 200, () => territoryService.deleteOfficial(String(req.params.officialId)))
+  handle(res, 200, () =>
+    territoryService.deleteOfficial(String(req.params.officialId), req.user?.name ?? req.user?.id ?? "Admin")
+  )
 );
 
 territoryRouter.patch("/quarters/:quarterId", requireAdmin, (req: Request, res: Response) =>
@@ -124,7 +126,16 @@ territoryRouter.patch("/quarters/:quarterId", requireAdmin, (req: Request, res: 
 );
 
 territoryRouter.delete("/quarters/:quarterId", requireAdmin, (req: Request, res: Response) =>
-  handle(res, 200, () => territoryService.deleteQuarter(String(req.params.quarterId)))
+  handle(res, 200, () =>
+    territoryService.deleteQuarter(String(req.params.quarterId), req.user?.name ?? req.user?.id ?? "Admin")
+  )
+);
+
+// DELETE /api/territories/:id — xóa cứng Phường (chặn nếu còn Lead/Đơn hàng)
+territoryRouter.delete("/:id", requireAdmin, (req: Request, res: Response) =>
+  handle(res, 200, () =>
+    territoryService.deleteTerritory(String(req.params.id), req.user?.name ?? req.user?.id ?? "Admin")
+  )
 );
 
 territoryRouter.get("/:id/detail", (req: Request, res: Response) =>
