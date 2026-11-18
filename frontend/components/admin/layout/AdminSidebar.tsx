@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   Settings,
   Settings2,
+  Network,
   X,
 } from "lucide-react";
 
@@ -47,6 +48,11 @@ const NAV_SECTIONS = [
         name: "Lead / Cơ hội",
         href: "/admin/leads",
         icon: Target,
+      },
+      {
+        name: "Danh mục kênh",
+        href: "/admin/channel-sources",
+        icon: Network,
       },
       {
         name: "Đơn hàng",

@@ -68,8 +68,12 @@ export const INACTIVE_USER_STATUS = "Ngừng hoạt động";
 export const SERVICE_GROUPS = ["BRCĐ", "CNTT", "Di động"] as const;
 export type ServiceGroup = (typeof SERVICE_GROUPS)[number];
 
-export const PAYMENT_METHODS = ["Trả trước", "Trả hàng tháng"] as const;
+export const PAYMENT_METHODS = ["Trả trước", "Trả hàng tháng", "Theo hợp đồng"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+
+/** Hình thức "Trả trước" bắt buộc kèm số tháng trả trước thuộc danh sách này (6 và 12 là phổ biến). */
+export const PREPAID_MONTH_OPTIONS = [3, 6, 12, 18, 24] as const;
+export const PREPAID_PAYMENT_METHOD = "Trả trước";
 
 export const STAFF_NAME_REFERENCES: ReadonlyArray<readonly [table: string, column: string]> = [
   ["leads", "staff_name"],

@@ -11,6 +11,7 @@ import { dashboardRouter } from "./modules/dashboard/dashboard.controller.js";
 import { authRouter } from "./modules/auth/auth.controller.js";
 import { serviceRouter } from "./modules/service/service.controller.js";
 import { leadRouter } from "./modules/lead/lead.controller.js";
+import { channelSourceRouter } from "./modules/channel-source/channel-source.controller.js";
 import { contractRouter } from "./modules/contract/contract.controller.js";
 import { commissionRouter } from "./modules/commission/commission.controller.js";
 import { staffRouter } from "./modules/staff/staff.controller.js";
@@ -82,6 +83,7 @@ app.use("/api/territories", requireAuth, requireStaff, territoryRouter);
 app.use("/api/dashboard", requireAuth, requireStaff, dashboardRouter);
 app.use("/api/services", requireAuth, requireStaff, serviceRouter);
 app.use("/api/leads", requireAuth, requireStaff, leadRouter);
+app.use("/api/channel-sources", requireAuth, requireStaff, channelSourceRouter);
 app.use("/api/contracts", requireAuth, requireStaff, contractRouter);
 app.use("/api/commissions", requireAuth, requireAdmin, commissionRouter);
 // GET /api/staff trả bản rút gọn cho non-Admin; mọi route ghi đã requireAdmin trong router.

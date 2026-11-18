@@ -136,12 +136,13 @@ test.describe("CTV đăng ký, Admin duyệt, đăng nhập chung (UI)", () => {
     await page.getByRole("button", { name: "Thêm nhân viên" }).click();
     await fieldByLabel(page, "Mã nhân viên").fill(code);
     await fieldByLabel(page, "Họ tên").fill(`NV UI ${suffix}`);
-    const territoryField = fieldByLabel(page, "Phường phụ trách");
-    if ((await territoryField.count()) > 0) {
-      const tagName = await territoryField.evaluate((el) => el.tagName.toLowerCase());
-      if (tagName === "select") {
-        await territoryField.selectOption({ index: 1 });
-      } else {
+    // Phường phụ trách là danh sách tick chọn nhiều phường; khi chưa có danh mục địa bàn thì là ô nhập chữ.
+    const wardOption = page.locator('[data-testid^="ward-option-"]').first();
+    if ((await wardOption.count()) > 0) {
+      await wardOption.check();
+    } else {
+      const territoryField = fieldByLabel(page, "Phường phụ trách");
+      if ((await territoryField.count()) > 0) {
         await territoryField.fill("Phường Tân Phong");
       }
     }

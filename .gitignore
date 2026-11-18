@@ -22,7 +22,8 @@ docs/
 !frontend/public/templates/*.xlsx
 !frontend/e2e/fixtures/*.xlsx
 *.docx
-!backend/templates/*.docx
+!backend/templates/contracts/*.docx
+!backend/templates/contracts/appendix/*.docx
 *.docx.backup
 ~$*
 *.bak

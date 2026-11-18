@@ -7,10 +7,14 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test lib/data.test.ts content/category-map.test.ts lib/table-filters.test.ts lib/kpi-formula.test.ts lib/customer-stats.test.ts lib/auth/access.test.ts lib/api/reminders.api.test.ts",
+    "test": "tsx --test lib/data.test.ts content/category-map.test.ts lib/table-filters.test.ts lib/kpi-formula.test.ts lib/customer-stats.test.ts lib/auth/access.test.ts lib/api/reminders.api.test.ts lib/money.test.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@tiptap/extension-text-style": "3.32.2",
+    "@tiptap/pm": "3.32.2",
+    "@tiptap/react": "3.32.2",
+    "@tiptap/starter-kit": "3.32.2",
     "lucide-react": "^1.26.0",
     "next": "16.2.10",
     "react": "19.2.4",

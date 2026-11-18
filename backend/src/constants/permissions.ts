@@ -59,8 +59,14 @@ export const PERMISSION_MODULES: readonly PermissionModule[] = [
   {
     key: "leads",
     label: "Lead / Cơ hội",
-    note: "AM chỉ thấy và xử lý Lead của mình. Giao Lead / đổi AM phụ trách chỉ Admin.",
+    note: "AM chỉ thấy và xử lý Lead của mình (ghi chú, chuyển trạng thái tiến lên). Quay lại bước trước phải gửi yêu cầu để Admin duyệt. Sửa thông tin Lead, giao Lead / đổi AM phụ trách, duyệt yêu cầu, xóa Lead chỉ Admin.",
     access: AM_ACCESS(OWN),
+  },
+  {
+    key: "channel_sources",
+    label: "Danh mục kênh (nguồn Online, Đối tác)",
+    note: "Mọi nhân viên được chọn khi nhập Lead. Thêm, sửa tên, ẩn, sắp xếp danh mục chỉ Admin.",
+    access: AM_ACCESS(VIEW),
   },
   {
     key: "customers",
@@ -101,7 +107,7 @@ export const PERMISSION_MODULES: readonly PermissionModule[] = [
   {
     key: "tasks",
     label: "Công việc / Nhắc việc",
-    note: "AM chỉ thấy và xử lý công việc được giao cho mình.",
+    note: "AM chỉ thấy và xử lý công việc được giao cho mình. Xóa công việc chỉ Admin.",
     access: AM_ACCESS(OWN),
   },
   {
@@ -113,7 +119,7 @@ export const PERMISSION_MODULES: readonly PermissionModule[] = [
   {
     key: "territories",
     label: "Phường xã (Địa bàn)",
-    note: "AM xem thông tin địa bàn; mọi thao tác ghi vào Địa bàn chỉ Admin.",
+    note: "AM xem thông tin địa bàn; mọi thao tác ghi vào Địa bàn chỉ Admin. Xóa phường (nếu chưa có Lead/đơn hàng), cán bộ, khu phố, đầu mối liên hệ chỉ Admin.",
     access: AM_ACCESS(VIEW),
   },
   {

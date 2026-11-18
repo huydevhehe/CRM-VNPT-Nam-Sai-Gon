@@ -80,7 +80,7 @@ function leadPayload(staffName: string | undefined, tag: string) {
     customerName: `KH Phân quyền ${tag}`,
     phone: "0901234567",
     group: "Lead KH mới",
-    channel: "Online",
+    channel: "Chiến dịch",
     ...(staffName === undefined ? {} : { staffName }),
   };
 }
@@ -207,6 +207,33 @@ test("Công việc: AM chỉ thấy/sửa việc giao cho mình, tạo việc ch
   assert.equal(blank.status, 201);
   createdTaskIds.push(blank.body.data.id);
   assert.equal(blank.body.data.assignee, AM_A.name);
+});
+
+test("Lead: xóa chỉ Admin — AM 403, Admin 200, 404 khi không tồn tại", async () => {
+  const tag = `${Date.now()}`;
+  const target = await adminCreateLead(AM_A.name, `del-${tag}`);
+
+  assert.equal((await call(null, "DELETE", `/leads/${target}`)).status, 401);
+  assert.equal((await call(AM_A, "DELETE", `/leads/${target}`)).status, 403);
+  assert.equal((await call(ADMIN, "DELETE", "/leads/LEAD-KHONG-TON-TAI")).status, 404);
+
+  const ok = await call(ADMIN, "DELETE", `/leads/${target}`);
+  assert.equal(ok.status, 200);
+
+  const getAfter = await call(ADMIN, "GET", "/leads");
+  assert.ok(!getAfter.body.data.some((l: any) => l.id === target));
+});
+
+test("Công việc: xóa chỉ Admin — AM 403, Admin 200, 404 khi không tồn tại", async () => {
+  const tag = `${Date.now()}`;
+  const target = await adminCreateTask(AM_A.name, `del-${tag}`);
+
+  assert.equal((await call(null, "DELETE", `/tasks/${target}`)).status, 401);
+  assert.equal((await call(AM_A, "DELETE", `/tasks/${target}`)).status, 403);
+  assert.equal((await call(ADMIN, "DELETE", "/tasks/TASK-KHONG-TON-TAI")).status, 404);
+
+  const ok = await call(ADMIN, "DELETE", `/tasks/${target}`);
+  assert.equal(ok.status, 200);
 });
 
 test("Nhân viên: AM chỉ nhận danh bạ rút gọn; Admin nhận đủ hồ sơ", async () => {
@@ -416,6 +443,33 @@ test("Địa bàn: AM không ghi được số hộ, thống kê, đầu mối (
   assert.equal((await call(AM_A, "POST", `/territories/${id}/contacts`, { unit: "UBND", fullName: "X" })).status, 403);
   assert.equal((await call(AM_A, "PATCH", `/territories/contacts/x`, { fullName: "X" })).status, 403);
   assert.equal((await call(AM_A, "DELETE", `/territories/contacts/x`)).status, 403);
+});
+
+test("Địa bàn: xóa phường chỉ Admin, 404 khi không có, 409 khi còn Lead", async () => {
+  const tag = `${Date.now()}`;
+  const created = await call(ADMIN, "POST", "/territories", { wardName: `Phường Test Xóa ${tag}` });
+  assert.equal(created.status, 201);
+  const territoryId = created.body.data.id;
+
+  assert.equal((await call(null, "DELETE", `/territories/${territoryId}`)).status, 401);
+  assert.equal((await call(AM_A, "DELETE", `/territories/${territoryId}`)).status, 403);
+  assert.equal((await call(ADMIN, "DELETE", "/territories/TB-KHONG-TON-TAI")).status, 404);
+
+  const leadRes = await call(ADMIN, "POST", "/leads", {
+    ...leadPayload(AM_A.name, `territory-del-${tag}`),
+    territoryId,
+  });
+  assert.equal(leadRes.status, 201);
+  createdLeadIds.push(leadRes.body.data.id);
+
+  const blocked = await call(ADMIN, "DELETE", `/territories/${territoryId}`);
+  assert.equal(blocked.status, 409);
+
+  await run("DELETE FROM leads WHERE id = ?", [leadRes.body.data.id]);
+  createdLeadIds.splice(createdLeadIds.indexOf(leadRes.body.data.id), 1);
+
+  const ok = await call(ADMIN, "DELETE", `/territories/${territoryId}`);
+  assert.equal(ok.status, 200);
 });
 
 test("server.ts: các module chỉ Admin được mount sau requireAdmin", () => {

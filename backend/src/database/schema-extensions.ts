@@ -1,6 +1,12 @@
 import { query, run } from "./db.js";
 import { LEAD_GROUP_RENAMES } from "../constants/org.js";
 import { syncServicesFromContract } from "../modules/service/contract-service-sync.js";
+import { applyLeadChannelSchema } from "./ext/t1.js";
+import { applyContractQuickEditSchema } from "./ext/contract-quick-edit.js";
+import { applyReminderEmailSchema } from "./ext/reminder-email.js";
+import { applyT6Schema } from "./ext/t6.js";
+import { applyT8Schema } from "./ext/t8.js";
+import { applyT10Schema } from "./ext/t10.js";
 
 const IDENTIFIER_PATTERN = /^[a-z_]+$/;
 
@@ -267,6 +273,8 @@ export async function applySchemaExtensions(): Promise<void> {
     )
   `);
 
+  await applyContractQuickEditSchema();
+
   await ensureColumn("services", "customer_id", "TEXT");
   await ensureColumn("services", "service_group", "TEXT");
   await ensureColumn("services", "package_name", "TEXT");
@@ -290,6 +298,12 @@ export async function applySchemaExtensions(): Promise<void> {
       await run("UPDATE leads SET group_name = ? WHERE group_name = ?", [newName, oldName]);
     }
   });
+
+  await applyLeadChannelSchema();
+  await applyReminderEmailSchema();
+  await applyT6Schema();
+  await applyT8Schema();
+  await applyT10Schema();
 }
 
 const TERRITORY_BACKFILL_KEY = "territory_backfill_v1";
@@ -405,6 +419,10 @@ export async function backfillRelations(): Promise<void> {
 
   // Đơn hàng cũ chưa có dịch vụ: sinh "Dịch vụ - Mã thuê bao" cho đơn đã có khách.
   await runMigrationOnce("services_from_contracts_v1", backfillServicesFromContracts);
+
+  // T8 (STT 10): tách mỗi đơn cũ (chưa có contract_items) thành các dòng
+  // contract_items theo subscriber_codes hiện có, đánh dấu legacy = TRUE.
+  await runMigrationOnce("contract_items_from_legacy_v1", backfillContractItemsFromLegacy);
 }
 
 /**
@@ -439,4 +457,92 @@ export async function backfillServiceCustomerIds(): Promise<void> {
     WHERE s.customer_id IS NULL
       AND (SELECT COUNT(*) FROM customers c2 WHERE c2.name = s.customer_name) = 1
   `);
+}
+
+function parseLegacySubscriberCodes(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const seen = new Set<string>();
+  for (const item of parsed) {
+    const code = String(item ?? "").trim();
+    if (code) seen.add(code);
+  }
+  return Array.from(seen);
+}
+
+/**
+ * Logic thật của migration một-lần `contract_items_from_legacy_v1` (T8, STT 10),
+ * tách riêng để test gọi lại được nhiều lần mà không nhân đôi dữ liệu: mỗi đơn
+ * được kiểm tra riêng (bỏ qua nếu đã có contract_items), nên an toàn khi gọi
+ * lại nhiều lần (không phụ thuộc vào cờ `schema_migrations_state`).
+ *
+ * Mỗi đơn cũ có N mã thuê bao -> tạo N dòng `service`, chia đều `total_value`
+ * (phần dư cộng vào dòng đầu). Đơn không có mã (subscriber_codes = "[]") ->
+ * 1 dòng `service` không mã, CHỈ dùng cho dữ liệu migrate (`legacy = TRUE`),
+ * ghi chú "Tách tự động từ đơn cũ".
+ */
+export async function backfillContractItemsFromLegacy(): Promise<void> {
+  const contracts = await query<{
+    id: string;
+    subscriber_codes: string | null;
+    total_value: number | string | null;
+    service_group: string | null;
+    service_name: string | null;
+    package_name: string | null;
+    term_months: number | null;
+  }>(
+    `SELECT c.id, c.subscriber_codes, c.total_value, c.service_group, c.service_name,
+            c.package_name, c.term_months
+     FROM contracts c
+     WHERE NOT EXISTS (SELECT 1 FROM contract_items ci WHERE ci.contract_id = c.id)`
+  );
+
+  for (const c of contracts) {
+    const codes = parseLegacySubscriberCodes(c.subscriber_codes);
+    const total = Math.round(Number(c.total_value) || 0);
+    const nowIso = new Date().toISOString();
+    const note = "Tách tự động từ đơn cũ";
+
+    const rows =
+      codes.length === 0
+        ? [{ subscriberCode: null as string | null, unitPrice: total }]
+        : codes.map((code, idx) => {
+            const n = codes.length;
+            const base = Math.floor(total / n);
+            const remainder = total - base * n;
+            return { subscriberCode: code, unitPrice: base + (idx === 0 ? remainder : 0) };
+          });
+
+    let lineNo = 1;
+    for (const row of rows) {
+      const id = `CI-LEG-${c.id}-${lineNo}`;
+      await run(
+        `INSERT INTO contract_items (
+          id, contract_id, line_no, line_type, service_group, service_name, package_name,
+          subscriber_code, quantity, unit_price, amount, term_months, start_date, note, legacy, created_at
+        ) VALUES (?, ?, ?, 'service', ?, ?, ?, ?, 1, ?, ?, ?, NULL, ?, TRUE, ?)`,
+        [
+          id,
+          c.id,
+          lineNo,
+          c.service_group ?? null,
+          c.service_name ?? null,
+          c.package_name ?? null,
+          row.subscriberCode,
+          row.unitPrice,
+          row.unitPrice,
+          c.term_months ?? null,
+          note,
+          nowIso,
+        ]
+      );
+      lineNo++;
+    }
+  }
 }
