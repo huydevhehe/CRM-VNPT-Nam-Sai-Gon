@@ -8,6 +8,10 @@ const { LeadService, LeadServiceError } = await import("./lead.service.js");
 
 await initDatabase();
 
+const ONLINE_SOURCE_ID = (
+  await query<{ id: string }>("SELECT id FROM channel_sources WHERE kind = 'online' ORDER BY sort_order LIMIT 1")
+)[0].id;
+
 test("create accepts new lead group names", async () => {
   const service = new LeadService();
   const suffix = Date.now();
@@ -16,6 +20,7 @@ test("create accepts new lead group names", async () => {
     phone: `090${String(suffix).slice(-7)}`,
     group: "Lead bán chéo DV",
     channel: "Online",
+    channelSourceId: ONLINE_SOURCE_ID,
     staffName: "Nguyễn Thị Tình",
     expectedValue: 1000000,
   });
@@ -34,6 +39,7 @@ test("create rejects old lead group names", async () => {
         phone: `090${String(suffix).slice(-7)}`,
         group: "Khách hàng mới",
         channel: "Online",
+    channelSourceId: ONLINE_SOURCE_ID,
         staffName: "Nguyễn Thị Tình",
         expectedValue: 1000000,
       });
@@ -72,6 +78,7 @@ test("create without expectedValue stores 0", async () => {
     phone: `090${String(suffix).slice(-7)}`,
     group: "Lead KH mới",
     channel: "Online",
+    channelSourceId: ONLINE_SOURCE_ID,
     staffName: "Nguyễn Thị Tình",
   });
 
@@ -97,6 +104,7 @@ test("create with RANDOM_STAFF_TOKEN picks an active AM", async () => {
     phone: `090${String(suffix).slice(-7)}`,
     group: "Lead KH mới",
     channel: "Online",
+    channelSourceId: ONLINE_SOURCE_ID,
     staffName: RANDOM_STAFF_TOKEN,
   });
 
@@ -138,6 +146,7 @@ test("create with RANDOM_STAFF_TOKEN never picks inactive staff (deterministic, 
       phone: `09${String(suffix).slice(-7)}${index}`,
       group: "Lead KH mới",
       channel: "Online",
+    channelSourceId: ONLINE_SOURCE_ID,
       staffName: RANDOM_STAFF_TOKEN,
     });
 
@@ -160,6 +169,7 @@ test("create rejects unknown staffName", async () => {
         phone: `090${String(suffix).slice(-7)}`,
         group: "Lead KH mới",
         channel: "Online",
+    channelSourceId: ONLINE_SOURCE_ID,
         staffName: "Tên Nhân Viên Hoàn Toàn Không Tồn Tại 999",
       });
     },
@@ -180,6 +190,7 @@ test("updateNote saves trimmed note", async () => {
     phone: `090${String(suffix).slice(-7)}`,
     group: "Lead KH mới",
     channel: "Online",
+    channelSourceId: ONLINE_SOURCE_ID,
     staffName: "Nguyễn Thị Tình",
   });
 
@@ -195,6 +206,7 @@ test("updateNote with empty string clears note", async () => {
     phone: `090${String(suffix).slice(-7)}`,
     group: "Lead KH mới",
     channel: "Online",
+    channelSourceId: ONLINE_SOURCE_ID,
     staffName: "Nguyễn Thị Tình",
   });
 
@@ -211,6 +223,7 @@ test("updateNote rejects 1001 chars", async () => {
     phone: `090${String(suffix).slice(-7)}`,
     group: "Lead KH mới",
     channel: "Online",
+    channelSourceId: ONLINE_SOURCE_ID,
     staffName: "Nguyễn Thị Tình",
   });
 
@@ -241,4 +254,71 @@ test("updateNote 404 on unknown id", async () => {
       return true;
     }
   );
+});
+
+test("remove deletes lead with no contract", async () => {
+  const service = new LeadService();
+  const suffix = Date.now();
+  const lead = await service.create({
+    customerName: `KH Xóa Lead ${suffix}`,
+    phone: `090${String(suffix).slice(-7)}`,
+    group: "Lead KH mới",
+    channel: "Online",
+    channelSourceId: ONLINE_SOURCE_ID,
+    staffName: "Nguyễn Thị Tình",
+  });
+
+  await service.remove(lead.id, { isAdmin: true, name: "Admin Test" });
+
+  const rows = await query("SELECT id FROM leads WHERE id = ?", [lead.id]);
+  assert.equal(rows.length, 0);
+});
+
+test("remove 404 on unknown id", async () => {
+  const service = new LeadService();
+  await assert.rejects(
+    async () => {
+      await service.remove("UNKNOWN-LEAD-ID-999", { isAdmin: true, name: "Admin Test" });
+    },
+    (err: any) => {
+      assert.ok(err instanceof LeadServiceError);
+      assert.equal(err.message, "Không tìm thấy Lead");
+      assert.equal(err.status, 404);
+      return true;
+    }
+  );
+});
+
+test("remove 409 when lead already used to create a contract", async () => {
+  const service = new LeadService();
+  const suffix = Date.now();
+  const lead = await service.create({
+    customerName: `KH Lead Có Đơn ${suffix}`,
+    phone: `090${String(suffix).slice(-7)}`,
+    group: "Lead KH mới",
+    channel: "Online",
+    channelSourceId: ONLINE_SOURCE_ID,
+    staffName: "Nguyễn Thị Tình",
+  });
+
+  await run(
+    `INSERT INTO contracts (id, transaction_code, customer_name, subscriber_codes, channel, lead_id)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [`CTR-TEST-${suffix}`, `GD-TEST-${suffix}`, lead.customerName, "TB-001", "Online", lead.id]
+  );
+
+  await assert.rejects(
+    async () => {
+      await service.remove(lead.id, { isAdmin: true, name: "Admin Test" });
+    },
+    (err: any) => {
+      assert.ok(err instanceof LeadServiceError);
+      assert.equal(err.status, 409);
+      assert.match(err.message, /đơn hàng/);
+      return true;
+    }
+  );
+
+  const stillThere = await query("SELECT id FROM leads WHERE id = ?", [lead.id]);
+  assert.equal(stillThere.length, 1);
 });

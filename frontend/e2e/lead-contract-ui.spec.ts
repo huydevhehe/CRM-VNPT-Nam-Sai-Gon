@@ -55,15 +55,15 @@ test.describe("Lead / Hợp đồng / Hoa hồng gắn CTV và Phường trên t
     await expect(createModal.locator("label:text-is('Phường')")).toHaveCount(0);
     await expect(createModal.locator("label:text-is('Giá trị dự kiến (₫)')")).toHaveCount(0);
 
-    // Ô chọn CTV chỉ hiện khi kênh = "CTV giới thiệu"
-    await expect(fieldByLabel(createModal, "Cộng tác viên giới thiệu")).toHaveCount(0);
+    // Mặc định kênh là "Online" nên "Chi tiết kênh" đang hiện ô chọn nguồn Online, chưa phải CTV.
+    await expect(createModal.getByTestId("channel-detail-picker")).toContainText("Nguồn Online");
 
     await fieldByLabel(createModal, "Tên khách hàng / Đầu mối").fill(customerName);
     await fieldByLabel(createModal, "Số điện thoại").fill(phone);
     await fieldByLabel(createModal, "AM Phụ trách").selectOption("Nguyễn Thị Tình");
     await fieldByLabel(createModal, "Kênh phát triển").selectOption("CTV giới thiệu");
 
-    const ctvSelect = fieldByLabel(createModal, "Cộng tác viên giới thiệu");
+    const ctvSelect = createModal.getByTestId("channel-detail-select");
     await expect(ctvSelect).toBeVisible();
     await ctvSelect.selectOption(ctv.id);
 
@@ -89,15 +89,19 @@ test.describe("Lead / Hợp đồng / Hoa hồng gắn CTV và Phường trên t
     });
 
     await expect(row).toContainText(STAFF_B);
-    await expect(row).toContainText(wards[1].ward_name);
+    // Bảng Lead không còn cột Phường (phản hồi 17/11): phường chỉ còn trong hộp Phân công.
+    await expect(page.getByRole("columnheader", { name: "Phường" })).toHaveCount(0);
 
     // Giữ nguyên sau reload (đã ghi DB thật)
     await page.reload();
     await page.getByPlaceholder("Tìm theo tên Lead, SĐT, kênh phát triển...").fill(phone);
     const reloaded = page.locator("table tbody tr", { hasText: phone });
     await expect(reloaded).toContainText(STAFF_B);
-    await expect(reloaded).toContainText(wards[1].ward_name);
-    await expect(reloaded).toContainText("CTV E2E Test");
+    await expect(reloaded).toContainText("CTV › CTV E2E Test");
+
+    // Phường đã ghi DB thật: mở lại hộp Phân công thấy đúng phường đã chọn.
+    await reloaded.getByRole("button", { name: "Phân công" }).click();
+    await expect(fieldByLabel(page, "Phường")).toHaveValue(wards[1].id);
   });
 
   test("tạo lead để AM Ngẫu nhiên thì bảng hiển thị một AM đang hoạt động thật (không phải __RANDOM__)", async ({
@@ -132,6 +136,8 @@ test.describe("Lead / Hợp đồng / Hoa hồng gắn CTV và Phường trên t
 
     await fieldByLabel(createModal, "Tên khách hàng / Đầu mối").fill(customerName);
     await fieldByLabel(createModal, "Số điện thoại").fill(phone);
+    // Kênh mặc định là Online: bắt buộc chọn nguồn Online ("Chi tiết kênh").
+    await createModal.getByTestId("channel-detail-select").selectOption({ label: "Zalo Ads" });
     await createModal.getByRole("button", { name: "Tạo Lead", exact: true }).click();
     await expect(createModal).not.toBeVisible({ timeout: 10_000 });
 
@@ -165,7 +171,7 @@ test.describe("Lead / Hợp đồng / Hoa hồng gắn CTV và Phường trên t
           customerName: `KH Nhãn ${suffix}-${i}`,
           phone,
           group,
-          channel: "Online",
+          channel: "Chiến dịch",
           staffName: "Nguyễn Thị Tình",
           expectedValue: 1000000,
         },
@@ -222,13 +228,14 @@ test.describe("Lead / Hợp đồng / Hoa hồng gắn CTV và Phường trên t
     await expect(page.getByRole("heading", { name: "Tạo đơn hàng" })).toBeVisible();
 
     await fieldByLabel(page, "Chọn từ Lead chốt thành công (tùy chọn)").selectOption(lead.id);
-    // Chọn lead tự khớp khách hàng trùng tên và điền giá trị
+    // Chọn lead tự khớp khách hàng trùng tên và điền giá trị (T9: dòng dịch vụ đầu tiên của đơn)
     await expect(page.getByTestId("selected-customer")).toContainText(customerName);
-    await expect(fieldByLabel(page, "Giá trị đơn hàng (₫)")).toHaveValue("20000000");
+    await expect(page.getByTestId("item-unit-price-0")).toHaveValue("20.000.000");
     await fieldByLabel(page, "Mã giao dịch").fill(transactionCode);
-    await fieldByLabel(page, "Mã thuê bao (phân tách bởi dấu phẩy)").fill("0901112223");
+    await page.getByTestId("item-subscriber-code-0").fill("0901112223");
     await fieldByLabel(page, "Thời hạn (tháng)").fill("6");
-    await expect(fieldByLabel(page, "Phường")).toHaveValue(wards[0].id);
+    // Đơn hàng không còn ô Phường (phản hồi 17/11).
+    await expect(page.locator("form label:text-is('Phường')")).toHaveCount(0);
 
     await page.locator("form").getByRole("button", { name: "Tạo đơn hàng" }).click();
     await expect(page.getByRole("heading", { name: "Tạo đơn hàng" })).not.toBeVisible({
@@ -274,7 +281,7 @@ test.describe("Lead / Hợp đồng / Hoa hồng gắn CTV và Phường trên t
         customerName: `KH Won Filter ${suffix}`,
         phone: `09${String(suffix).slice(-8)}`,
         group: "Lead KH mới",
-        channel: "Online",
+        channel: "Chiến dịch",
         staffName: "Nguyễn Thị Tình",
       },
     });

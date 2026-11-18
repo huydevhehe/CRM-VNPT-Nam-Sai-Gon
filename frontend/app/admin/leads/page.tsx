@@ -1,41 +1,44 @@
 "use client";
 
-import { useEffect, useState, FormEvent } from "react";
-import { Target, UserPlus, PhoneCall, CheckCircle2, TrendingUp, AlertTriangle, X, Pencil } from "lucide-react";
+import { useCallback, useEffect, useState, FormEvent } from "react";
+import { Target, UserPlus, PhoneCall, CheckCircle2, TrendingUp, AlertTriangle, X, Pencil, Undo2, Trash2 } from "lucide-react";
 import KpiCard from "@/components/admin/shared/KpiCard";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
 import StatusSelect from "@/components/admin/shared/StatusSelect";
+import ChannelDetailPicker from "@/components/admin/shared/ChannelDetailPicker";
+import ConfirmDeleteDialog from "@/components/admin/shared/ConfirmDeleteDialog";
+import StageRequestsPanel from "./StageRequestsPanel";
 import { TableFilter } from "@/lib/table-filters";
 import {
   getLeads,
   createLead,
+  updateLead,
   updateLeadStatus,
   assignLead,
   updateLeadNote,
-  getCtvOptions,
-  CtvOption,
+  deleteLead,
+  requestLeadStageChange,
+  getLeadStageRequests,
+  UpdateLeadInput,
 } from "@/lib/api/leads.api";
 import { getTerritories } from "@/lib/api/territories.api";
 import { getStaff } from "@/lib/api/staff.api";
 import { useAuth } from "@/lib/auth/auth-context";
 import { LeadRecord, LeadStatus, StaffRecord, TerritoryRecord } from "@/lib/crm/types/crm.types";
 import { LEAD_CHANNELS, LEAD_GROUP_LABEL } from "@/lib/crm/constants/org.constants";
-
-const LEAD_STATUSES: LeadStatus[] = [
-  "Mới tiếp nhận",
-  "Đã liên hệ",
-  "Đang tư vấn",
-  "Chốt thành công",
-  "Thất bại",
-];
+import { isBackwardMove, LEAD_STATUSES } from "@/lib/crm/lead-status";
+import {
+  ChannelDetailValue,
+  EMPTY_CHANNEL_DETAIL,
+  channelNeedsDetail,
+  formatChannelDetail,
+} from "@/lib/crm/channel-detail";
 
 const GROUP_OPTIONS: LeadRecord["group"][] = [
   "Lead KH mới",
   "Lead bán chéo DV",
   "Lead gia hạn",
 ];
-
-const CTV_CHANNEL: LeadRecord["channel"] = "CTV giới thiệu";
 
 interface LeadFormState {
   customerName: string;
@@ -44,7 +47,8 @@ interface LeadFormState {
   channel: LeadRecord["channel"];
   staffName: string;
   demandDescription: string;
-  referredByCtvId: string;
+  detail: ChannelDetailValue;
+  expectedValue: string;
   note: string;
 }
 
@@ -60,9 +64,32 @@ const EMPTY_FORM: LeadFormState = {
   channel: LEAD_CHANNELS[0],
   staffName: "__RANDOM__",
   demandDescription: "",
-  referredByCtvId: "",
+  detail: EMPTY_CHANNEL_DETAIL,
+  expectedValue: "0",
   note: "",
 };
+
+function formFromLead(lead: LeadRecord): LeadFormState {
+  return {
+    customerName: lead.customerName,
+    phone: lead.phone,
+    group: lead.group,
+    channel: lead.channel,
+    staffName: lead.staffName,
+    demandDescription: lead.demandDescription ?? "",
+    detail: {
+      channelSourceId: lead.channelSourceId ?? "",
+      referredByCtvId: lead.referredByCtvId ?? "",
+    },
+    expectedValue: String(lead.expectedValue ?? 0),
+    note: lead.note ?? "",
+  };
+}
+
+type PageTab = "leads" | "requests";
+
+/** Dòng hiển thị: thêm chuỗi "Chi tiết kênh" để tìm kiếm và xuất CSV khớp với cột trên bảng. */
+type LeadRowView = LeadRecord & { channelDetail: string };
 
 export default function LeadsPage() {
   const { user } = useAuth();
@@ -71,12 +98,16 @@ export default function LeadsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [tab, setTab] = useState<PageTab>("leads");
+  const [pendingCount, setPendingCount] = useState(0);
+
+  // Form dùng chung cho Tạo mới (editTarget = null) và Sửa thông tin (Admin).
   const [showForm, setShowForm] = useState(false);
+  const [editTarget, setEditTarget] = useState<LeadRecord | null>(null);
   const [form, setForm] = useState<LeadFormState>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const [ctvOptions, setCtvOptions] = useState<CtvOption[]>([]);
   const [territories, setTerritories] = useState<TerritoryRecord[]>([]);
   const [staffList, setStaffList] = useState<StaffRecord[]>([]);
 
@@ -90,7 +121,15 @@ export default function LeadsPage() {
   const [savingNote, setSavingNote] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
 
-  const wardNameById = new Map(territories.map((t) => [t.id, t.wardName]));
+  // Nhân viên xin quay lại bước trước (cần Admin duyệt).
+  const [requestTarget, setRequestTarget] = useState<LeadRecord | null>(null);
+  const [requestToStatus, setRequestToStatus] = useState<LeadStatus>("Mới tiếp nhận");
+  const [requestReason, setRequestReason] = useState("");
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const [requesting, setRequesting] = useState(false);
+  const [requestNotice, setRequestNotice] = useState<string | null>(null);
+
+  const [deleteTarget, setDeleteTarget] = useState<LeadRecord | null>(null);
 
   const activeAms = staffList.filter(
     (s) =>
@@ -98,20 +137,39 @@ export default function LeadsPage() {
       s.status === "Đang hoạt động"
   );
 
-  // Danh mục phụ (CTV, Phường, Nhân viên): lỗi ở đây không được làm hỏng bảng Lead.
+  // Danh mục phụ (Phường cho hộp Phân công, Nhân viên): lỗi ở đây không được làm hỏng bảng Lead.
   useEffect(() => {
     let isMounted = true;
-    Promise.allSettled([getCtvOptions(), getTerritories(), getStaff()]).then(
-      ([ctvs, wards, staff]) => {
-        if (!isMounted) return;
-        if (ctvs.status === "fulfilled") setCtvOptions(ctvs.value);
-        if (wards.status === "fulfilled") setTerritories(wards.value);
-        if (staff.status === "fulfilled") setStaffList(staff.value);
-      }
-    );
+    Promise.allSettled([getTerritories(), getStaff()]).then(([wards, staff]) => {
+      if (!isMounted) return;
+      if (wards.status === "fulfilled") setTerritories(wards.value);
+      if (staff.status === "fulfilled") setStaffList(staff.value);
+    });
     return () => {
       isMounted = false;
     };
+  }, []);
+
+  const refreshPendingCount = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      const pending = await getLeadStageRequests("Chờ duyệt");
+      setPendingCount(pending.length);
+    } catch {
+      // Số lượng chỉ là thông tin phụ: lỗi không được làm hỏng trang.
+    }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    refreshPendingCount();
+  }, [refreshPendingCount]);
+
+  const reloadLeads = useCallback(async () => {
+    try {
+      setData(await getLeads());
+    } catch {
+      // Giữ dữ liệu đang có nếu tải lại thất bại.
+    }
   }, []);
 
   useEffect(() => {
@@ -147,30 +205,79 @@ export default function LeadsPage() {
     };
   }, []);
 
+  function openCreate() {
+    setFormError(null);
+    setEditTarget(null);
+    setForm(EMPTY_FORM);
+    setShowForm(true);
+  }
+
+  function openEdit(lead: LeadRecord) {
+    setFormError(null);
+    setEditTarget(lead);
+    setForm(formFromLead(lead));
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    setShowForm(false);
+    setEditTarget(null);
+  }
+
+  // Khi sửa Lead cũ chưa có chi tiết kênh và không đổi kênh thì không bắt buộc chọn chi tiết.
+  const originalHasDetail = Boolean(editTarget?.channelSourceId || editTarget?.referredByCtvId);
+  const detailRequired = !editTarget || form.channel !== editTarget.channel || originalHasDetail;
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setFormError(null);
     setSubmitting(true);
 
     try {
-      const created = await createLead({
-        customerName: form.customerName,
-        phone: form.phone,
-        group: form.group,
-        channel: form.channel,
-        staffName: isAdmin ? form.staffName : (user?.name ?? ""),
-        status: "Mới tiếp nhận",
-        demandDescription: form.demandDescription,
-        referredByCtvId: form.channel === CTV_CHANNEL ? form.referredByCtvId || null : null,
-        note: form.note.trim() ? form.note.trim() : undefined,
-      });
-
-      setData((prev) => [created, ...prev]);
-      setShowForm(false);
+      if (editTarget) {
+        const patch: UpdateLeadInput = {
+          customerName: form.customerName,
+          phone: form.phone,
+          group: form.group,
+          demandDescription: form.demandDescription,
+          expectedValue: Number(form.expectedValue || 0),
+          note: form.note.trim() ? form.note.trim() : null,
+        };
+        const detailChanged =
+          form.channel !== editTarget.channel ||
+          form.detail.channelSourceId !== (editTarget.channelSourceId ?? "") ||
+          form.detail.referredByCtvId !== (editTarget.referredByCtvId ?? "");
+        if (detailChanged) {
+          patch.channel = form.channel;
+          patch.channelSourceId = form.detail.channelSourceId || null;
+          patch.referredByCtvId = form.detail.referredByCtvId || null;
+        }
+        const updated = await updateLead(editTarget.id, patch);
+        setData((prev) => prev.map((row) => (row.id === updated.id ? updated : row)));
+      } else {
+        const created = await createLead({
+          customerName: form.customerName,
+          phone: form.phone,
+          group: form.group,
+          channel: form.channel,
+          staffName: isAdmin ? form.staffName : (user?.name ?? ""),
+          status: "Mới tiếp nhận",
+          demandDescription: form.demandDescription,
+          channelSourceId: form.detail.channelSourceId || null,
+          referredByCtvId: form.detail.referredByCtvId || null,
+          note: form.note.trim() ? form.note.trim() : undefined,
+        });
+        setData((prev) => [created, ...prev]);
+      }
+      closeForm();
       setForm(EMPTY_FORM);
     } catch (err) {
       setFormError(
-        err instanceof Error ? err.message : "Không thể tạo Lead. Vui lòng thử lại."
+        err instanceof Error
+          ? err.message
+          : editTarget
+            ? "Không thể lưu thông tin Lead. Vui lòng thử lại."
+            : "Không thể tạo Lead. Vui lòng thử lại."
       );
     } finally {
       setSubmitting(false);
@@ -197,6 +304,13 @@ export default function LeadsPage() {
     } finally {
       setSavingNote(false);
     }
+  }
+
+  async function handleConfirmDeleteLead() {
+    if (!deleteTarget) return;
+    await deleteLead(deleteTarget.id);
+    setData((prev) => prev.filter((item) => item.id !== deleteTarget.id));
+    setDeleteTarget(null);
   }
 
   function openAssign(lead: LeadRecord) {
@@ -226,7 +340,49 @@ export default function LeadsPage() {
     }
   }
 
-  const columns: Column<LeadRecord>[] = [
+  function openRequest(lead: LeadRecord, toStatus?: LeadStatus) {
+    const options = LEAD_STATUSES.filter((s) => isBackwardMove(lead.status, s));
+    setRequestTarget(lead);
+    setRequestToStatus(
+      toStatus && options.includes(toStatus) ? toStatus : (options[options.length - 1] ?? "Mới tiếp nhận")
+    );
+    setRequestReason("");
+    setRequestError(null);
+  }
+
+  async function handleSubmitRequest(e: FormEvent) {
+    e.preventDefault();
+    if (!requestTarget) return;
+    setRequesting(true);
+    setRequestError(null);
+    try {
+      await requestLeadStageChange(requestTarget.id, { toStatus: requestToStatus, reason: requestReason });
+      setRequestTarget(null);
+      setRequestNotice("Đã gửi yêu cầu quay lại bước trước. Vui lòng chờ Admin duyệt.");
+      await reloadLeads();
+    } catch (err) {
+      setRequestError(err instanceof Error ? err.message : "Không gửi được yêu cầu. Vui lòng thử lại.");
+    } finally {
+      setRequesting(false);
+    }
+  }
+
+  async function handleStatusChange(item: LeadRecord, next: LeadStatus) {
+    // Nhân viên không được lùi bước: mở hộp xin duyệt thay vì gọi API (API vẫn chặn 409).
+    if (!isAdmin && isBackwardMove(item.status, next)) {
+      openRequest(item, next);
+      return;
+    }
+    const updated = await updateLeadStatus(item.id, next);
+    setData((prev) => prev.map((row) => (row.id === item.id ? updated : row)));
+  }
+
+  const rows: LeadRowView[] = data.map((lead) => ({
+    ...lead,
+    channelDetail: formatChannelDetail(lead.channel, lead.channelSourceName, lead.referredByCtvName),
+  }));
+
+  const columns: Column<LeadRowView>[] = [
     {
       header: "Khách hàng / Đầu mối",
       accessorKey: "customerName",
@@ -256,21 +412,14 @@ export default function LeadsPage() {
     {
       header: "Kênh phát triển",
       accessorKey: "channel",
-      cell: (item) => (
-        <div>
-          <span className="font-medium text-slate-600">{item.channel}</span>
-          {item.referredByCtvName && (
-            <div className="text-[11px] text-slate-500">CTV: {item.referredByCtvName}</div>
-          )}
-        </div>
-      ),
+      cell: (item) => <span className="font-medium text-slate-600">{item.channel}</span>,
     },
     {
-      header: "Phường",
-      accessorKey: "territoryId",
+      header: "Chi tiết kênh",
+      accessorKey: "channelDetail",
       cell: (item) => (
-        <span className="text-slate-600">
-          {item.territoryId ? wardNameById.get(item.territoryId) ?? "—" : "—"}
+        <span className="text-slate-600" data-testid="lead-channel-detail">
+          {item.channelDetail}
         </span>
       ),
     },
@@ -296,16 +445,33 @@ export default function LeadsPage() {
       header: "Trạng thái",
       accessorKey: "status",
       cell: (item) => (
-        <StatusSelect
-          value={item.status}
-          options={LEAD_STATUSES}
-          onChange={async (next) => {
-            const updated = await updateLeadStatus(item.id, next);
-            setData((prev) =>
-              prev.map((row) => (row.id === item.id ? updated : row))
-            );
-          }}
-        />
+        <div className="flex flex-col gap-1">
+          <StatusSelect
+            value={item.status}
+            options={LEAD_STATUSES}
+            onChange={(next) => handleStatusChange(item, next)}
+          />
+          {item.pendingStageRequest && (
+            <span
+              data-testid="lead-pending-request"
+              className="text-[10px] font-semibold text-amber-600"
+              title={item.pendingStageRequest.reason}
+            >
+              Chờ Admin duyệt quay lại: {item.pendingStageRequest.toStatus}
+            </span>
+          )}
+          {!isAdmin && !item.pendingStageRequest && item.status !== LEAD_STATUSES[0] && (
+            <button
+              type="button"
+              onClick={() => openRequest(item)}
+              data-testid="lead-request-back"
+              className="flex items-center gap-1 text-left text-[10px] font-semibold text-slate-500 hover:text-vnpt"
+            >
+              <Undo2 className="h-3 w-3" />
+              Yêu cầu quay lại bước…
+            </button>
+          )}
+        </div>
       ),
     },
     {
@@ -334,9 +500,37 @@ export default function LeadsPage() {
         </div>
       ),
     },
+    ...(isAdmin
+      ? [
+          {
+            header: "Thao tác",
+            cell: (item: LeadRowView) => (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => openEdit(item)}
+                  data-testid="lead-edit"
+                  className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-bold text-vnpt hover:bg-slate-50"
+                >
+                  Sửa
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeleteTarget(item)}
+                  data-testid="lead-delete"
+                  title="Xóa Lead"
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ),
+          } satisfies Column<LeadRowView>,
+        ]
+      : []),
   ];
 
-  const leadFilters: TableFilter<LeadRecord>[] = [
+  const leadFilters: TableFilter<LeadRowView>[] = [
     {
       id: "group",
       label: "Loại lead",
@@ -357,12 +551,9 @@ export default function LeadsPage() {
       label: "Nhân viên phụ trách",
       getValue: (r) => r.staffName,
     },
-    {
-      id: "ward",
-      label: "Phường",
-      getValue: (r) => (r.territoryId ? wardNameById.get(r.territoryId) ?? "—" : "—"),
-    },
   ];
+
+  const isEdit = Boolean(editTarget);
 
   return (
     <div className="space-y-6">
@@ -377,17 +568,26 @@ export default function LeadsPage() {
           </p>
         </div>
         <button
-          onClick={() => {
-            setFormError(null);
-            setForm(EMPTY_FORM);
-            setShowForm(true);
-          }}
+          onClick={openCreate}
           className="flex h-9 items-center gap-1.5 rounded-xl bg-vnpt px-3.5 text-xs font-bold text-white shadow-xs hover:bg-vnpt-dark"
         >
           <UserPlus className="h-4 w-4" />
           <span className="btn-label">Tạo Lead mới</span>
         </button>
       </div>
+
+      {requestNotice && (
+        <div
+          role="status"
+          data-testid="lead-request-notice"
+          className="flex items-start justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700"
+        >
+          <span>{requestNotice}</span>
+          <button type="button" onClick={() => setRequestNotice(null)} aria-label="Đóng thông báo">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -417,8 +617,51 @@ export default function LeadsPage() {
         />
       </div>
 
-      {/* Table */}
-      {error ? (
+      {/* Tab: Danh sách / Yêu cầu chờ duyệt (Admin) */}
+      {isAdmin && (
+        <div className="flex gap-2" role="tablist" aria-label="Chế độ xem Lead">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "leads"}
+            onClick={() => setTab("leads")}
+            className={`rounded-xl px-3.5 py-2 text-xs font-bold ${
+              tab === "leads" ? "bg-vnpt text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            Danh sách Lead
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "requests"}
+            data-testid="tab-stage-requests"
+            onClick={() => setTab("requests")}
+            className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold ${
+              tab === "requests" ? "bg-vnpt text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            Yêu cầu chờ duyệt
+            <span
+              data-testid="stage-requests-count"
+              className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                pendingCount > 0 ? "bg-amber-400 text-amber-950" : "bg-slate-200 text-slate-600"
+              }`}
+            >
+              {pendingCount}
+            </span>
+          </button>
+        </div>
+      )}
+
+      {isAdmin && tab === "requests" ? (
+        <StageRequestsPanel
+          onDecided={() => {
+            refreshPendingCount();
+            reloadLeads();
+          }}
+        />
+      ) : error ? (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50/70 px-6 py-10 text-center">
           <AlertTriangle className="h-6 w-6 text-rose-500" />
           <p className="text-sm font-semibold text-rose-700">
@@ -435,21 +678,25 @@ export default function LeadsPage() {
           title="Danh sách Lead & Cơ hội"
           subtitle="Quản lý phễu khách hàng theo từng kênh và từng AM phụ trách"
           columns={columns}
-          data={data}
+          data={rows}
           filters={leadFilters}
           searchPlaceholder="Tìm theo tên Lead, SĐT, kênh phát triển..."
           exportFileName="vnpt_leads"
         />
       )}
 
-      {/* Create Lead Modal */}
+      {/* Create / Edit Lead Modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+          <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900">Tạo Lead mới</h3>
+              <h3 className="text-base font-bold text-slate-900">
+                {isEdit ? "Sửa thông tin Lead" : "Tạo Lead mới"}
+              </h3>
               <button
-                onClick={() => setShowForm(false)}
+                type="button"
+                onClick={closeForm}
+                aria-label="Đóng"
                 className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
               >
                 <X className="h-4 w-4" />
@@ -481,30 +728,46 @@ export default function LeadsPage() {
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
                   />
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-600">
-                    AM Phụ trách
-                  </label>
-                  <select
-                    value={isAdmin ? form.staffName : (user?.name ?? "")}
-                    onChange={(e) => setForm({ ...form, staffName: e.target.value })}
-                    disabled={!isAdmin}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none disabled:bg-slate-50 disabled:text-slate-500"
-                  >
-                    {isAdmin ? (
-                      <>
-                        <option value="__RANDOM__">🎲 Ngẫu nhiên</option>
-                        {activeAms.map((s) => (
-                          <option key={s.id} value={s.name}>
-                            {s.name}
-                          </option>
-                        ))}
-                      </>
-                    ) : (
-                      <option value={user?.name ?? ""}>{user?.name ?? ""}</option>
-                    )}
-                  </select>
-                </div>
+                {isEdit ? (
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-600">
+                      Giá trị dự kiến (₫)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={form.expectedValue}
+                      onChange={(e) => setForm({ ...form, expectedValue: e.target.value })}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-600">
+                      AM Phụ trách
+                    </label>
+                    <select
+                      value={isAdmin ? form.staffName : (user?.name ?? "")}
+                      onChange={(e) => setForm({ ...form, staffName: e.target.value })}
+                      disabled={!isAdmin}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none disabled:bg-slate-50 disabled:text-slate-500"
+                    >
+                      {isAdmin ? (
+                        <>
+                          <option value="__RANDOM__">🎲 Ngẫu nhiên</option>
+                          {activeAms.map((s) => (
+                            <option key={s.id} value={s.name}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </>
+                      ) : (
+                        <option value={user?.name ?? ""}>{user?.name ?? ""}</option>
+                      )}
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -536,7 +799,7 @@ export default function LeadsPage() {
                       setForm({
                         ...form,
                         channel: e.target.value as LeadRecord["channel"],
-                        referredByCtvId: "",
+                        detail: EMPTY_CHANNEL_DETAIL,
                       })
                     }
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
@@ -550,25 +813,14 @@ export default function LeadsPage() {
                 </div>
               </div>
 
-              {form.channel === CTV_CHANNEL && (
-                <div>
-                  <label className="mb-1 block text-xs font-semibold text-slate-600">
-                    Cộng tác viên giới thiệu
-                  </label>
-                  <select
-                    required
-                    value={form.referredByCtvId}
-                    onChange={(e) => setForm({ ...form, referredByCtvId: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
-                  >
-                    <option value="">— Chọn cộng tác viên —</option>
-                    {ctvOptions.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.referralCode})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              {channelNeedsDetail(form.channel) && (
+                <ChannelDetailPicker
+                  channel={form.channel}
+                  value={form.detail}
+                  onChange={(detail) => setForm({ ...form, detail })}
+                  required={detailRequired}
+                  currentLabel={editTarget?.channelSourceName ?? editTarget?.referredByCtvName}
+                />
               )}
 
               <div>
@@ -607,7 +859,7 @@ export default function LeadsPage() {
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowForm(false)}
+                  onClick={closeForm}
                   className="rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
                 >
                   Hủy
@@ -617,7 +869,13 @@ export default function LeadsPage() {
                   disabled={submitting}
                   className="btn-label rounded-xl bg-vnpt px-3.5 py-2 text-white hover:bg-vnpt-dark disabled:opacity-60"
                 >
-                  {submitting ? "Đang tạo..." : "Tạo Lead"}
+                  {submitting
+                    ? isEdit
+                      ? "Đang lưu..."
+                      : "Đang tạo..."
+                    : isEdit
+                      ? "Lưu thay đổi"
+                      : "Tạo Lead"}
                 </button>
               </div>
             </form>
@@ -707,6 +965,92 @@ export default function LeadsPage() {
         </div>
       )}
 
+      {/* Request stage change Modal (nhân viên xin quay lại bước trước) */}
+      {requestTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
+          <div
+            role="dialog"
+            aria-label="Yêu cầu quay lại bước trước"
+            data-testid="lead-request-dialog"
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-900">Yêu cầu quay lại bước trước</h3>
+              <button
+                type="button"
+                onClick={() => setRequestTarget(null)}
+                aria-label="Đóng"
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="mb-1 text-xs text-slate-500">
+              Lead: <span className="font-semibold text-slate-700">{requestTarget.customerName}</span> · đang ở{" "}
+              <span className="font-semibold text-slate-700">{requestTarget.status}</span>
+            </p>
+            <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              Không thể quay lại bước trước. Hãy gửi yêu cầu để Admin duyệt.
+            </p>
+
+            <form onSubmit={handleSubmitRequest} className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-600">Quay lại trạng thái</label>
+                <select
+                  value={requestToStatus}
+                  onChange={(e) => setRequestToStatus(e.target.value as LeadStatus)}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
+                >
+                  {LEAD_STATUSES.filter((s) => isBackwardMove(requestTarget.status, s)).map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-slate-600">
+                  Lý do <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  maxLength={500}
+                  value={requestReason}
+                  onChange={(e) => setRequestReason(e.target.value)}
+                  placeholder="Vì sao cần quay lại bước này (tối đa 500 ký tự)..."
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
+                />
+              </div>
+
+              {requestError && (
+                <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">
+                  {requestError}
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRequestTarget(null)}
+                  className="rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={requesting || !requestReason.trim()}
+                  data-testid="lead-request-submit"
+                  className="btn-label rounded-xl bg-vnpt px-3.5 py-2 text-white hover:bg-vnpt-dark disabled:opacity-60"
+                >
+                  {requesting ? "Đang gửi..." : "Gửi yêu cầu"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Edit Note Modal */}
       {noteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
@@ -768,6 +1112,23 @@ export default function LeadsPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDeleteDialog
+        open={deleteTarget !== null}
+        title="Xóa Lead"
+        description={
+          deleteTarget ? (
+            <>
+              Xóa Lead của <strong>{deleteTarget.customerName}</strong> ({deleteTarget.phone})? Thao tác này không
+              thể hoàn tác.
+            </>
+          ) : (
+            ""
+          )
+        }
+        onConfirm={handleConfirmDeleteLead}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }
