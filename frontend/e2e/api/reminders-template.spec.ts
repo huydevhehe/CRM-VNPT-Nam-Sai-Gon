@@ -41,7 +41,8 @@ test.describe("API Mẫu email nhắc hết hạn", () => {
     const get = await request.get(`${API_URL}/reminders/template`, { headers: bearer(adminToken) });
     const { data } = await get.json();
     expect(data.subject).toBe("Nhắc {dịch vụ} của {tên khách}");
-    expect(data.body).toBe("Kính gửi {tên khách},\nHết hạn {ngày hết hạn}.");
+    // Mẫu văn bản thuần được lưu thành HTML: xuống dòng -> <br>.
+    expect(data.body).toBe("<p>Kính gửi {tên khách},<br>Hết hạn {ngày hết hạn}.</p>");
     expect(data.isDefault).toBe(false);
   });
 
@@ -71,17 +72,17 @@ test.describe("API Mẫu email nhắc hết hạn", () => {
     expect((await get.json()).data.subject).toBe("Nhắc {dịch vụ} của {tên khách}");
   });
 
-  test("Xem trước mẫu đang soạn: thay biến, escape HTML, không lưu", async ({ request }) => {
+  test("Xem trước mẫu đang soạn: thay biến, loại script, không lưu", async ({ request }) => {
     const res = await request.post(`${API_URL}/reminders/template/preview`, {
       headers: bearer(adminToken),
-      data: { subject: "Thử {tên khách}", body: "<script>x</script>\n{số ngày còn lại} ngày" },
+      data: { subject: "Thử {tên khách}", body: "<p><script>x</script><b>{số ngày còn lại}</b> ngày</p>" },
     });
     expect(res.status()).toBe(200);
     const { data } = await res.json();
     expect(data.subject).toBe("Thử Công ty TNHH ABC");
-    expect(data.html).not.toContain("<script>");
-    expect(data.html).toContain("&lt;script&gt;x&lt;/script&gt;<br>7 ngày");
-    expect(data.text).toContain("<script>x</script>");
+    expect(data.html).not.toContain("<script");
+    expect(data.html).toContain("<b>7</b> ngày");
+    expect(data.text).toBe("7 ngày");
 
     const saved = await request.post(`${API_URL}/reminders/template/preview`, {
       headers: bearer(adminToken),

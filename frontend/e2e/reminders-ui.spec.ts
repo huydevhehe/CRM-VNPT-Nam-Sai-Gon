@@ -13,14 +13,23 @@ test.describe("Menu Nhắc hết hạn (Email) (Đợt 10 - Task 5)", () => {
       await enabledCheckbox.check();
     }
 
-    const daysBeforeField = page.locator('input[placeholder="30, 7, 1"]');
-    await daysBeforeField.fill("10, 3");
+    // Số ngày nhắc là các chip: xoá hết mốc cũ rồi thêm 3 và 10 (tự sắp giảm dần).
+    const chips = page.locator('[data-testid^="days-chip-chung-"]');
+    while ((await chips.count()) > 0) {
+      await page.getByTestId("days-editor-chung").locator('button[aria-label^="Xóa mốc"]').first().click();
+    }
+    const addInput = page.getByLabel("Thêm mốc ngày nhắc (chung)");
+    await addInput.fill("3");
+    await addInput.press("Enter");
+    await addInput.fill("10");
+    await page.getByRole("button", { name: "Thêm mốc (chung)" }).click();
+    await expect(chips).toHaveText(["10 ngày", "3 ngày"]);
 
     await page.getByRole("button", { name: "Lưu cấu hình" }).click();
     await expect(page.getByText("Đã lưu cấu hình nhắc hết hạn.")).toBeVisible();
 
     await page.reload();
-    await expect(page.locator('input[placeholder="30, 7, 1"]')).toHaveValue("10, 3");
+    await expect(page.locator('[data-testid^="days-chip-chung-"]')).toHaveText(["10 ngày", "3 ngày"]);
 
     // Khôi phục lại để không ảnh hưởng các test khác chạy song song (tắt lại).
     const stillEnabled = page.getByLabel("Bật nhắc hết hạn tự động");

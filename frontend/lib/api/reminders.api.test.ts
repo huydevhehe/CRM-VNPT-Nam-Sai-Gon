@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { REMINDER_TEMPLATE_GROUPS, reminderTemplatePath } from "./reminders.api";
+import { REMINDER_TEMPLATE_GROUPS, normalizeDaysInput, reminderTemplatePath } from "./reminders.api";
 
 test("mẫu chung không có query group", () => {
   assert.equal(reminderTemplatePath(""), "/reminders/template");
@@ -14,4 +14,9 @@ test("mẫu nhóm mã hoá tên nhóm có dấu trong query", () => {
 
 test("danh sách nhóm khớp nhóm dịch vụ của hệ thống", () => {
   assert.deepEqual([...REMINDER_TEMPLATE_GROUPS], ["BRCĐ", "CNTT", "Di động"]);
+});
+
+test("normalizeDaysInput bỏ trùng và sắp giảm dần", () => {
+  assert.deepEqual(normalizeDaysInput([1, 30, 7, 7, 60]), [60, 30, 7, 1]);
+  assert.deepEqual(normalizeDaysInput([]), []);
 });

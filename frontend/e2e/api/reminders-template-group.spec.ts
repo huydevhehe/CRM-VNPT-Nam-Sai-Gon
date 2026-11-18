@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 import { ADMIN, AM, API_URL, apiLogin, bearer } from "./helpers";
 
 const GROUP_URL = (group: string, suffix = "") => `${API_URL}/reminders/template${suffix}?group=${encodeURIComponent(group)}`;
@@ -9,7 +9,7 @@ test.describe("API Mẫu email nhắc hết hạn theo nhóm dịch vụ", () =>
   let adminToken: string;
   let amToken: string;
 
-  async function resetAll(request: Parameters<Parameters<typeof test.beforeAll>[0]>[0]["request"]) {
+  async function resetAll(request: APIRequestContext) {
     for (const group of ["BRCĐ", "CNTT", "Di động"]) {
       await request.post(GROUP_URL(group, "/reset"), { headers: bearer(adminToken) });
     }
@@ -53,7 +53,7 @@ test.describe("API Mẫu email nhắc hết hạn theo nhóm dịch vụ", () =>
     const brcd = await (await request.get(GROUP_URL("BRCĐ"), { headers: bearer(adminToken) })).json();
     expect(brcd.data.subject).toBe("CHUNG {dịch vụ}");
     const cntt = await (await request.get(GROUP_URL("CNTT"), { headers: bearer(adminToken) })).json();
-    expect(cntt.data.body).toBe("Riêng CNTT cho {tên khách}");
+    expect(cntt.data.body).toBe("<p>Riêng CNTT cho {tên khách}</p>");
   });
 
   test("xem trước theo nhóm dùng mẫu riêng của nhóm", async ({ request }) => {

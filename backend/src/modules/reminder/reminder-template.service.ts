@@ -2,13 +2,21 @@ import { query, run } from "../../database/db.js";
 import { SERVICE_GROUPS, type ServiceGroup } from "../../constants/org.js";
 import { sendMail, type SendMailMessage, type SendMailResult } from "../notification/email.service.js";
 import { ReminderSettingsService } from "./reminder-settings.service.js";
+import { escapeHtmlText, htmlToText, looksLikeHtml, sanitizeEmailHtml, stripTags, textToHtml } from "./html-sanitizer.js";
 
 const SETTINGS_ID = "default";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PLACEHOLDER_PATTERN = /\{([^{}\r\n]{1,50})\}/g;
+/** Biến trong HTML có thể bị chen thẻ định dạng, vd `{tên <b>khách</b>}`. */
+const HTML_PLACEHOLDER_PATTERN = /\{((?:[^{}\r\n<>]|<[^>]*>){1,200})\}/g;
 
 export const SUBJECT_MAX_LENGTH = 200;
+/** Giới hạn độ dài phần chữ (đã bỏ thẻ định dạng) của nội dung. */
 export const BODY_MAX_LENGTH = 5000;
+/** Giới hạn độ dài HTML đã lưu (gồm cả thẻ định dạng). */
+export const BODY_HTML_MAX_LENGTH = 20000;
+export const SIGNATURE_MAX_LENGTH = 2000;
+export const SIGNATURE_HTML_MAX_LENGTH = 10000;
 
 export interface TemplateVariable {
   key: string;
@@ -30,13 +38,22 @@ const VARIABLE_KEYS = new Set(TEMPLATE_VARIABLES.map((v) => v.key));
 export const DEFAULT_SUBJECT_TEMPLATE =
   "[VNPT NSG] Dịch vụ {dịch vụ} của {tên khách} hết hạn ngày {ngày hết hạn} (còn {số ngày còn lại} ngày)";
 
-export const DEFAULT_BODY_TEMPLATE = [
+/** Nội dung mặc định dạng văn bản thuần (bản gốc trước khi có trình soạn thảo định dạng). */
+export const DEFAULT_BODY_TEXT = [
   "Dịch vụ: {dịch vụ}",
   "Khách hàng: {tên khách}",
   "Mã thuê bao: {mã thuê bao}",
   "AM phụ trách: {AM phụ trách}",
   "Ngày hết hạn: {ngày hết hạn} (còn {số ngày còn lại} ngày)",
 ].join("\n");
+
+/** Nội dung mặc định ở dạng HTML (nội dung mẫu luôn được xử lý như HTML). */
+export const DEFAULT_BODY_TEMPLATE = textToHtml(DEFAULT_BODY_TEXT);
+
+/** Chữ ký mẫu để người dùng tham khảo; thông tin thật do khách cung cấp sau. */
+export const SAMPLE_SIGNATURE_HTML =
+  "<p><strong>[Chữ ký mẫu - thay bằng thông tin thật]</strong></p>" +
+  "<p>VNPT Nam Sài Gòn<br>Điện thoại: 028 0000 0000<br>Email: lienhe@example.com</p>";
 
 export interface TemplateData {
   title: string;
@@ -47,9 +64,15 @@ export interface TemplateData {
   daysBefore: number;
 }
 
+/** `body` là HTML (đã làm sạch). Nội dung văn bản thuần (mẫu cũ) cũng được chấp nhận và tự đổi sang HTML. */
 export interface EmailTemplate {
   subject: string;
   body: string;
+}
+
+export interface EmailSignature {
+  enabled: boolean;
+  html: string;
 }
 
 export interface RenderedEmail {
@@ -68,6 +91,12 @@ export interface ReminderTemplateView extends EmailTemplate {
   variables: TemplateVariable[];
 }
 
+export interface ReminderSignatureView extends EmailSignature {
+  /** Chữ ký mẫu để chèn tham khảo. */
+  sampleHtml: string;
+  variables: TemplateVariable[];
+}
+
 export class TemplateValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -82,12 +111,7 @@ export function formatDateVn(dateStr: string): string {
 }
 
 export function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+  return escapeHtmlText(value);
 }
 
 function toValueMap(data: TemplateData): Record<string, string> {
@@ -122,39 +146,68 @@ export function findUnknownVariables(text: string): string[] {
   return unknown;
 }
 
-function substitute(
-  template: string,
-  values: Record<string, string>,
-  escapeLiteral: (s: string) => string,
-  escapeValue: (s: string) => string
-): string {
+/** Tiêu đề: văn bản thuần, một dòng. */
+function substituteSubject(template: string, values: Record<string, string>): string {
+  const singleLine = (s: string) => s.replace(/[\r\n]+/g, " ");
   let result = "";
   let lastIndex = 0;
   for (const match of template.matchAll(PLACEHOLDER_PATTERN)) {
     const index = match.index ?? 0;
-    result += escapeLiteral(template.slice(lastIndex, index));
+    result += singleLine(template.slice(lastIndex, index));
     const name = match[1].trim();
-    result += VARIABLE_KEYS.has(name) ? escapeValue(values[name] ?? "") : escapeLiteral(match[0]);
+    result += singleLine(VARIABLE_KEYS.has(name) ? (values[name] ?? "") : match[0]);
     lastIndex = index + match[0].length;
   }
-  result += escapeLiteral(template.slice(lastIndex));
+  result += singleLine(template.slice(lastIndex));
   return result;
 }
 
-/**
- * Render mẫu với dữ liệu thật. Biến lạ giữ nguyên chữ. Giá trị chèn vào html
- * luôn được escape; nội dung mẫu coi là văn bản thuần (escape cả phần chữ cố
- * định, xuống dòng → `<br>`). Tiêu đề không chứa xuống dòng (chống header injection).
- */
-export function renderEmail(template: EmailTemplate, data: TemplateData): RenderedEmail {
-  const values = toValueMap(data);
-  const identity = (s: string) => s;
-  const singleLine = (s: string) => s.replace(/[\r\n]+/g, " ");
+/** HTML: thay biến (giá trị luôn được escape); biến lạ giữ nguyên chữ. */
+function substituteHtml(html: string, values: Record<string, string>): string {
+  return html.replace(HTML_PLACEHOLDER_PATTERN, (whole, inner: string) => {
+    const name = stripTags(inner).trim();
+    return VARIABLE_KEYS.has(name) ? escapeHtmlText(values[name] ?? "") : whole;
+  });
+}
 
-  const subject = substitute(template.subject, values, singleLine, singleLine).trim();
-  const text = substitute(template.body, values, identity, identity);
-  const htmlInner = substitute(template.body, values, escapeHtml, escapeHtml).replace(/\r?\n/g, "<br>");
-  const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6">${htmlInner}</div>`;
+/** Nội dung mẫu (HTML hoặc văn bản thuần của mẫu cũ) → HTML đã làm sạch. */
+export function bodyToHtml(body: string): string {
+  const normalized = body.replace(/\r\n?/g, "\n");
+  return sanitizeEmailHtml(looksLikeHtml(normalized) ? normalized : textToHtml(normalized));
+}
+
+const PARAGRAPH_STYLE = "margin:0 0 10px 0";
+
+/** Thêm style cho email client (không phụ thuộc CSS mặc định của từng client). */
+function styleForEmail(html: string): string {
+  return html
+    .replace(/<p><\/p>/g, `<p style="${PARAGRAPH_STYLE}"><br></p>`)
+    .replace(/<p>/g, `<p style="${PARAGRAPH_STYLE}">`)
+    .replace(/<ul>/g, `<ul style="${PARAGRAPH_STYLE};padding-left:24px">`)
+    .replace(/<ol>/g, `<ol style="${PARAGRAPH_STYLE};padding-left:24px">`);
+}
+
+/**
+ * Render mẫu với dữ liệu thật. Biến lạ giữ nguyên chữ. Nội dung được làm sạch
+ * lại ở đây (kể cả mẫu đã lưu), giá trị chèn vào html luôn được escape.
+ * Tiêu đề không chứa xuống dòng (chống header injection). Có chữ ký bật thì
+ * chèn vào cuối cả bản HTML lẫn bản text.
+ */
+export function renderEmail(template: EmailTemplate, data: TemplateData, signature?: EmailSignature | null): RenderedEmail {
+  const values = toValueMap(data);
+  const subject = substituteSubject(template.subject, values).trim();
+
+  const bodyHtml = substituteHtml(bodyToHtml(template.body), values);
+  const signatureHtml =
+    signature?.enabled && signature.html.trim() ? substituteHtml(bodyToHtml(signature.html), values) : "";
+
+  let text = htmlToText(bodyHtml);
+  let html = styleForEmail(bodyHtml);
+  if (signatureHtml) {
+    text += `\n\n--\n${htmlToText(signatureHtml)}`;
+    html += `<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0">${styleForEmail(signatureHtml)}</div>`;
+  }
+  html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6">${html}</div>`;
   return { subject, text, html };
 }
 
@@ -162,10 +215,40 @@ function normalizeNewlines(value: string): string {
   return value.replace(/\r\n?/g, "\n");
 }
 
-/** Validate + chuẩn hoá mẫu; ném `TemplateValidationError` (tiếng Việt) khi không hợp lệ. */
+/** Kiểm tra + làm sạch một đoạn HTML nội dung/chữ ký; trả về HTML sạch và thêm lỗi (tiếng Việt) vào `errors`. */
+function checkRichText(
+  raw: string,
+  label: string,
+  limits: { text: number; html: number },
+  errors: string[],
+  { allowEmpty }: { allowEmpty: boolean }
+): string {
+  const html = bodyToHtml(normalizeNewlines(raw)).trim();
+  const text = htmlToText(html);
+  if (!allowEmpty && !text.trim()) {
+    errors.push(`${label} không được để trống`);
+  }
+  if (text.length > limits.text) {
+    errors.push(`${label} tối đa ${limits.text} ký tự`);
+  } else if (html.length > limits.html) {
+    errors.push(`${label} quá dài (nhiều định dạng), hãy rút gọn`);
+  }
+  const unknown = findUnknownVariables(text);
+  if (unknown.length > 0) {
+    errors.push(`${label} chứa biến không hợp lệ: ${unknown.map((u) => `{${u}}`).join(", ")}`);
+  }
+  return html;
+}
+
+function throwValidation(errors: string[]): never {
+  const validKeys = TEMPLATE_VARIABLES.map((v) => `{${v.key}}`).join(", ");
+  const hasUnknown = errors.some((e) => e.includes("biến không hợp lệ"));
+  throw new TemplateValidationError(errors.join("; ") + (hasUnknown ? `. Các biến hợp lệ: ${validKeys}` : ""));
+}
+
+/** Validate + chuẩn hoá mẫu (nội dung được làm sạch thành HTML); ném `TemplateValidationError` (tiếng Việt) khi không hợp lệ. */
 export function validateTemplate(input: { subject?: unknown; body?: unknown }): EmailTemplate {
   const errors: string[] = [];
-  const validKeys = TEMPLATE_VARIABLES.map((v) => `{${v.key}}`).join(", ");
 
   let subject = "";
   if (typeof input.subject !== "string" || !input.subject.trim()) {
@@ -188,26 +271,46 @@ export function validateTemplate(input: { subject?: unknown; body?: unknown }): 
   if (typeof input.body !== "string" || !input.body.trim()) {
     errors.push("Nội dung không được để trống");
   } else {
-    body = normalizeNewlines(input.body).trim();
-    if (body.length > BODY_MAX_LENGTH) {
-      errors.push(`Nội dung tối đa ${BODY_MAX_LENGTH} ký tự`);
-    }
-    const unknown = findUnknownVariables(body);
-    if (unknown.length > 0) {
-      errors.push(`Nội dung chứa biến không hợp lệ: ${unknown.map((u) => `{${u}}`).join(", ")}`);
-    }
+    body = checkRichText(input.body, "Nội dung", { text: BODY_MAX_LENGTH, html: BODY_HTML_MAX_LENGTH }, errors, {
+      allowEmpty: false,
+    });
   }
 
-  if (errors.length > 0) {
-    const hasUnknown = errors.some((e) => e.includes("biến không hợp lệ"));
-    throw new TemplateValidationError(errors.join("; ") + (hasUnknown ? `. Các biến hợp lệ: ${validKeys}` : ""));
-  }
+  if (errors.length > 0) throwValidation(errors);
   return { subject, body };
+}
+
+/** Validate + chuẩn hoá chữ ký; `html` rỗng được phép (chưa có chữ ký). */
+export function validateSignature(input: { enabled?: unknown; html?: unknown }): EmailSignature {
+  const errors: string[] = [];
+  if (input.enabled !== undefined && typeof input.enabled !== "boolean") {
+    errors.push("enabled phải là true/false");
+  }
+  let html = "";
+  if (input.html !== undefined) {
+    if (typeof input.html !== "string") {
+      errors.push("Chữ ký phải là chuỗi HTML");
+    } else {
+      html = checkRichText(input.html, "Chữ ký", { text: SIGNATURE_MAX_LENGTH, html: SIGNATURE_HTML_MAX_LENGTH }, errors, {
+        allowEmpty: true,
+      });
+      if (!htmlToText(html).trim()) html = "";
+    }
+  }
+  if (errors.length > 0) throwValidation(errors);
+  return { enabled: input.enabled === true, html };
 }
 
 interface TemplateRow {
   email_subject_template: string | null;
   email_body_template: string | null;
+  email_body_format?: string | null;
+}
+
+/** Chuẩn hoá nội dung đã lưu: mẫu cũ (format NULL/'text') là văn bản thuần → HTML. */
+function storedBodyToHtml(row: TemplateRow): string {
+  const stored = row.email_body_template ?? "";
+  return row.email_body_format === "html" ? stored : textToHtml(stored);
 }
 
 /** Chuẩn hoá nhóm dịch vụ từ đầu vào; rỗng/null/undefined là mẫu chung, giá trị lạ bị từ chối. */
@@ -222,15 +325,15 @@ function parseGroup(group: unknown): ServiceGroup | null {
 async function readStored(): Promise<TemplateRow> {
   await ReminderSettingsService.get(); // đảm bảo hàng cấu hình đã tồn tại
   const rows = await query<TemplateRow>(
-    "SELECT email_subject_template, email_body_template FROM reminder_settings WHERE id = ?",
+    "SELECT email_subject_template, email_body_template, email_body_format FROM reminder_settings WHERE id = ?",
     [SETTINGS_ID]
   );
-  return rows[0] ?? { email_subject_template: null, email_body_template: null };
+  return rows[0] ?? { email_subject_template: null, email_body_template: null, email_body_format: null };
 }
 
 async function readGroupStored(group: ServiceGroup): Promise<TemplateRow | null> {
   const rows = await query<TemplateRow>(
-    "SELECT email_subject_template, email_body_template FROM reminder_group_templates WHERE service_group = ?",
+    "SELECT email_subject_template, email_body_template, email_body_format FROM reminder_group_templates WHERE service_group = ?",
     [group]
   );
   return rows[0] ?? null;
@@ -240,7 +343,7 @@ async function readGroupStored(group: ServiceGroup): Promise<TemplateRow | null>
 function mergeOverride(general: EmailTemplate, row: TemplateRow | null): EmailTemplate {
   return {
     subject: row?.email_subject_template?.trim() ? row.email_subject_template : general.subject,
-    body: row?.email_body_template?.trim() ? row.email_body_template : general.body,
+    body: row?.email_body_template?.trim() ? storedBodyToHtml(row) : general.body,
   };
 }
 
@@ -272,7 +375,7 @@ export const ReminderTemplateService = {
     const row = await readStored();
     const general: EmailTemplate = {
       subject: row.email_subject_template?.trim() ? row.email_subject_template : DEFAULT_SUBJECT_TEMPLATE,
-      body: row.email_body_template?.trim() ? row.email_body_template : DEFAULT_BODY_TEMPLATE,
+      body: row.email_body_template?.trim() ? storedBodyToHtml(row) : DEFAULT_BODY_TEMPLATE,
     };
     if (!parsed) return general;
     return mergeOverride(general, await readGroupStored(parsed));
@@ -282,7 +385,7 @@ export const ReminderTemplateService = {
   async getEffectiveAll(): Promise<{ general: EmailTemplate; byGroup: Map<string, EmailTemplate> }> {
     const general = await ReminderTemplateService.getEffective();
     const rows = await query<TemplateRow & { service_group: string }>(
-      "SELECT service_group, email_subject_template, email_body_template FROM reminder_group_templates"
+      "SELECT service_group, email_subject_template, email_body_template, email_body_format FROM reminder_group_templates"
     );
     const byGroup = new Map<string, EmailTemplate>();
     for (const row of rows) {
@@ -303,11 +406,12 @@ export const ReminderTemplateService = {
     const template = validateTemplate(input);
     if (parsed) {
       await run(
-        `INSERT INTO reminder_group_templates (service_group, email_subject_template, email_body_template, updated_at)
-         VALUES (?, ?, ?, ?)
+        `INSERT INTO reminder_group_templates (service_group, email_subject_template, email_body_template, email_body_format, updated_at)
+         VALUES (?, ?, ?, 'html', ?)
          ON CONFLICT (service_group) DO UPDATE SET
            email_subject_template = EXCLUDED.email_subject_template,
            email_body_template = EXCLUDED.email_body_template,
+           email_body_format = EXCLUDED.email_body_format,
            updated_at = EXCLUDED.updated_at`,
         [parsed, template.subject, template.body, new Date().toISOString()]
       );
@@ -315,7 +419,7 @@ export const ReminderTemplateService = {
     }
     await readStored();
     await run(
-      "UPDATE reminder_settings SET email_subject_template = ?, email_body_template = ?, updated_at = ? WHERE id = ?",
+      "UPDATE reminder_settings SET email_subject_template = ?, email_body_template = ?, email_body_format = 'html', updated_at = ? WHERE id = ?",
       [template.subject, template.body, new Date().toISOString(), SETTINGS_ID]
     );
     return ReminderTemplateService.getView();
@@ -330,22 +434,26 @@ export const ReminderTemplateService = {
     }
     await readStored();
     await run(
-      "UPDATE reminder_settings SET email_subject_template = NULL, email_body_template = NULL, updated_at = ? WHERE id = ?",
+      "UPDATE reminder_settings SET email_subject_template = NULL, email_body_template = NULL, email_body_format = NULL, updated_at = ? WHERE id = ?",
       [new Date().toISOString(), SETTINGS_ID]
     );
     return ReminderTemplateService.getView();
   },
 
-  /** Render với dữ liệu mẫu; thiếu `subject`/`body` thì dùng mẫu đã lưu (của nhóm nếu có `group`). */
-  async preview(draft: { subject?: unknown; body?: unknown }, group?: unknown): Promise<RenderedEmail> {
+  /** Render với dữ liệu mẫu; thiếu `subject`/`body` thì dùng mẫu đã lưu (của nhóm nếu có `group`). Chữ ký đang bật được chèn vào cuối. */
+  async preview(
+    draft: { subject?: unknown; body?: unknown; signature?: unknown },
+    group?: unknown
+  ): Promise<RenderedEmail> {
     const template = await resolveDraft(draft, group);
-    return renderEmail(template, SAMPLE_DATA);
+    const signature = await resolveSignatureDraft(draft.signature);
+    return renderEmail(template, SAMPLE_DATA, signature);
   },
 
   /** Gửi thử mẫu (dữ liệu mẫu) tới 1 email qua SMTP đã lưu; không rơi về Ethereal. */
   async sendTest(
     to: unknown,
-    draft: { subject?: unknown; body?: unknown },
+    draft: { subject?: unknown; body?: unknown; signature?: unknown },
     send: (msg: SendMailMessage) => Promise<SendMailResult> = (msg) => sendMail(msg),
     group?: unknown
   ): Promise<SendMailResult> {
@@ -354,7 +462,8 @@ export const ReminderTemplateService = {
       throw new TemplateValidationError('Địa chỉ email "Gửi thử tới" không hợp lệ');
     }
     const template = await resolveDraft(draft, group);
-    const rendered = renderEmail(template, SAMPLE_DATA);
+    const signature = await resolveSignatureDraft(draft.signature);
+    const rendered = renderEmail(template, SAMPLE_DATA, signature);
     return send({
       to: to.trim(),
       subject: `[Gửi thử] ${rendered.subject}`,
@@ -374,3 +483,58 @@ async function resolveDraft(draft: { subject?: unknown; body?: unknown }, group?
     body: draft.body === undefined ? current.body : draft.body,
   });
 }
+
+/** Bản nháp chữ ký (`{enabled, html}`) nếu có, ngược lại chữ ký đã lưu. */
+async function resolveSignatureDraft(draft: unknown): Promise<EmailSignature> {
+  const stored = await ReminderSignatureService.getEffective();
+  if (draft === undefined || draft === null) return stored;
+  if (typeof draft !== "object") {
+    throw new TemplateValidationError("Chữ ký không hợp lệ");
+  }
+  const { enabled, html } = draft as { enabled?: unknown; html?: unknown };
+  return validateSignature({
+    enabled: enabled === undefined ? stored.enabled : enabled,
+    html: html === undefined ? stored.html : html,
+  });
+}
+
+interface SignatureRow {
+  signature_enabled: boolean | null;
+  signature_html: string | null;
+}
+
+export const ReminderSignatureService = {
+  /** Chữ ký đã lưu; chưa cấu hình thì tắt và rỗng. */
+  async getEffective(): Promise<EmailSignature> {
+    await ReminderSettingsService.get();
+    const rows = await query<SignatureRow>(
+      "SELECT signature_enabled, signature_html FROM reminder_settings WHERE id = ?",
+      [SETTINGS_ID]
+    );
+    const row = rows[0];
+    return { enabled: Boolean(row?.signature_enabled), html: row?.signature_html ?? "" };
+  },
+
+  async getView(): Promise<ReminderSignatureView> {
+    return { ...(await ReminderSignatureService.getEffective()), sampleHtml: SAMPLE_SIGNATURE_HTML, variables: TEMPLATE_VARIABLES };
+  },
+
+  /** Lưu chữ ký; chỉ truyền `enabled` thì giữ nguyên nội dung và ngược lại. Bật mà chưa có nội dung bị từ chối. */
+  async save(input: { enabled?: unknown; html?: unknown }): Promise<ReminderSignatureView> {
+    const stored = await ReminderSignatureService.getEffective();
+    const next = validateSignature({
+      enabled: input.enabled === undefined ? stored.enabled : input.enabled,
+      html: input.html === undefined ? stored.html : input.html,
+    });
+    if (next.enabled && !next.html) {
+      throw new TemplateValidationError("Hãy nhập nội dung chữ ký trước khi bật chèn chữ ký");
+    }
+    await run("UPDATE reminder_settings SET signature_enabled = ?, signature_html = ?, updated_at = ? WHERE id = ?", [
+      next.enabled,
+      next.html,
+      new Date().toISOString(),
+      SETTINGS_ID,
+    ]);
+    return ReminderSignatureService.getView();
+  },
+};

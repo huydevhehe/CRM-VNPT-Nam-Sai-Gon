@@ -8,6 +8,7 @@ const {
   findUnknownVariables,
   TemplateValidationError,
   ReminderTemplateService,
+  ReminderSignatureService,
   DEFAULT_SUBJECT_TEMPLATE,
   DEFAULT_BODY_TEMPLATE,
   TEMPLATE_VARIABLES,
@@ -27,6 +28,7 @@ const DATA = {
 };
 
 test.after(async () => {
+  await run("UPDATE reminder_settings SET signature_enabled = FALSE, signature_html = NULL WHERE id = 'default'");
   await ReminderTemplateService.reset();
   await run("DELETE FROM reminder_group_templates");
   await run("DELETE FROM reminder_logs WHERE item_id LIKE 'SVC-TPL-%'");
@@ -83,11 +85,65 @@ test("giá trị chèn vào html bị escape, text giữ nguyên", () => {
   assert.ok(out.text.includes(`<script>alert("x")</script>`));
 });
 
-test("văn bản người dùng nhập cũng bị escape; xuống dòng thành <br>", () => {
-  const out = renderEmail({ subject: "s", body: "<b>Chào</b>\r\nDòng 2\nDòng 3" }, DATA);
-  assert.ok(out.html.includes("&lt;b&gt;Chào&lt;/b&gt;<br>Dòng 2<br>Dòng 3"));
-  assert.ok(!out.html.includes("<b>"));
-  assert.equal(out.text, "<b>Chào</b>\r\nDòng 2\nDòng 3");
+test("mẫu cũ dạng văn bản thuần: giữ chữ, xuống dòng thành <br>, không coi là HTML", () => {
+  const out = renderEmail({ subject: "s", body: "Chào a < b\r\nDòng 2\nDòng 3" }, DATA);
+  assert.ok(out.html.includes("Chào a &lt; b<br>Dòng 2<br>Dòng 3"));
+  assert.equal(out.text, "Chào a < b\nDòng 2\nDòng 3");
+});
+
+test("nội dung HTML: giữ định dạng an toàn, thay biến trong cả đoạn đậm/tô màu, text suy ra từ HTML", () => {
+  const body =
+    '<p><strong>Chào</strong> <span style="color: #ff0000">{tên khách}</span></p>' +
+    '<p>Còn <em>{số ngày còn lại}</em> ngày, dịch vụ <span style="background-color: rgb(255, 255, 0)">{dịch vụ}</span></p>' +
+    "<ul><li><p>Mục 1</p></li><li><p>Mục 2</p></li></ul>";
+  const out = renderEmail({ subject: "s", body }, DATA);
+  assert.ok(out.html.includes("<strong>Chào</strong>"));
+  assert.ok(out.html.includes('<span style="color: #ff0000">Công ty ABC</span>'));
+  assert.ok(out.html.includes('style="background-color: rgb(255, 255, 0)">Internet FiberVNN</span>'));
+  assert.equal(out.text, "Chào Công ty ABC\n\nCòn 7 ngày, dịch vụ Internet FiberVNN\n\n- Mục 1\n- Mục 2");
+});
+
+test("biến bị chen thẻ định dạng giữa chừng vẫn được thay thế", () => {
+  const out = renderEmail({ subject: "s", body: "<p>{tên <b>khách</b>} và {<i>dịch vụ</i>}</p>" }, DATA);
+  assert.equal(out.text, "Công ty ABC và Internet FiberVNN");
+});
+
+test("giá trị biến là HTML thì bị escape, không thành thẻ trong email", () => {
+  const out = renderEmail(
+    { subject: "s", body: "<p>{tên khách}</p>" },
+    { ...DATA, customerName: '<img src=x onerror="alert(1)">' }
+  );
+  assert.ok(!out.html.includes("<img"));
+  assert.ok(out.html.includes("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;"));
+});
+
+test("nội dung HTML độc hại đã lưu cũng bị làm sạch khi gửi (render không tin dữ liệu lưu)", () => {
+  const out = renderEmail(
+    { subject: "s", body: '<p onclick="x()">Hi</p><script>alert(1)</script><a href="javascript:alert(1)">bấm</a>' },
+    DATA
+  );
+  assert.ok(!/script|onclick|javascript:/i.test(out.html));
+  assert.equal(out.text, "Hi\n\nbấm");
+});
+
+test("chữ ký bật thì chèn vào cuối cả html lẫn text; tắt hoặc rỗng thì không", () => {
+  const signature = { enabled: true, html: "<p><strong>VNPT NSG</strong><br>ĐT: 028 1234 5678</p>" };
+  const body = "<p>Nội dung</p>";
+  const withSig = renderEmail({ subject: "s", body }, DATA, signature);
+  assert.ok(withSig.html.includes("<strong>VNPT NSG</strong>"));
+  assert.ok(withSig.html.indexOf("Nội dung") < withSig.html.indexOf("VNPT NSG"));
+  assert.equal(withSig.text, "Nội dung\n\n--\nVNPT NSG\nĐT: 028 1234 5678");
+
+  for (const sig of [{ ...signature, enabled: false }, { enabled: true, html: "  " }, null, undefined]) {
+    const out = renderEmail({ subject: "s", body }, DATA, sig);
+    assert.ok(!out.html.includes("VNPT NSG"));
+    assert.equal(out.text, "Nội dung");
+  }
+});
+
+test("chữ ký cũng thay được biến", () => {
+  const out = renderEmail({ subject: "s", body: "x" }, DATA, { enabled: true, html: "<p>AM: {AM phụ trách}</p>" });
+  assert.equal(out.text, "x\n\n--\nAM: Nguyễn Văn A");
 });
 
 test("tiêu đề không bao giờ chứa xuống dòng dù tên khách có xuống dòng", () => {
@@ -137,7 +193,7 @@ test("chưa cấu hình thì getEffective trả mặc định; lưu rồi đọc
   assert.equal(saved.isDefault, false);
   const effective = await ReminderTemplateService.getEffective();
   assert.equal(effective.subject, "Nhắc {dịch vụ}");
-  assert.equal(effective.body, "Chào {tên khách}\nHết hạn {ngày hết hạn}");
+  assert.equal(effective.body, "<p>Chào {tên khách}<br>Hết hạn {ngày hết hạn}</p>");
 
   await assert.rejects(() => ReminderTemplateService.save({ subject: "{sai}", body: "x" }), TemplateValidationError);
   assert.equal((await ReminderTemplateService.getEffective()).subject, "Nhắc {dịch vụ}");
@@ -234,7 +290,7 @@ test("mẫu theo nhóm: chưa có mẫu riêng thì theo mẫu chung; lưu riên
   assert.equal(saved.isDefault, false);
   assert.equal(saved.subject, "CNTT {dịch vụ}");
   assert.equal((await ReminderTemplateService.getEffective()).subject, "CHUNG {dịch vụ}");
-  assert.equal((await ReminderTemplateService.getEffective("CNTT")).body, "Riêng CNTT {tên khách}");
+  assert.equal((await ReminderTemplateService.getEffective("CNTT")).body, "<p>Riêng CNTT {tên khách}</p>");
   assert.equal((await ReminderTemplateService.getEffective("BRCĐ")).subject, "CHUNG {dịch vụ}");
 
   await assert.rejects(() => ReminderTemplateService.save({ subject: "{sai}", body: "x" }, "CNTT"), TemplateValidationError);

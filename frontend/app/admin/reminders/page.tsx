@@ -12,11 +12,13 @@ import {
   Upload,
 } from "lucide-react";
 import ReminderTemplateTab from "@/components/admin/reminder/ReminderTemplateTab";
+import DaysBeforeEditor from "@/components/admin/reminder/DaysBeforeEditor";
 import { useAuth } from "@/lib/auth/auth-context";
 import { getServices } from "@/lib/api/services.api";
 import type { ServiceRecord } from "@/lib/crm/types/crm.types";
 import {
   getReminderSettings,
+  getReminderGroupSettings,
   updateReminderSettings,
   runReminderNow,
   getReminderLogs,
@@ -26,6 +28,8 @@ import {
   updateReminderBatch,
   deleteReminderBatch,
   type ReminderSettings,
+  type ReminderGroupSettingsOverview,
+  type ReminderTemplateGroup,
   type ReminderLog,
   type ReminderBatchSummary,
   type InspectReminderFileResult,
@@ -52,6 +56,8 @@ export default function RemindersPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "Admin";
   const [tab, setTab] = useState<TabKey>("service");
+  // Nhóm được chọn sẵn khi mở tab Mẫu email từ bảng "Cấu hình theo nhóm".
+  const [templateGroup, setTemplateGroup] = useState<ReminderTemplateGroup | null>(null);
 
   if (!isAdmin) {
     return (
@@ -89,17 +95,31 @@ export default function RemindersPage() {
         ))}
       </div>
 
-      {tab === "service" && <ServiceReminderTab />}
+      {tab === "service" && (
+        <ServiceReminderTab
+          onEditGroup={(group) => {
+            setTemplateGroup(group);
+            setTab("template");
+          }}
+        />
+      )}
       {tab === "file" && <FileReminderTab />}
-      {tab === "template" && <ReminderTemplateTab />}
+      {tab === "template" && (
+        <ReminderTemplateTab
+          key={templateGroup ?? "chung"}
+          initialGroup={templateGroup}
+          onOpenGeneralSettings={() => setTab("service")}
+        />
+      )}
       {tab === "logs" && <LogsTab />}
     </div>
   );
 }
 
-function ServiceReminderTab() {
+function ServiceReminderTab({ onEditGroup }: { onEditGroup: (group: ReminderTemplateGroup) => void }) {
   const [settings, setSettings] = useState<ReminderSettings | null>(null);
-  const [daysBeforeInput, setDaysBeforeInput] = useState("");
+  const [daysBefore, setDaysBefore] = useState<number[]>([]);
+  const [groupOverview, setGroupOverview] = useState<ReminderGroupSettingsOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -112,7 +132,8 @@ function ServiceReminderTab() {
     try {
       const data = await getReminderSettings();
       setSettings(data);
-      setDaysBeforeInput(data.daysBefore.join(", "));
+      setDaysBefore(data.daysBefore);
+      setGroupOverview(await getReminderGroupSettings());
       const services = await getServices({ expiringWithinDays: 30 });
       setPreview(services);
     } finally {
@@ -129,11 +150,10 @@ function ServiceReminderTab() {
     setSaving(true);
     setSaveMessage(null);
     try {
-      const daysBefore = daysBeforeInput
-        .split(",")
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0)
-        .map(Number);
+      if (daysBefore.length === 0) {
+        setSaveMessage({ ok: false, text: "Cần ít nhất 1 mốc số ngày nhắc trước." });
+        return;
+      }
       const updated = await updateReminderSettings({
         enabled: settings.enabled,
         runTime: settings.runTime,
@@ -143,7 +163,8 @@ function ServiceReminderTab() {
         extraCc: settings.extraCc,
       });
       setSettings(updated);
-      setDaysBeforeInput(updated.daysBefore.join(", "));
+      setDaysBefore(updated.daysBefore);
+      setGroupOverview(await getReminderGroupSettings());
       setSaveMessage({ ok: true, text: "Đã lưu cấu hình nhắc hết hạn." });
     } catch (err) {
       setSaveMessage({
@@ -205,15 +226,13 @@ function ServiceReminderTab() {
             />
           </div>
           <div className="sm:col-span-2">
-            <label className="mb-1 block text-xs font-semibold text-slate-600">
-              Số ngày nhắc trước (cách nhau dấu phẩy)
-            </label>
-            <input
-              value={daysBeforeInput}
-              onChange={(e) => setDaysBeforeInput(e.target.value)}
-              placeholder="30, 7, 1"
-              className="w-full max-w-xs rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
-            />
+            <p className="mb-1 text-xs font-semibold text-slate-600">
+              Nhắc trước … ngày (chung cho các nhóm chưa có cấu hình riêng)
+            </p>
+            <DaysBeforeEditor name="chung" value={daysBefore} onChange={setDaysBefore} disabled={saving} />
+            <p className="mt-1.5 text-xs text-slate-400">
+              Ví dụ 30, 7, 1: gửi khi còn đúng 30 ngày, 7 ngày và 1 ngày trước ngày hết hạn. Bấm Lưu cấu hình để áp dụng.
+            </p>
           </div>
           <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
             <input
@@ -283,6 +302,57 @@ function ServiceReminderTab() {
           để cấu hình trước khi bật nhắc hết hạn.
         </div>
       </div>
+
+      {groupOverview && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6" data-testid="group-overview">
+          <h2 className="mb-1 text-sm font-bold text-slate-900">Cấu hình nhắc theo nhóm dịch vụ</h2>
+          <p className="mb-4 text-xs text-slate-500">
+            Mỗi nhóm có thể nhắc theo số ngày riêng; nhóm chưa đặt riêng dùng số ngày chung ở trên.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-xs font-semibold text-slate-500">
+                  <th className="py-2 pr-4">Nhóm</th>
+                  <th className="py-2 pr-4">Nhắc trước (ngày)</th>
+                  <th className="py-2 pr-4">Trạng thái</th>
+                  <th className="py-2 pr-4" />
+                </tr>
+              </thead>
+              <tbody>
+                {groupOverview.groups.map((g) => (
+                  <tr key={g.group} data-testid={`group-overview-row-${g.group}`} className="border-b border-slate-100">
+                    <td className="py-2 pr-4 font-semibold">{g.group}</td>
+                    <td className="py-2 pr-4">{g.enabled ? g.daysBefore.join(", ") : "—"}</td>
+                    <td className="py-2 pr-4">
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                          !g.enabled
+                            ? "bg-amber-100 text-amber-700"
+                            : g.custom
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-slate-100 text-slate-500"
+                        }`}
+                      >
+                        {!g.enabled ? "Đã tắt nhắc" : g.custom ? "Cấu hình riêng" : "Dùng chung"}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-4">
+                      <button
+                        type="button"
+                        onClick={() => onEditGroup(g.group)}
+                        className="text-xs font-semibold text-vnpt hover:underline"
+                      >
+                        Chỉnh số ngày và mẫu email
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6">
         <h2 className="mb-4 text-sm font-bold text-slate-900">

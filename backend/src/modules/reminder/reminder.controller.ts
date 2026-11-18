@@ -3,7 +3,12 @@ import multer from "multer";
 import { ReminderSettingsService } from "./reminder-settings.service.js";
 import { ReminderRunner } from "./reminder-runner.js";
 import { ReminderImportService } from "./reminder-import.service.js";
-import { ReminderTemplateService, TemplateValidationError } from "./reminder-template.service.js";
+import {
+  ReminderSignatureService,
+  ReminderTemplateService,
+  TemplateValidationError,
+} from "./reminder-template.service.js";
+import { GroupSettingsError, ReminderGroupSettingsService } from "./reminder-group-settings.service.js";
 import { query } from "../../database/db.js";
 import { todayVn } from "../../utils/date-vn.js";
 
@@ -94,11 +99,15 @@ reminderRouter.put("/template", async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/reminders/template/preview — render với dữ liệu mẫu (mẫu đang soạn hoặc mẫu đã lưu).
+// POST /api/reminders/template/preview — render với dữ liệu mẫu (mẫu đang soạn hoặc mẫu đã lưu), kèm chữ ký.
+// `signature` ({enabled, html}) là bản nháp chữ ký đang soạn; bỏ trống thì dùng chữ ký đã lưu.
 reminderRouter.post("/template/preview", async (req: Request, res: Response) => {
   try {
-    const { subject, body } = req.body ?? {};
-    res.json({ success: true, data: await ReminderTemplateService.preview({ subject, body }, req.query.group) });
+    const { subject, body, signature } = req.body ?? {};
+    res.json({
+      success: true,
+      data: await ReminderTemplateService.preview({ subject, body, signature }, req.query.group),
+    });
   } catch (error) {
     sendTemplateError(res, error);
   }
@@ -116,8 +125,8 @@ reminderRouter.post("/template/reset", async (req: Request, res: Response) => {
 // POST /api/reminders/template/test — gửi thử mẫu (dữ liệu mẫu) tới 1 email qua SMTP đã lưu.
 reminderRouter.post("/template/test", async (req: Request, res: Response) => {
   try {
-    const { to, subject, body } = req.body ?? {};
-    const result = await ReminderTemplateService.sendTest(to, { subject, body }, undefined, req.query.group);
+    const { to, subject, body, signature } = req.body ?? {};
+    const result = await ReminderTemplateService.sendTest(to, { subject, body, signature }, undefined, req.query.group);
     if (!result.sent) {
       res.status(400).json({ success: false, message: result.error || "Gửi thử thất bại" });
       return;
@@ -125,6 +134,58 @@ reminderRouter.post("/template/test", async (req: Request, res: Response) => {
     res.json({ success: true, data: { sent: true } });
   } catch (error) {
     sendTemplateError(res, error);
+  }
+});
+
+// GET /api/reminders/signature — chữ ký email (bật/tắt + nội dung HTML) và chữ ký mẫu.
+reminderRouter.get("/signature", async (_req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: await ReminderSignatureService.getView() });
+  } catch (error) {
+    sendTemplateError(res, error);
+  }
+});
+
+// PUT /api/reminders/signature — lưu chữ ký {enabled?, html?}; chỉ gửi một trong hai thì giữ nguyên phần còn lại.
+reminderRouter.put("/signature", async (req: Request, res: Response) => {
+  try {
+    const { enabled, html } = req.body ?? {};
+    res.json({ success: true, data: await ReminderSignatureService.save({ enabled, html }) });
+  } catch (error) {
+    sendTemplateError(res, error);
+  }
+});
+
+function sendGroupError(res: Response, error: unknown) {
+  const message = error instanceof Error ? error.message : "Lỗi không xác định";
+  res.status(error instanceof GroupSettingsError ? 400 : 500).json({ success: false, message });
+}
+
+// GET /api/reminders/groups — cấu hình nhắc theo từng nhóm dịch vụ (riêng/chung) + các mốc ngày chung.
+reminderRouter.get("/groups", async (_req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: await ReminderGroupSettingsService.list() });
+  } catch (error) {
+    sendGroupError(res, error);
+  }
+});
+
+// PUT /api/reminders/groups/:group — đặt ngày nhắc/công tắc riêng cho nhóm (400 nếu nhóm lạ hoặc ngày không hợp lệ).
+reminderRouter.put("/groups/:group", async (req: Request, res: Response) => {
+  try {
+    const { enabled, daysBefore } = req.body ?? {};
+    res.json({ success: true, data: await ReminderGroupSettingsService.save(req.params.group, { enabled, daysBefore }) });
+  } catch (error) {
+    sendGroupError(res, error);
+  }
+});
+
+// DELETE /api/reminders/groups/:group — "Dùng cấu hình chung": bỏ cấu hình riêng của nhóm.
+reminderRouter.delete("/groups/:group", async (req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: await ReminderGroupSettingsService.reset(req.params.group) });
+  } catch (error) {
+    sendGroupError(res, error);
   }
 });
 

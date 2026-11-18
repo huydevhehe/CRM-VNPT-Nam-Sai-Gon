@@ -2,7 +2,8 @@ import { query, run } from "../../database/db.js";
 import { todayVn } from "../../utils/date-vn.js";
 import { sendMail, type SendMailResult } from "../notification/email.service.js";
 import { ReminderSettingsService } from "./reminder-settings.service.js";
-import { ReminderTemplateService, renderEmail } from "./reminder-template.service.js";
+import { ReminderGroupSettingsService } from "./reminder-group-settings.service.js";
+import { ReminderSignatureService, ReminderTemplateService, renderEmail } from "./reminder-template.service.js";
 
 export interface DueItem {
   source: "service" | "file";
@@ -142,6 +143,7 @@ export const ReminderRunner = {
   async collectDue(today: string): Promise<DueItem[]> {
     const settings = await ReminderSettingsService.get();
     const extraCc = splitExtraCc(settings.extraCc);
+    const groupConfigs = await ReminderGroupSettingsService.getAll(settings.daysBefore);
     const items: DueItem[] = [];
 
     // Nguồn "service"
@@ -149,7 +151,10 @@ export const ReminderRunner = {
       "SELECT id, customer_id, customer_name, service_name, service_code, expiration_date, staff_name, service_group FROM services"
     );
     for (const svc of services) {
-      const daysBefore = findDueDays(svc.expiration_date, today, settings.daysBefore);
+      // Nhóm có cấu hình riêng thì dùng ngày/công tắc của nhóm; không thì theo cấu hình chung.
+      const groupConfig = svc.service_group ? groupConfigs.get(svc.service_group.trim()) : undefined;
+      if (groupConfig && !groupConfig.enabled) continue;
+      const daysBefore = findDueDays(svc.expiration_date, today, groupConfig ? groupConfig.daysBefore : settings.daysBefore);
       if (daysBefore === null) continue;
 
       const recipients: string[] = [];
@@ -236,6 +241,7 @@ export const ReminderRunner = {
 
     const dueItems = await this.collectDue(today);
     const templates = await ReminderTemplateService.getEffectiveAll();
+    const signature = await ReminderSignatureService.getEffective();
     const result: RunResult = { sent: 0, failed: 0, skipped: 0 };
 
     for (const item of dueItems) {
@@ -256,7 +262,7 @@ export const ReminderRunner = {
       }
 
       const template = (item.serviceGroup && templates.byGroup.get(item.serviceGroup)) || templates.general;
-      const { subject, text, html } = renderEmail(template, item);
+      const { subject, text, html } = renderEmail(template, item, signature);
       try {
         const sendResult = await send({ to: item.recipients, subject, text, html });
         if (sendResult.sent) {
