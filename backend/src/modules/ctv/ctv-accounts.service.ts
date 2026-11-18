@@ -94,6 +94,43 @@ export class CtvAccountsService {
     return this.requireCtv(id);
   }
 
+  /**
+   * Xóa cứng tài khoản CTV — chỉ cho phép khi CTV chưa phát sinh dữ liệu
+   * (Lead/Đơn hàng/Khách hàng giới thiệu, hoa hồng). Nếu đã có dữ liệu,
+   * dùng cơ chế "Từ chối" (reject) sẵn có thay vì xóa.
+   */
+  async remove(id: string, operator: string): Promise<void> {
+    const ctv = await this.requireCtv(id);
+
+    const [leads, contracts, customers, commissions] = await Promise.all([
+      query<{ n: string }>("SELECT COUNT(*) AS n FROM leads WHERE referred_by_ctv_id = ?", [id]),
+      query<{ n: string }>("SELECT COUNT(*) AS n FROM contracts WHERE referred_by_ctv_id = ?", [id]),
+      query<{ n: string }>("SELECT COUNT(*) AS n FROM customers WHERE referred_by_ctv_id = ?", [id]),
+      query<{ n: string }>("SELECT COUNT(*) AS n FROM commissions WHERE ctv_id = ?", [id]),
+    ]);
+    const counts = {
+      leads: Number(leads[0]?.n ?? 0),
+      contracts: Number(contracts[0]?.n ?? 0),
+      customers: Number(customers[0]?.n ?? 0),
+      commissions: Number(commissions[0]?.n ?? 0),
+    };
+    const total = counts.leads + counts.contracts + counts.customers + counts.commissions;
+    if (total > 0) {
+      throw new HttpError(
+        409,
+        `CTV đã phát sinh dữ liệu (Lead ${counts.leads}, đơn hàng ${counts.contracts}, khách hàng ${counts.customers}, hoa hồng ${counts.commissions}) nên không thể xóa. Hãy dùng chức năng "Từ chối" để ngừng hoạt động tài khoản này.`
+      );
+    }
+
+    await run("DELETE FROM users WHERE id = ? AND role = ?", [id, ROLES.CTV]);
+    await run('INSERT INTO audit_logs (id, "user", action, details) VALUES (?, ?, ?, ?)', [
+      `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      operator,
+      "Xóa tài khoản CTV",
+      `Xóa tài khoản CTV ${id} (${ctv.name} - ${ctv.username})`,
+    ]);
+  }
+
   private async requireCtv(id: string): Promise<CtvAccountDto> {
     const rows = await query<CtvAccountRow>(
       `SELECT ${SELECT_COLUMNS} FROM users WHERE id = ? AND role = ?`,

@@ -33,3 +33,10 @@ export function createCtvAccount(input: CreateCtvAccountInput): Promise<CtvAccou
     body: JSON.stringify(input),
   });
 }
+
+/** Chỉ xóa được khi CTV chưa phát sinh Lead/đơn hàng/khách hàng/hoa hồng (409 nếu đã có). */
+export async function deleteCtvAccount(id: string): Promise<void> {
+  await apiFetch<{ message: string }>(`/ctv-accounts/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
