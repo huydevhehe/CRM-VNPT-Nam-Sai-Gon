@@ -97,3 +97,41 @@ test("getAll filters by staff and month", async () => {
   const otherMonth = await service.getAll({ staff: staffName, month: "2026-01" });
   assert.equal(otherMonth.length, 0);
 });
+
+test("importExcel reads real VNPT export columns (TEN_NV, TEN_TB) — not just the legacy aliases", async () => {
+  const XLSX = await import("xlsx");
+  const service = new DebtService();
+  const suffix = Date.now();
+
+  // Tên cột lấy đúng từ file xuất thật của VNPT ("TẬP NỢ KH1.xlsx"), khác
+  // với các alias cũ (TÊN NHÂN VIÊN CHĂM / TEN_THUÊ BAO) đã hỗ trợ trước đó.
+  const rows = [
+    {
+      TEN_NV: "AM Real Export Test",
+      NHOM_DV: "DIDONG",
+      MA_TT: `PC-REAL-${suffix}`,
+      MA_TB: `SUB-REAL-${suffix}`,
+      TEN_TB: `KH Real Export ${suffix}`,
+      DIACHI_LD: "123 Test Street",
+      CONNO_THUNGAY: 50000,
+      CONNO_LUYKE: 120000,
+    },
+  ];
+  const sheet = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, sheet, "8378");
+  const buffer = XLSX.write(wb, { type: "buffer" }) as Buffer;
+
+  const result = await service.importExcel(buffer, "2026-11", "Admin");
+  assert.equal(result.importedCount, 1, `Phải nhập được 1 dòng, lỗi: ${JSON.stringify(result.errors)}`);
+  assert.equal(result.skippedCount, 0);
+
+  const created = await query<{ customer_name: string; staff_name: string; immediate_debt: number }>(
+    "SELECT customer_name, staff_name, immediate_debt FROM debts WHERE subscriber_code = ?",
+    [`SUB-REAL-${suffix}`]
+  );
+  assert.equal(created.length, 1);
+  assert.equal(created[0].customer_name, `KH Real Export ${suffix}`);
+  assert.equal(created[0].staff_name, "AM Real Export Test");
+  assert.equal(Number(created[0].immediate_debt), 50000);
+});
