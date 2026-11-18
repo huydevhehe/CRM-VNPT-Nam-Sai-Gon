@@ -157,11 +157,11 @@ export class DebtService {
     for (let i = 0; i < rawRows.length; i++) {
       const row = rawRows[i];
       // Normalize column names
-      const staffName = row["TÊN NHÂN VIÊN CHĂM"] || row["TEN_NHAN_VIEN"] || "";
+      const staffName = row["TÊN NHÂN VIÊN CHĂM"] || row["TEN_NHAN_VIEN"] || row["TEN_NV"] || "";
       const serviceGroup = row["NHOM_DV"] || row["DỊCH VỤ"] || "Internet Fiber";
       const paymentCode = String(row["MA_THANH TOÁN"] || row["MA_TT"] || "");
       const subscriberCode = String(row["MA_THUÊ BAO"] || row["MA_TB"] || "");
-      const customerName = row["TEN_THUÊ BAO"] || row["TEN_KH"] || "";
+      const customerName = row["TEN_THUÊ BAO"] || row["TEN_KH"] || row["TEN_TB"] || "";
       const address = row["DIACHI_LD"] || row["ĐỊA CHỈ"] || "";
       const immediateDebt = parseFloat(row["CONNO_THUNGAY"] || 0) || 0;
       const cumulativeDebt = parseFloat(row["CONNO_LUYKE"] || 0) || 0;

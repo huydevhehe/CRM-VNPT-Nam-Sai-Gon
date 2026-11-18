@@ -114,6 +114,42 @@ test("importExcel reads expiry date column with accented/unaccented aliases", as
   assert.equal(created[0].expiry_date, "2026-11-05");
 });
 
+test("importExcel reads real VNPT export columns (TEN_NV, TEN_TB) — not just the legacy aliases", async () => {
+  const XLSX = await import("xlsx");
+  const service = new RenewalService();
+  const suffix = Date.now();
+
+  // Tên cột lấy đúng từ file xuất thật của VNPT (cùng quy ước với "TẬP NỢ
+  // KH1.xlsx" của module nợ), khác với alias cũ (TÊN NHÂN VIÊN CHĂM / TEN_THUÊ BAO).
+  const rows = [
+    {
+      TEN_NV: "AM Real Export Test",
+      MA_TT: `PC-REAL-${suffix}`,
+      MA_TB: `SUB-REAL-${suffix}`,
+      TEN_TB: `KH Real Export ${suffix}`,
+      DIACHI_LD: "123 Test Street",
+      "MÃ GIAO DỊCH": `GD-REAL-${suffix}`,
+      "THÁNG T": 100000,
+    },
+  ];
+  const sheet = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, sheet, "GIA HẠN");
+  const buffer = XLSX.write(wb, { type: "buffer" }) as Buffer;
+
+  const result = await service.importExcel(buffer, "THÁNG T", "Admin");
+  assert.equal(result.importedCount, 1, `Phải nhập được 1 dòng, lỗi: ${JSON.stringify(result.errors)}`);
+  assert.equal(result.skippedCount, 0);
+
+  const created = await query<{ customer_name: string; staff_name: string }>(
+    "SELECT customer_name, staff_name FROM renewals WHERE transaction_code = ?",
+    [`GD-REAL-${suffix}`]
+  );
+  assert.equal(created.length, 1);
+  assert.equal(created[0].customer_name, `KH Real Export ${suffix}`);
+  assert.equal(created[0].staff_name, "AM Real Export Test");
+});
+
 test("Admin updateDates sets expiry and renewed dates manually", async () => {
   const service = new RenewalService();
   const suffix = `${Date.now()}-dates`;
