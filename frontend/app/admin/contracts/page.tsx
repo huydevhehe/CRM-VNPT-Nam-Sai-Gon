@@ -1611,7 +1611,7 @@ export default function ContractsPage() {
                     step={1}
                     value={form.termMonths}
                     onChange={(e) => setForm({ ...form, termMonths: e.target.value })}
-                    placeholder="Mặc định 12 tháng"
+                    placeholder="Để trống nếu không có thời hạn (vd: hóa đơn điện tử)"
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
                   />
                 </div>
