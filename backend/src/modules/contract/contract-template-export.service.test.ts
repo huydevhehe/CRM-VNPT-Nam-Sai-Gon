@@ -124,6 +124,22 @@ function assertNoSamplePii(combinedText: string) {
   }
 }
 
+/** Số chú thích (1)(2)(3)... còn sót từ file mẫu gốc VNPT — KHÔNG được xuất
+ * hiện trong file export cuối cùng giao cho khách hàng ký. */
+function assertNoLegendNumbers(combinedText: string) {
+  const leftover = combinedText.match(/\(\s?\d{1,2}\s?\)/g);
+  assert.equal(leftover, null, `Còn sót số chú thích (N) chưa xoá trong file mẫu: ${leftover?.join(", ")}`);
+}
+
+/** Các ô tiền trong phụ lục (phí thuê bao/tổng cộng/bằng chữ) phải map đúng
+ * giá trị hợp đồng thật, không được còn để trống dạng "……………". */
+function assertNoBlankMoneyMarkers(combinedText: string) {
+  assert.ok(
+    !/VNĐ\s*……………|……………\s*VNĐ|Bằng chữ:\s*……………|bằng chữ\):\s*……………/.test(combinedText),
+    "Còn ô tiền/bằng chữ trong phụ lục chưa map dữ liệu thật (vẫn là dấu chấm tĩnh ……………)"
+  );
+}
+
 test("renderFile: cks_token_smartca_dn gộp đúng 2 phụ lục (phiếu đăng ký + điều khoản chung)", async () => {
   await resetTestData();
   await insertCustomer("C-CKS-TOKEN", "CÔNG TY TNHH KHÁCH HÀNG CKS TOKEN", "123 Đường Test, Quận 1, TP.HCM", "0312345678");
@@ -135,12 +151,23 @@ test("renderFile: cks_token_smartca_dn gộp đúng 2 phụ lục (phiếu đăn
   const { combinedText } = parseAndVerifyMergedDocx(docx, 2);
   assertNoLeftoverPlaceholders(combinedText);
   assertNoSamplePii(combinedText);
+  assertNoLegendNumbers(combinedText);
+  assertNoBlankMoneyMarkers(combinedText);
 
   assert.ok(combinedText.includes("CÔNG TY TNHH KHÁCH HÀNG HD-CKS-TOKEN"), "Phải chứa tên khách hàng từ CRM");
   assert.ok(combinedText.includes("123 Đường Test, Quận 1, TP.HCM"), "Phải chứa địa chỉ khách hàng từ CRM");
   assert.ok(combinedText.includes("PHIẾU ĐỀ NGHỊ CUNG CẤP DỊCH VỤ VNPT CA"), "Phải chứa nội dung phụ lục phiếu đăng ký");
   assert.ok(combinedText.includes("ĐIỀU KHOẢN SỬ DỤNG DỊCH VỤ CHỨNG THỰC CHỮ KÝ SỐ"), "Phải chứa nội dung điều khoản chung");
   assert.ok(combinedText.includes("HỢP ĐỒNG CUNG CẤP VÀ SỬ DỤNG DỊCH VỤ CHỨNG THỰC CHỮ KÝ SỐ"), "Phải chứa nội dung hợp đồng chính");
+  assert.ok(combinedText.includes("5.400.000 VNĐ"), "Phí thuê bao dịch vụ trong Phụ lục 01 phải map đúng giá trị hợp đồng (5.000.000đ + 8% VAT)");
+
+  const zipMain = new PizZip(docx);
+  const mainXmlRaw = zipMain.file("word/document.xml")!.asText();
+  assert.match(
+    mainXmlRaw,
+    /<w:p><w:r><w:br w:type="page"\/><\/w:r><\/w:p><w:altChunk r:id="rId\d+"\/>/,
+    "Phải có ngắt trang ngay trước altChunk đầu tiên (không dính liền trang chữ ký hợp đồng chính)"
+  );
 });
 
 test("renderFile: cks_smartca_cn_dn gộp đúng 4 phụ lục (tổ chức, cá nhân, bảo vệ dữ liệu, điều khoản chung)", async () => {
@@ -154,6 +181,8 @@ test("renderFile: cks_smartca_cn_dn gộp đúng 4 phụ lục (tổ chức, cá
   const { combinedText } = parseAndVerifyMergedDocx(docx, 4);
   assertNoLeftoverPlaceholders(combinedText);
   assertNoSamplePii(combinedText);
+  assertNoLegendNumbers(combinedText);
+  assertNoBlankMoneyMarkers(combinedText);
 
   assert.ok(combinedText.includes("CÔNG TY TNHH KHÁCH HÀNG HD-CKS-CNDN"), "Phải chứa tên khách hàng từ CRM");
   assert.ok(combinedText.includes("456 Đường Test 2, Quận 2, TP.HCM"), "Phải chứa địa chỉ khách hàng từ CRM");
@@ -161,6 +190,11 @@ test("renderFile: cks_smartca_cn_dn gộp đúng 4 phụ lục (tổ chức, cá
   assert.ok(combinedText.includes("DANH SÁCH CÁ NHÂN CẤP CHỨNG THƯ SỐ"), "Phải chứa phụ lục danh sách cá nhân");
   assert.ok(combinedText.includes("PHỤ LỤC CAM KẾT BẢO VỆ DỮ LIỆU CÁ NHÂN"), "Phải chứa phụ lục bảo vệ dữ liệu");
   assert.ok(combinedText.includes("ĐIỀU KHOẢN SỬ DỤNG DỊCH VỤ CHỨNG THỰC CHỮ KÝ SỐ"), "Phải chứa nội dung điều khoản chung");
+  assert.match(
+    combinedText,
+    /Tổng\s*tiền:\s*5\.400\.000\s*VNĐ/,
+    "Ô Tổng tiền trong phụ lục tổ chức phải map đúng giá trị hợp đồng (bao gồm VAT)"
+  );
 });
 
 test("renderFile: các mẫu không có phụ lục (hoa_don_dien_tu) vẫn xuất bình thường, không bị gộp altChunk", async () => {
