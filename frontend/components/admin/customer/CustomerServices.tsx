@@ -19,6 +19,10 @@ function formatIsoDateVn(value: string | null | undefined): string {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : (value ?? "—");
 }
 
+function formatExpirationVn(value: string | null | undefined): string {
+  return value ? formatIsoDateVn(value) : "Không thời hạn";
+}
+
 const SERVICE_GROUPS = ["BRCĐ", "CNTT", "Di động"] as const;
 const PAYMENT_METHODS = ["Trả trước", "Trả hàng tháng"] as const;
 
@@ -132,7 +136,7 @@ export default function CustomerServices({ customerId, canManage, onServicesChan
       serviceCode: service.serviceCode,
       paymentType: (service.paymentType as ServiceFormState["paymentType"]) || PAYMENT_METHODS[0],
       startDate: service.startDate,
-      expirationDate: service.expirationDate,
+      expirationDate: service.expirationDate ?? "",
       invoicePortalUrl: service.invoicePortalUrl || "",
       invoicePortalUsername: service.invoicePortalUsername || "",
       invoicePortalPassword: "",
@@ -183,6 +187,8 @@ export default function CustomerServices({ customerId, canManage, onServicesChan
       const { invoicePortalPassword, ...rest } = form;
       const payload = {
         ...rest,
+        // Để trống = không có thời hạn (vd: hóa đơn điện tử), không phải lỗi thiếu ngày.
+        expirationDate: rest.expirationDate || null,
         ...(invoicePortalPassword ? { invoicePortalPassword } : {}),
       };
       if (editingId) {
@@ -258,7 +264,7 @@ export default function CustomerServices({ customerId, canManage, onServicesChan
               services.map((service) => (
                 <tr
                   key={service.id}
-                  className={isExpiringSoon(service.expirationDate) ? "bg-amber-50" : ""}
+                  className={service.expirationDate && isExpiringSoon(service.expirationDate) ? "bg-amber-50" : ""}
                 >
                   <td className="px-3 py-2">{service.serviceGroup || "—"}</td>
                   <td className="px-3 py-2 font-semibold text-slate-800">{service.serviceName}</td>
@@ -267,7 +273,7 @@ export default function CustomerServices({ customerId, canManage, onServicesChan
                   <td className="px-3 py-2 font-mono">{service.transactionCode || "—"}</td>
                   <td className="px-3 py-2">{service.paymentType || "—"}</td>
                   <td className="px-3 py-2 whitespace-nowrap">{formatIsoDateVn(service.startDate)}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">{formatIsoDateVn(service.expirationDate)}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{formatExpirationVn(service.expirationDate)}</td>
                   {canManage && (
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-1">
@@ -478,16 +484,16 @@ export default function CustomerServices({ customerId, canManage, onServicesChan
                 </div>
                 <div>
                   <label htmlFor="svc-end" className="mb-1 block text-xs font-semibold text-slate-600">
-                    Ngày kết thúc <span className="text-rose-500">*</span>
+                    Ngày kết thúc
                   </label>
                   <input
                     id="svc-end"
-                    required
                     type="date"
                     value={form.expirationDate}
                     onChange={(e) => setForm({ ...form, expirationDate: e.target.value })}
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
                   />
+                  <p className="mt-1 text-[11px] text-slate-500">Để trống nếu dịch vụ không có thời hạn (vd: hóa đơn điện tử)</p>
                 </div>
               </div>
 

@@ -27,12 +27,13 @@ export default function ServicesPage() {
 
   // Số liệu các thẻ: đếm thẳng từ danh sách dịch vụ bên dưới (cùng phạm vi quyền của người xem).
   const activeCount = data.filter((item) => !item.isExpired).length;
-  const expiringIn30 = data.filter((item) => !item.isExpired && item.daysRemaining <= 30).length;
-  const expiringIn7 = data.filter((item) => !item.isExpired && item.daysRemaining <= 7).length;
+  const expiringIn30 = data.filter((item) => !item.isExpired && item.daysRemaining !== null && item.daysRemaining <= 30).length;
+  const expiringIn7 = data.filter((item) => !item.isExpired && item.daysRemaining !== null && item.daysRemaining <= 7).length;
   const expiredCount = data.filter((item) => item.isExpired).length;
   const cardValue = (n: number) => (loading || error ? "—" : n.toLocaleString("vi-VN"));
 
   async function handleCreateTask(item: ServiceRecord) {
+    if (!item.expirationDate) return; // Nút chỉ hiện cho dịch vụ có thời hạn.
     setCreatingCode(item.serviceCode);
     setNotice(null);
     try {
@@ -130,20 +131,22 @@ export default function ServicesPage() {
     {
       header: "Ngày hết hạn",
       accessorKey: "expirationDate",
-      cell: (item) => (
-        <span
-          className={`font-bold ${
-            item.isExpired ? "text-rose-600" : "text-amber-700"
-          }`}
-        >
-          {item.expirationDate.replace(/^(\d{4})-(\d{2})-(\d{2}).*$/, "$3/$2/$1")}
-        </span>
-      ),
+      cell: (item) =>
+        item.expirationDate ? (
+          <span className={`font-bold ${item.isExpired ? "text-rose-600" : "text-amber-700"}`}>
+            {item.expirationDate.replace(/^(\d{4})-(\d{2})-(\d{2}).*$/, "$3/$2/$1")}
+          </span>
+        ) : (
+          <span className="text-slate-400">Không thời hạn</span>
+        ),
     },
     {
       header: "Cảnh báo hạn",
       accessorKey: "daysRemaining",
       cell: (item) => {
+        if (item.daysRemaining === null) {
+          return <StatusBadge status="Không thời hạn" variant="slate" />;
+        }
         if (item.isExpired) {
           return <StatusBadge status="Đã hết hạn" variant="red" />;
         }
@@ -163,14 +166,16 @@ export default function ServicesPage() {
       header: "Hành động",
       cell: (item) => (
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => handleCreateTask(item)}
-            disabled={creatingCode === item.serviceCode}
-            className="flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50/70 px-2.5 py-1 text-[11px] font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-60"
-          >
-            <CheckSquare className="h-3 w-3" />
-            <span>{creatingCode === item.serviceCode ? "Đang tạo..." : "Tạo việc"}</span>
-          </button>
+          {item.expirationDate && (
+            <button
+              onClick={() => handleCreateTask(item)}
+              disabled={creatingCode === item.serviceCode}
+              className="flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50/70 px-2.5 py-1 text-[11px] font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-60"
+            >
+              <CheckSquare className="h-3 w-3" />
+              <span>{creatingCode === item.serviceCode ? "Đang tạo..." : "Tạo việc"}</span>
+            </button>
+          )}
           {isAdmin && !item.contractId && (
             <button
               type="button"

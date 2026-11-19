@@ -158,18 +158,96 @@ test("service name falls back to package name then a default; AM of the order wi
   assert.equal(b.staff_name, "AM Khách");
 });
 
-test("order without term defaults to 12 months; without signed date uses creation day", async () => {
+test("order without term has NO expiration (không tự bịa mặc định 12 tháng); without signed date uses creation day", async () => {
   const customerId = await insertCustomer(`KH Default ${uid()}`);
   await createOrder(customerId, { subscriberCodes: ["TB-D1"], termMonths: null });
   const [withSigned] = await servicesOf(customerId);
   assert.equal(withSigned.start_date, "2026-03-10");
-  assert.equal(withSigned.expiration_date, "2027-03-10");
+  assert.equal(withSigned.expiration_date, null);
 
   const otherCustomer = await insertCustomer(`KH NoDate ${uid()}`);
   await createOrder(otherCustomer, { subscriberCodes: ["TB-D2"], signedDate: null, termMonths: null });
   const [noDate] = await servicesOf(otherCustomer);
   assert.match(noDate.start_date, /^\d{4}-\d{2}-\d{2}$/);
-  assert.equal(noDate.expiration_date, addMonthsIso(noDate.start_date, 12));
+  assert.equal(noDate.expiration_date, null);
+});
+
+test("mỗi dòng dịch vụ trong đơn có thời hạn riêng: dòng có hạn vẫn ra ngày hết hạn, dòng không hạn thì NULL", async () => {
+  const customerId = await insertCustomer(`KH PerItem ${uid()}`);
+  const order = await contractService.create({
+    transactionCode: `GD-SYNC-ITEM-${uid()}`,
+    totalValue: 1000000,
+    channel: "Trực tiếp",
+    customerId,
+    signedDate: "2026-03-10",
+    termMonths: null,
+    amStaff: SYNC_DEFAULT_AM,
+    contractTemplate: "hoa_don_dien_tu",
+    items: [
+      {
+        lineType: "service",
+        serviceGroup: "CNTT",
+        serviceName: "SmartCA",
+        subscriberCode: "TB-HASTERM",
+        unitPrice: 500000,
+        termMonths: 12,
+      },
+      {
+        lineType: "service",
+        serviceGroup: "CNTT",
+        serviceName: "Hóa đơn điện tử",
+        subscriberCode: "TB-NOTERM",
+        unitPrice: 300000,
+        termMonths: null,
+      },
+    ],
+  } as any);
+
+  const rows = await servicesOf(customerId);
+  assert.equal(rows.length, 2);
+  const withTerm = rows.find((r: any) => r.service_code === "TB-HASTERM");
+  const withoutTerm = rows.find((r: any) => r.service_code === "TB-NOTERM");
+  assert.equal(withTerm.expiration_date, "2027-03-10");
+  assert.equal(withoutTerm.expiration_date, null, "Dòng hóa đơn điện tử không có term_months -> không thời hạn");
+  assert.equal(order.id, rows[0].contract_id);
+});
+
+test("thời hạn của dòng dịch vụ được ưu tiên hơn thời hạn chung của cả đơn", async () => {
+  const customerId = await insertCustomer(`KH ItemOverride ${uid()}`);
+  await contractService.create({
+    transactionCode: `GD-SYNC-OVR-${uid()}`,
+    totalValue: 1000000,
+    channel: "Trực tiếp",
+    customerId,
+    signedDate: "2026-03-10",
+    termMonths: 24, // mặc định chung của đơn
+    amStaff: SYNC_DEFAULT_AM,
+    contractTemplate: "hoa_don_dien_tu",
+    items: [
+      {
+        lineType: "service",
+        serviceGroup: "CNTT",
+        serviceName: "Dòng theo đơn",
+        subscriberCode: "TB-USEDEFAULT",
+        unitPrice: 500000,
+        termMonths: null, // không có riêng -> dùng mặc định của đơn (24 tháng)
+      },
+      {
+        lineType: "service",
+        serviceGroup: "CNTT",
+        serviceName: "Dòng ghi đè",
+        subscriberCode: "TB-OVERRIDE",
+        unitPrice: 300000,
+        termMonths: 6, // ghi đè mặc định của đơn
+      },
+    ],
+  } as any);
+
+  const rows = await servicesOf(customerId);
+  const useDefault = rows.find((r: any) => r.service_code === "TB-USEDEFAULT");
+  const override = rows.find((r: any) => r.service_code === "TB-OVERRIDE");
+  assert.equal(useDefault.expiration_date, "2028-03-10");
+  assert.equal(override.expiration_date, "2026-09-10");
 });
 
 test("end of month term math is applied to generated services", async () => {
@@ -334,7 +412,7 @@ test("backfill creates services for existing orders once and is idempotent", asy
   const first = await servicesOf(customerId);
   assert.equal(first.length, 2);
   assert.equal(first[0].start_date, "2026-02-01");
-  assert.equal(first[0].expiration_date, "2027-02-01");
+  assert.equal(first[0].expiration_date, null, "Đơn cũ không có term_months -> không thời hạn, không tự bịa 12 tháng");
   assert.equal(first[0].service_name, "Chữ ký số");
   assert.equal((await query<any>("SELECT id FROM services WHERE service_code = 'BF-9'")).length, 0);
 

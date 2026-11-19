@@ -32,7 +32,8 @@ type SendFn = (msg: { to: string | string[]; subject: string; text: string; html
  * bằng), ngược lại `null`. Không gửi bù mốc đã lỡ (Review Focus #2): nếu
  * server tắt đúng hôm còn 7 ngày, hôm sau còn 6 ngày sẽ KHÔNG gửi bù mốc 7.
  */
-export function findDueDays(expiryDate: string, today: string, daysBefore: number[]): number | null {
+export function findDueDays(expiryDate: string | null, today: string, daysBefore: number[]): number | null {
+  if (expiryDate === null) return null; // Dịch vụ không thời hạn -> không bao giờ nhắc hết hạn.
   const expiry = new Date(`${expiryDate}T00:00:00Z`).getTime();
   const base = new Date(`${today}T00:00:00Z`).getTime();
   if (Number.isNaN(expiry) || Number.isNaN(base)) {
@@ -48,7 +49,7 @@ interface ServiceRow {
   customer_name: string;
   service_name: string;
   service_code: string;
-  expiration_date: string;
+  expiration_date: string | null;
   staff_name: string;
   service_group: string | null;
 }
@@ -172,7 +173,8 @@ export const ReminderRunner = {
         source: "service",
         itemId: svc.id,
         daysBefore,
-        expiryDate: svc.expiration_date,
+        // daysBefore !== null (continue ở trên) => findDueDays đã xác nhận expiration_date không NULL.
+        expiryDate: svc.expiration_date!,
         title: svc.service_name,
         customerName: svc.customer_name,
         subscriberCode: svc.service_code,

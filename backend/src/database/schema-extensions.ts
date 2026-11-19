@@ -33,6 +33,11 @@ export async function applySchemaExtensions(): Promise<void> {
   await ensureColumn("users", "must_change_password", "BOOLEAN DEFAULT FALSE");
   await run("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_referral_code ON users(referral_code)");
 
+  // Cho phép dịch vụ không có thời hạn (vd: hóa đơn điện tử) — expiration_date = NULL,
+  // không ép mặc định 12 tháng. DB cũ (cột đang NOT NULL) được nới ra, không ảnh hưởng
+  // dữ liệu hiện có (mọi dòng đã có đều có giá trị, DROP NOT NULL không đụng tới chúng).
+  await run("ALTER TABLE services ALTER COLUMN expiration_date DROP NOT NULL");
+
   await ensureColumn("renewals", "expiry_date", "TEXT");
   await ensureColumn("renewals", "renewed_at", "TEXT");
 

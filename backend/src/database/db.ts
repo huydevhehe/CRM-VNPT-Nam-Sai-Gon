@@ -215,7 +215,7 @@ async function createTables() {
       service_name TEXT NOT NULL,
       service_code TEXT NOT NULL,
       start_date TEXT NOT NULL,
-      expiration_date TEXT NOT NULL,
+      expiration_date TEXT, -- NULL = dịch vụ không có thời hạn (vd: hóa đơn điện tử)
       staff_name TEXT NOT NULL
     )
   `);

@@ -33,6 +33,16 @@ test("computeCustomerStats counts active and expiring services", () => {
   assert.equal(stats.expiringServices, 2);
 });
 
+test("computeCustomerStats: dịch vụ không thời hạn (null) luôn là active, không bao giờ sắp hết hạn", () => {
+  const stats = computeCustomerStats(
+    [{ expirationDate: null }, { expirationDate: "2026-11-16" }],
+    [],
+    NOW
+  );
+  assert.equal(stats.activeServices, 2);
+  assert.equal(stats.expiringServices, 1);
+});
+
 test("computeCustomerStats sums order value, collected and outstanding", () => {
   const stats = computeCustomerStats(
     [],

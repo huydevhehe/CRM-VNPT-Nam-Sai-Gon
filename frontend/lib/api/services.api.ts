@@ -33,7 +33,8 @@ export interface CreateServiceInput {
   serviceCode: string;
   paymentType: string;
   startDate: string;
-  expirationDate: string;
+  /** Để trống/null = dịch vụ không có thời hạn (vd: hóa đơn điện tử). */
+  expirationDate?: string | null;
   staffName?: string;
   /** Chỉ áp dụng khi tên dịch vụ thuộc "Hóa đơn điện tử". */
   invoicePortalUrl?: string | null;
