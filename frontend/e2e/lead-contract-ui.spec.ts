@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import * as fs from "fs";
+import * as XLSX from "xlsx";
 import { loginAs } from "./fixtures/auth";
 import {
   ADMIN,
@@ -336,5 +337,31 @@ test.describe("Lead / Hợp đồng / Hoa hồng gắn CTV và Phường trên t
     // Nhấn Xóa lọc -> filter về rỗng
     await page.getByRole("button", { name: "Xóa lọc" }).click();
     await expect(statusFilter).toHaveValue("");
+  });
+
+  test("Trang Leads: nút Xuất Excel tải đúng file .xlsx với dữ liệu đang hiển thị", async ({ page }) => {
+    await loginAs(page, "admin");
+    await page.goto("/admin/leads");
+    await expect(page.locator("table tbody tr").first()).toBeVisible();
+
+    const rowCount = await page.locator("table tbody tr").count();
+    expect(rowCount).toBeGreaterThan(0);
+    const headerTexts = await page.locator("table thead th").allInnerTexts();
+
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Xuất Excel" }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/\.xlsx$/);
+
+    const downloadPath = await download.path();
+    expect(downloadPath).toBeTruthy();
+    const workbook = XLSX.readFile(downloadPath!);
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
+
+    // Header hiển thị trên bảng bị CSS "uppercase" biến đổi khi đọc qua innerText —
+    // so sánh không phân biệt hoa/thường để khớp đúng text gốc trong file xuất ra.
+    expect((rows[0] as string[]).map((h) => h.toLowerCase())).toEqual(headerTexts.map((h) => h.toLowerCase()));
+    expect(rows.length - 1).toBe(rowCount);
   });
 });

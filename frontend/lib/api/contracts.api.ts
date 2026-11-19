@@ -213,11 +213,30 @@ export interface ContractExportPreviewDto {
   templateLabel: string;
   missingFields: string[];
   lines: string[];
+  pdfAvailable: boolean;
 }
 
 /** Xem trước nội dung hợp đồng điền từ mẫu. Ném lỗi 501 tiếng Việt nếu mẫu chưa có file. */
 export function getContractExportPreview(contractId: string): Promise<ContractExportPreviewDto> {
   return apiFetch<ContractExportPreviewDto>(`/contracts/${contractId}/contract-export/preview`);
+}
+
+/** Bản PDF xem trước hợp đồng (xem ngay trong khung, chưa tải về máy). */
+export async function fetchContractExportPreviewPdf(contractId: string): Promise<Blob> {
+  const token = getToken();
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/contracts/${contractId}/contract-export/preview-file`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  } catch {
+    throw new Error("Không kết nối được máy chủ. Vui lòng thử lại.");
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.message || `Lỗi tải file (${res.status})`);
+  }
+  return res.blob();
 }
 
 export type ContractExportFormat = "docx" | "pdf";
