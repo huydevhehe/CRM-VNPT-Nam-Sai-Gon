@@ -84,6 +84,24 @@ interface ServiceLineItem {
   service_name: string | null;
   service_group: string | null;
   package_name: string | null;
+  term_months: number | null;
+}
+
+/** Hạn dùng tính từ 1 dòng dịch vụ: ưu tiên `term_months` của chính dòng đó,
+ * sau đó mới tới `term_months` chung của cả đơn; không có cái nào thì dịch vụ
+ * KHÔNG CÓ THỜI HẠN (null) — KHÔNG tự bịa mặc định 12 tháng. */
+function resolveExpiration(
+  startDate: string,
+  itemTermMonths: number | null | undefined,
+  contractTermMonths: number | null | undefined
+): string | null {
+  const term =
+    Number.isInteger(Number(itemTermMonths)) && Number(itemTermMonths) > 0
+      ? Number(itemTermMonths)
+      : Number.isInteger(Number(contractTermMonths)) && Number(contractTermMonths) > 0
+        ? Number(contractTermMonths)
+        : null;
+  return term === null ? null : addMonthsIso(startDate, term);
 }
 
 function parseCodes(raw: string): string[] {
@@ -143,7 +161,7 @@ export async function syncServicesFromContract(
   // dùng lại đúng cách cũ (subscriber_codes + các cột tóm tắt của đơn).
   const itemRows = customer
     ? await db.query<ServiceLineItem>(
-        `SELECT id, subscriber_code, service_name, service_group, package_name
+        `SELECT id, subscriber_code, service_name, service_group, package_name, term_months
          FROM contract_items WHERE contract_id = ? AND line_type = 'service' ORDER BY line_no`,
         [contractId]
       )
@@ -154,6 +172,7 @@ export async function syncServicesFromContract(
     serviceName: string | null;
     serviceGroup: string | null;
     packageName: string | null;
+    termMonths: number | null;
   }
 
   const lines: LineSource[] = itemRows.length
@@ -164,21 +183,18 @@ export async function syncServicesFromContract(
           serviceName: i.service_name ?? null,
           serviceGroup: i.service_group ?? null,
           packageName: i.package_name ?? null,
+          termMonths: i.term_months ?? null,
         }))
     : (customer ? parseCodes(contract.subscriber_codes) : []).map((code) => ({
         code,
         serviceName: null,
         serviceGroup: null,
         packageName: null,
+        termMonths: null,
       }));
 
   const startDate =
     normalizeDateIso(contract.signed_date) ?? normalizeDateIso(contract.created_date) ?? todayVn();
-  const term =
-    Number.isInteger(Number(contract.term_months)) && Number(contract.term_months) > 0
-      ? Number(contract.term_months)
-      : DEFAULT_TERM_MONTHS;
-  const endDate = addMonthsIso(startDate, term);
 
   const kept = new Set<string>();
 
@@ -191,6 +207,7 @@ export async function syncServicesFromContract(
 
     for (const line of lines) {
       const code = line.code;
+      const endDate = resolveExpiration(startDate, line.termMonths, contract.term_months);
       const target =
         linked.find((s) => s.customer_id === customer.id && s.service_code === code && !kept.has(s.id)) ??
         atCustomer.find((s) => s.service_code === code && !kept.has(s.id)) ??

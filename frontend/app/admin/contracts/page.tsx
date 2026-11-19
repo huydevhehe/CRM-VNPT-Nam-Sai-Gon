@@ -106,6 +106,9 @@ interface ItemFormRow {
   subscriberCode: string;
   quantity: string;
   unitPrice: string;
+  /** Thời hạn riêng của dòng này (tháng). Để trống = không có thời hạn (vd: hóa đơn điện tử),
+   * hoặc dùng "Thời hạn (tháng)" chung của cả đơn nếu đơn có đặt. */
+  termMonths: string;
 }
 
 const EMPTY_SERVICE_ITEM: ItemFormRow = {
@@ -116,6 +119,7 @@ const EMPTY_SERVICE_ITEM: ItemFormRow = {
   subscriberCode: "",
   quantity: "1",
   unitPrice: "",
+  termMonths: "",
 };
 
 const TOKEN_DEVICE_PRICE = 162000;
@@ -127,6 +131,7 @@ const TOKEN_DEVICE_ITEM: ItemFormRow = {
   subscriberCode: "",
   quantity: "1",
   unitPrice: String(TOKEN_DEVICE_PRICE),
+  termMonths: "",
 };
 
 const ITEMS_REQUIRED_MESSAGE = "Đơn hàng phải có ít nhất một dòng dịch vụ hoặc thiết bị";
@@ -152,6 +157,7 @@ function itemRecordToFormRow(item: {
   subscriberCode: string | null;
   quantity: number;
   unitPrice: number;
+  termMonths?: number | null;
 }): ItemFormRow {
   return {
     lineType: item.lineType,
@@ -161,6 +167,7 @@ function itemRecordToFormRow(item: {
     subscriberCode: item.subscriberCode || "",
     quantity: String(item.quantity || 1),
     unitPrice: String(item.unitPrice ?? ""),
+    termMonths: item.termMonths ? String(item.termMonths) : "",
   };
 }
 
@@ -623,7 +630,9 @@ export default function ContractsPage() {
         subscriberCode: item.lineType === "service" ? item.subscriberCode.trim() : null,
         quantity: item.lineType === "device" ? Number(item.quantity || 1) : 1,
         unitPrice: Number(item.unitPrice || 0),
-        termMonths: form.termMonths ? Number(form.termMonths) : null,
+        // Thời hạn riêng của dòng (để trống = không thời hạn); nếu dòng không đặt riêng,
+        // backend sẽ dùng "Thời hạn (tháng)" chung của cả đơn làm mặc định.
+        termMonths: item.termMonths ? Number(item.termMonths) : null,
       }));
 
       if (editingId) {
@@ -1452,6 +1461,27 @@ export default function ContractsPage() {
                           className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs focus:border-vnpt focus:outline-none"
                         />
                       </div>
+                      {item.lineType === "service" && (
+                        <div className="sm:col-span-2">
+                          <label className="mb-0.5 block text-[10px] font-semibold text-slate-500">
+                            Thời hạn (tháng)
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            data-testid={`item-term-months-${idx}`}
+                            value={item.termMonths}
+                            onChange={(e) => {
+                              const next = [...form.items];
+                              next[idx] = { ...item, termMonths: e.target.value };
+                              setForm({ ...form, items: next });
+                            }}
+                            placeholder="Để trống nếu không có thời hạn"
+                            className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-xs focus:border-vnpt focus:outline-none"
+                          />
+                        </div>
+                      )}
                       <div className="flex items-center justify-between gap-1 sm:col-span-1">
                         <span className="text-[11px] font-bold text-slate-700">
                           {itemLineAmount(item).toLocaleString("vi-VN")}
@@ -1603,7 +1633,7 @@ export default function ContractsPage() {
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-600">
-                    Thời hạn (tháng)
+                    Thời hạn mặc định (tháng)
                   </label>
                   <input
                     type="number"
@@ -1614,6 +1644,9 @@ export default function ContractsPage() {
                     placeholder="Để trống nếu không có thời hạn (vd: hóa đơn điện tử)"
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
                   />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Áp dụng cho các dòng dịch vụ không tự đặt thời hạn riêng (xem ô &ldquo;Thời hạn (tháng)&rdquo; ở từng dòng dịch vụ bên trên).
+                  </p>
                 </div>
               </div>
 

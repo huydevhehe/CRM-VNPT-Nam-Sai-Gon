@@ -84,7 +84,7 @@ export async function getStaffOverview(id: string): Promise<StaffOverviewDto> {
   const customerRows = await query<CustomerRow>(
     `SELECT c.id, c.customer_code, c.name, c.customer_group, c.am_staff, c.am_caring_staff,
             ct.name AS team_name,
-            (SELECT COUNT(*) FROM services s WHERE s.customer_id = c.id AND s.expiration_date >= ?) AS active_services
+            (SELECT COUNT(*) FROM services s WHERE s.customer_id = c.id AND (s.expiration_date IS NULL OR s.expiration_date >= ?)) AS active_services
      FROM customers c
      LEFT JOIN customer_teams ct ON ct.id = c.team_id
      WHERE TRIM(c.am_staff) = ? OR TRIM(c.am_caring_staff) = ?
