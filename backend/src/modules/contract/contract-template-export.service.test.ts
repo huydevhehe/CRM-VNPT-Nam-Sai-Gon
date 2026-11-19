@@ -24,7 +24,13 @@ async function insertCustomer(id: string, name: string, address: string, taxCode
   );
 }
 
-async function insertContract(id: string, customerId: string, template: string, contractNumber: string) {
+async function insertContract(
+  id: string,
+  customerId: string,
+  template: string,
+  contractNumber: string,
+  totalValue = 5000000
+) {
   await run(
     `INSERT INTO contracts (
       id, transaction_code, customer_name, subscriber_codes, total_value, channel,
@@ -36,7 +42,7 @@ async function insertContract(id: string, customerId: string, template: string, 
       "GD-CKS-" + id,
       "CÔNG TY TNHH KHÁCH HÀNG " + id,
       JSON.stringify(["02838123456"]),
-      5000000,
+      totalValue,
       "Trực tiếp",
       template,
       "HD-" + id,
@@ -140,6 +146,20 @@ function assertNoBlankMoneyMarkers(combinedText: string) {
   );
 }
 
+test("renderFile: giá trị hợp đồng KHÔNG cộng thêm VAT lên giá đã nhập (giá nhập vào đã gồm VAT sẵn)", async () => {
+  await resetTestData();
+  await insertCustomer("C-VAT", "CÔNG TY TNHH KHÁCH HÀNG VAT", "1 Đường VAT, Quận 1, TP.HCM", "0312349999");
+  // Số thật từ báo cáo lỗi: 2.779.920đ đã gồm VAT -> trước VAT phải là 2.574.000đ (số tròn,
+  // xác nhận 2.779.920 = 2.574.000 x 1.08), không phải cộng thêm 8% lên trên 2.779.920.
+  await insertContract("HD-VAT", "C-VAT", "cks_token_smartca_dn", "HD-VAT", 2779920);
+
+  const { docx } = await service.renderFile("HD-VAT");
+  const { combinedText } = parseAndVerifyMergedDocx(docx, 2);
+
+  assert.ok(combinedText.includes("2.779.920 VNĐ"), "Giá trị hợp đồng phải đúng bằng số đã nhập (đã gồm VAT), không cộng thêm");
+  assert.ok(!combinedText.includes("3.002.314"), "KHÔNG được cộng thêm 8% VAT lên giá đã gồm VAT (lỗi double-count cũ)");
+});
+
 test("renderFile: cks_token_smartca_dn gộp đúng 2 phụ lục (phiếu đăng ký + điều khoản chung)", async () => {
   await resetTestData();
   await insertCustomer("C-CKS-TOKEN", "CÔNG TY TNHH KHÁCH HÀNG CKS TOKEN", "123 Đường Test, Quận 1, TP.HCM", "0312345678");
@@ -159,7 +179,10 @@ test("renderFile: cks_token_smartca_dn gộp đúng 2 phụ lục (phiếu đăn
   assert.ok(combinedText.includes("PHIẾU ĐỀ NGHỊ CUNG CẤP DỊCH VỤ VNPT CA"), "Phải chứa nội dung phụ lục phiếu đăng ký");
   assert.ok(combinedText.includes("ĐIỀU KHOẢN SỬ DỤNG DỊCH VỤ CHỨNG THỰC CHỮ KÝ SỐ"), "Phải chứa nội dung điều khoản chung");
   assert.ok(combinedText.includes("HỢP ĐỒNG CUNG CẤP VÀ SỬ DỤNG DỊCH VỤ CHỨNG THỰC CHỮ KÝ SỐ"), "Phải chứa nội dung hợp đồng chính");
-  assert.ok(combinedText.includes("5.400.000 VNĐ"), "Phí thuê bao dịch vụ trong Phụ lục 01 phải map đúng giá trị hợp đồng (5.000.000đ + 8% VAT)");
+  assert.ok(
+    combinedText.includes("5.000.000 VNĐ"),
+    "Phí thuê bao dịch vụ trong Phụ lục 01 phải bằng đúng giá trị hợp đồng đã nhập (giá nhập vào đã gồm VAT, không được cộng thêm VAT nữa)"
+  );
 
   const zipMain = new PizZip(docx);
   const mainXmlRaw = zipMain.file("word/document.xml")!.asText();
@@ -192,21 +215,26 @@ test("renderFile: cks_smartca_cn_dn gộp đúng 4 phụ lục (tổ chức, cá
   assert.ok(combinedText.includes("ĐIỀU KHOẢN SỬ DỤNG DỊCH VỤ CHỨNG THỰC CHỮ KÝ SỐ"), "Phải chứa nội dung điều khoản chung");
   assert.match(
     combinedText,
-    /Tổng\s*tiền:\s*5\.400\.000\s*VNĐ/,
-    "Ô Tổng tiền trong phụ lục tổ chức phải map đúng giá trị hợp đồng (bao gồm VAT)"
+    /Tổng\s*tiền:\s*5\.000\.000\s*VNĐ/,
+    "Ô Tổng tiền trong phụ lục tổ chức phải bằng đúng giá trị hợp đồng đã nhập (đã gồm VAT, không cộng thêm nữa)"
   );
 });
 
 test("renderFile: các mẫu không có phụ lục (hoa_don_dien_tu) vẫn xuất bình thường, không bị gộp altChunk", async () => {
   await resetTestData();
   await insertCustomer("C-HD", "CÔNG TY TNHH HÓA ĐƠN", "789 Đường Test 3, Quận 3, TP.HCM", "0355555555");
-  await insertContract("HD-HOADON", "C-HD", "hoa_don_dien_tu", "HD-HOADON");
+  await insertContract("HD-HOADON", "C-HD", "hoa_don_dien_tu", "HD-HOADON", 2779920);
 
   const { docx } = await service.renderFile("HD-HOADON");
   const zip = new PizZip(docx);
   assert.equal(zip.file("word/afchunk1.docx"), null, "Mẫu không có phụ lục thì không được chèn altChunk");
   const mainXml = zip.file("word/document.xml")!.asText();
   strictParseOrThrow(mainXml, "word/document.xml (hoa_don_dien_tu)");
+
+  const text = extractAllText(mainXml);
+  assert.ok(text.includes("2.574.000"), "Tổng cước trước VAT phải tách ngược đúng từ giá đã gồm VAT");
+  assert.ok(text.includes("205.920"), "Thuế 8% VAT phải tách ngược đúng từ giá đã gồm VAT");
+  assert.ok(text.includes("2.779.920"), "Giá trị Hợp đồng phải đúng bằng số đã nhập (đã gồm VAT)");
 });
 
 test("renderFile: file docx CKS gộp xong convert PDF hợp lệ bằng LibreOffice (nếu máy có cài)", async (t) => {
