@@ -51,6 +51,10 @@ export function mergeDocxWithAltChunkAppendices(mainDocx: Buffer, appendices: Bu
   const existingRelIds = [...relsXml.matchAll(/Id="rId(\d+)"/g)].map((m) => parseInt(m[1], 10));
   let nextRelId = (existingRelIds.length ? Math.max(...existingRelIds) : 0) + 1;
 
+  // Ngắt trang trước mỗi phụ lục altChunk: nếu không, Word render phụ lục
+  // nối liền ngay sau đoạn cuối (vd. chữ ký) của hợp đồng chính trên cùng 1 trang.
+  const PAGE_BREAK = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+
   const altChunkTags: string[] = [];
   const newRelEntries: string[] = [];
   const newContentTypeEntries: string[] = [];
@@ -65,7 +69,7 @@ export function mergeDocxWithAltChunkAppendices(mainDocx: Buffer, appendices: Bu
     newContentTypeEntries.push(
       `<Override PartName="/word/${partName}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document"/>`
     );
-    altChunkTags.push(`<w:altChunk r:id="${relId}"/>`);
+    altChunkTags.push(PAGE_BREAK + `<w:altChunk r:id="${relId}"/>`);
   });
 
   relsXml = relsXml.replace("</Relationships>", newRelEntries.join("") + "</Relationships>");
