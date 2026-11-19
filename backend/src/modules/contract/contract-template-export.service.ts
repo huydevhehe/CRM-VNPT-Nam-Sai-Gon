@@ -129,9 +129,13 @@ export class ContractTemplateExportService {
     const soHopDong = contract.contract_number || `HD-${contract.transaction_code}`;
 
     const items = await listContractItems(contractId);
+    // Đơn giá/Thành tiền nhân viên nhập vào đơn đã BAO GỒM thuế VAT (đúng như nhãn
+    // "(Đã bao gồm thuế VAT)" trên các mẫu phiếu đề nghị) — KHÔNG được cộng thêm VAT
+    // lên trên, mà phải tách ngược VAT ra từ tổng đã gồm thuế.
     const subtotal = items.reduce((s, i) => s + i.amount, 0) || Number(contract.total_value || 0);
-    const vat = Math.round(subtotal * 0.08);
-    const total = subtotal + vat;
+    const total = subtotal;
+    const preVat = Math.round(subtotal / 1.08);
+    const vat = subtotal - preVat;
 
     const itemRows: ItemRow[] =
       items.length > 0
@@ -168,7 +172,7 @@ export class ContractTemplateExportService {
       NgayCapCCCD: BLANK_MARK,
       NoiCapCCCD: BLANK_MARK,
       items: itemRows,
-      TongTruocVAT: money(subtotal),
+      TongTruocVAT: money(preVat),
       ThueVAT: money(vat),
       GiaTriHopDong: money(total),
       BangChu: numberToVietnameseWords(total),
