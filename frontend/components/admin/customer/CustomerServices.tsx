@@ -209,7 +209,7 @@ export default function CustomerServices({ customerId, canManage, onServicesChan
     setError(null);
     try {
       await deleteService(service.id);
-      setServices((prev) => prev.filter((s) => s.id !== service.id));
+      await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Không thể xóa dịch vụ");
     }
@@ -264,10 +264,23 @@ export default function CustomerServices({ customerId, canManage, onServicesChan
               services.map((service) => (
                 <tr
                   key={service.id}
-                  className={service.expirationDate && isExpiringSoon(service.expirationDate) ? "bg-amber-50" : ""}
+                  className={
+                    service.isArchived
+                      ? "opacity-50"
+                      : service.expirationDate && isExpiringSoon(service.expirationDate)
+                        ? "bg-amber-50"
+                        : ""
+                  }
                 >
                   <td className="px-3 py-2">{service.serviceGroup || "—"}</td>
-                  <td className="px-3 py-2 font-semibold text-slate-800">{service.serviceName}</td>
+                  <td className="px-3 py-2 font-semibold text-slate-800">
+                    {service.serviceName}
+                    {service.isArchived && (
+                      <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-500">
+                        Đã lưu trữ
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2">{service.packageName || "—"}</td>
                   <td className="px-3 py-2 font-mono">{service.serviceCode}</td>
                   <td className="px-3 py-2 font-mono">{service.transactionCode || "—"}</td>
@@ -276,26 +289,28 @@ export default function CustomerServices({ customerId, canManage, onServicesChan
                   <td className="px-3 py-2 whitespace-nowrap">{formatExpirationVn(service.expirationDate)}</td>
                   {canManage && (
                     <td className="px-3 py-2">
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => openEdit(service)}
-                          disabled={Boolean(service.contractId)}
-                          className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-vnpt disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-400"
-                          title={service.contractId ? linkedTitle(service) : "Sửa"}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(service)}
-                          disabled={Boolean(service.contractId)}
-                          className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-400"
-                          title={service.contractId ? linkedTitle(service) : "Xóa"}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                      {!service.isArchived && (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openEdit(service)}
+                            disabled={Boolean(service.contractId)}
+                            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-vnpt disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                            title={service.contractId ? linkedTitle(service) : "Sửa"}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(service)}
+                            disabled={Boolean(service.contractId)}
+                            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                            title={service.contractId ? linkedTitle(service) : "Xóa"}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </td>
                   )}
                 </tr>
