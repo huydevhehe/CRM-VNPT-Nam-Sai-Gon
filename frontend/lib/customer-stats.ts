@@ -1,5 +1,6 @@
 export interface StatServiceInput {
-  expirationDate: string;
+  /** null = dịch vụ không có thời hạn (vd: hóa đơn điện tử). */
+  expirationDate: string | null;
 }
 
 export interface StatContractInput {
@@ -40,8 +41,14 @@ export function computeCustomerStats(
   contracts: StatContractInput[],
   now: Date = new Date()
 ): CustomerStats {
-  const activeServices = services.filter((s) => daysUntil(s.expirationDate, now) >= 0).length;
-  const expiringServices = services.filter((s) => isExpiringSoon(s.expirationDate, now)).length;
+  // Dịch vụ không có thời hạn (expirationDate null) luôn tính là đang hoạt động,
+  // không bao giờ tính "sắp hết hạn".
+  const activeServices = services.filter(
+    (s) => s.expirationDate === null || daysUntil(s.expirationDate, now) >= 0
+  ).length;
+  const expiringServices = services.filter(
+    (s) => s.expirationDate !== null && isExpiringSoon(s.expirationDate, now)
+  ).length;
 
   const totalValue = contracts.reduce((sum, c) => sum + toAmount(c.totalValue), 0);
   const collected = contracts.reduce((sum, c) => sum + toAmount(c.collectedAmount), 0);

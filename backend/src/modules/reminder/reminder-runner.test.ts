@@ -23,6 +23,10 @@ test("findDueDays returns the matching milestone and no catch-up for missed ones
   assert.equal(findDueDays("2026-11-17", "2026-11-11", [30, 7, 1]), null);
 });
 
+test("findDueDays never flags a service with no expiration date (null)", () => {
+  assert.equal(findDueDays(null, "2026-11-11", [30, 7, 1]), null);
+});
+
 async function resetReminderData(): Promise<void> {
   await run("DELETE FROM reminder_logs WHERE item_id LIKE 'SVC-TEST-%' OR item_id LIKE 'RMI-TEST-%'");
   await run("DELETE FROM services WHERE id LIKE 'SVC-TEST-%'");
@@ -31,9 +35,10 @@ async function resetReminderData(): Promise<void> {
 
 async function createTestService(
   suffix: string,
-  overrides: Partial<{ expirationDate: string; staffName: string; customerName: string }> = {}
+  overrides: Partial<{ expirationDate: string | null; staffName: string; customerName: string }> = {}
 ): Promise<string> {
   const id = `SVC-TEST-${suffix}`;
+  const expirationDate = "expirationDate" in overrides ? overrides.expirationDate : "2026-11-18";
   await run(
     `INSERT INTO services (id, customer_name, service_name, service_code, start_date, expiration_date, staff_name)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -43,7 +48,7 @@ async function createTestService(
       `Dịch vụ Test ${suffix}`,
       `SUB-TEST-${suffix}`,
       "2026-01-01",
-      overrides.expirationDate ?? "2026-11-18",
+      expirationDate,
       overrides.staffName ?? `AM Reminder Test ${suffix}`,
     ]
   );
@@ -81,6 +86,29 @@ test("run sends once per milestone even if the runner is invoked twice", async (
     [serviceId]
   );
   assert.equal(logs.filter((l) => l.status === "sent").length, 1);
+});
+
+test("run bỏ qua dịch vụ không có thời hạn (expiration_date NULL), không gửi nhắc hết hạn giả", async () => {
+  await resetReminderData();
+  const suffix = `noterm-${Date.now()}`;
+  await createTestStaff(suffix, "am-noterm@example.com");
+  const serviceId = await createTestService(suffix, { expirationDate: null });
+  await ReminderSettingsService.update({ notifyStaff: true, notifyCustomer: false, daysBefore: [7], extraCc: "" });
+
+  let sendCount = 0;
+  const fakeSend = async () => {
+    sendCount += 1;
+    return { sent: true };
+  };
+
+  await ReminderRunner.run("2026-11-11", { send: fakeSend });
+
+  assert.equal(sendCount, 0);
+  const logs = await query<{ status: string }>(
+    "SELECT status FROM reminder_logs WHERE source = 'service' AND item_id = ?",
+    [serviceId]
+  );
+  assert.equal(logs.length, 0);
 });
 
 test("run logs skipped_no_recipient when AM has no email, and still sends other items", async () => {

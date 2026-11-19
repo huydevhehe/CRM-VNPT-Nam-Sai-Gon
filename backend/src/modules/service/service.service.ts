@@ -37,7 +37,8 @@ export interface ServiceRow {
   service_name: string;
   service_code: string;
   start_date: string;
-  expiration_date: string;
+  /** NULL = dịch vụ không có thời hạn (vd: hóa đơn điện tử). */
+  expiration_date: string | null;
   staff_name: string;
   customer_id?: string | null;
   service_group?: string | null;
@@ -56,8 +57,10 @@ export interface ServiceRecordDto {
   serviceName: string;
   serviceCode: string;
   startDate: string;
-  expirationDate: string;
-  daysRemaining: number;
+  /** NULL = dịch vụ không có thời hạn (vd: hóa đơn điện tử). */
+  expirationDate: string | null;
+  /** NULL khi dịch vụ không có thời hạn (không tính được "còn bao nhiêu ngày"). */
+  daysRemaining: number | null;
   staffName: string;
   isExpired: boolean;
   customerId: string | null;
@@ -84,9 +87,9 @@ export class ServiceServiceError extends Error {
 }
 
 function toServiceRecord(row: ServiceRow): ServiceRecordDto {
-  const daysRemaining = Math.ceil(
-    (new Date(row.expiration_date).getTime() - new Date().getTime()) / 86400000
-  );
+  const daysRemaining = row.expiration_date
+    ? Math.ceil((new Date(row.expiration_date).getTime() - new Date().getTime()) / 86400000)
+    : null;
 
   return {
     id: row.id,
@@ -97,7 +100,7 @@ function toServiceRecord(row: ServiceRow): ServiceRecordDto {
     expirationDate: row.expiration_date,
     daysRemaining,
     staffName: row.staff_name,
-    isExpired: daysRemaining < 0,
+    isExpired: daysRemaining !== null && daysRemaining < 0,
     customerId: row.customer_id ?? null,
     serviceGroup: row.service_group ?? null,
     packageName: row.package_name ?? null,
@@ -145,14 +148,14 @@ export async function refreshCustomerSummary(
   customerId: string,
   db: ServiceDb = { query, run }
 ): Promise<void> {
-  const rows = await db.query<{ service_name: string; expiration_date: string }>(
+  const rows = await db.query<{ service_name: string; expiration_date: string | null }>(
     "SELECT service_name, expiration_date FROM services WHERE customer_id = ? ORDER BY expiration_date ASC",
     [customerId]
   );
 
   const servicesJoined = Array.from(new Set(rows.map((r) => r.service_name))).join(", ");
   const today = todayVn();
-  const nearest = rows.find((r) => r.expiration_date >= today);
+  const nearest = rows.find((r) => r.expiration_date !== null && r.expiration_date >= today);
 
   await db.run("UPDATE customers SET services = ?, nearest_expiration = ? WHERE id = ?", [
     servicesJoined || null,
@@ -169,7 +172,8 @@ export interface CreateServiceInput {
   serviceCode: string;
   paymentType: string;
   startDate: string;
-  expirationDate: string;
+  /** Để trống = dịch vụ không có thời hạn (vd: hóa đơn điện tử). */
+  expirationDate?: string | null;
   staffName?: string;
   /** Chỉ áp dụng khi tên dịch vụ thuộc "Hóa đơn điện tử" (xem isInvoicePortalService). */
   invoicePortalUrl?: string | null;
@@ -229,7 +233,7 @@ export class ServiceService {
     let records = rows.map(toServiceRecord);
 
     if (typeof filters.expiringWithinDays === "number" && !Number.isNaN(filters.expiringWithinDays)) {
-      records = records.filter((r) => r.daysRemaining <= filters.expiringWithinDays!);
+      records = records.filter((r) => r.daysRemaining !== null && r.daysRemaining <= filters.expiringWithinDays!);
     }
 
     return records;
@@ -253,10 +257,10 @@ export class ServiceService {
     if (!input.serviceName || !input.serviceName.trim()) {
       throw new ServiceServiceError("Tên dịch vụ không được để trống", 400);
     }
-    if (!input.startDate || !input.expirationDate) {
-      throw new ServiceServiceError("Vui lòng nhập ngày bắt đầu và ngày kết thúc", 400);
+    if (!input.startDate) {
+      throw new ServiceServiceError("Vui lòng nhập ngày bắt đầu", 400);
     }
-    if (input.expirationDate < input.startDate) {
+    if (input.expirationDate && input.expirationDate < input.startDate) {
       throw new ServiceServiceError("Ngày kết thúc phải sau hoặc bằng ngày bắt đầu", 400);
     }
 
@@ -294,7 +298,7 @@ export class ServiceService {
         input.serviceName.trim(),
         input.serviceCode || "",
         input.startDate,
-        input.expirationDate,
+        input.expirationDate ?? null,
         staffName,
         input.customerId,
         input.serviceGroup,
@@ -352,8 +356,10 @@ export class ServiceService {
     }
 
     const startDate = patch.startDate ?? existing.start_date;
-    const expirationDate = patch.expirationDate ?? existing.expiration_date;
-    if (expirationDate < startDate) {
+    // "expirationDate" in patch: phân biệt "không gửi field này" (undefined, giữ nguyên)
+    // với "gửi null" (chủ động xóa thời hạn, chuyển dịch vụ thành không có thời hạn).
+    const expirationDate = "expirationDate" in patch ? (patch.expirationDate ?? null) : existing.expiration_date;
+    if (expirationDate && expirationDate < startDate) {
       throw new ServiceServiceError("Ngày kết thúc phải sau hoặc bằng ngày bắt đầu", 400);
     }
 

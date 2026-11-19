@@ -93,8 +93,10 @@ export interface ServiceRecord {
   serviceName: string;
   serviceCode: string;
   startDate: string;
-  expirationDate: string;
-  daysRemaining: number;
+  /** null = dịch vụ không có thời hạn (vd: hóa đơn điện tử). */
+  expirationDate: string | null;
+  /** null khi dịch vụ không có thời hạn. */
+  daysRemaining: number | null;
   staffName: string;
   isExpired: boolean;
   customerId?: string | null;
