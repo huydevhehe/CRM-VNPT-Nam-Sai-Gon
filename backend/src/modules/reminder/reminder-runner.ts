@@ -149,7 +149,7 @@ export const ReminderRunner = {
 
     // Nguồn "service"
     const services = await query<ServiceRow>(
-      "SELECT id, customer_id, customer_name, service_name, service_code, expiration_date, staff_name, service_group FROM services"
+      "SELECT id, customer_id, customer_name, service_name, service_code, expiration_date, staff_name, service_group FROM services WHERE archived_at IS NULL"
     );
     for (const svc of services) {
       // Nhóm có cấu hình riêng thì dùng ngày/công tắc của nhóm; không thì theo cấu hình chung.

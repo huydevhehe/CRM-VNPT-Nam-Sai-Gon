@@ -140,7 +140,7 @@ test("listByCustomer returns all services of customer", async () => {
   assert.ok(list.every((s) => s.customerId === customerId));
 });
 
-test("remove deletes service and refreshes customer summary", async () => {
+test("remove (tắt cảnh báo) không xóa dịch vụ khỏi tóm tắt khách hàng, chỉ bỏ khỏi nearest_expiration", async () => {
   const serviceService = new ServiceService();
   const suffix = Date.now();
   const customerId = await createTestCustomer(suffix);
@@ -160,6 +160,101 @@ test("remove deletes service and refreshes customer summary", async () => {
   const rows = await query<any>("SELECT services, nearest_expiration FROM customers WHERE id = ?", [
     customerId,
   ]);
-  assert.equal(rows[0].services, null);
-  assert.equal(rows[0].nearest_expiration, null);
+  assert.equal(rows[0].services, "Internet Fiber Xóa", "dữ liệu dịch vụ của khách không bị mất/giảm");
+  assert.equal(rows[0].nearest_expiration, null, "dịch vụ đã tắt cảnh báo không còn tính vào nearest_expiration");
+});
+
+test("remove không xóa thật dữ liệu — chỉ đánh archived (soft delete), bản ghi vẫn còn trong DB", async () => {
+  const serviceService = new ServiceService();
+  const suffix = Date.now();
+  const customerId = await createTestCustomer(suffix);
+
+  const service = await serviceService.create({
+    customerId,
+    serviceGroup: "BRCĐ",
+    serviceName: "Internet Fiber Soft Delete",
+    serviceCode: `SOFT-${suffix}`,
+    paymentType: "Trả trước",
+    startDate: "2026-01-01",
+    expirationDate: "2026-12-31",
+  });
+
+  await serviceService.remove(service.id);
+
+  const rows = await query<any>("SELECT id, archived_at FROM services WHERE id = ?", [service.id]);
+  assert.equal(rows.length, 1, "bản ghi dịch vụ phải vẫn còn trong DB, không bị DELETE thật");
+  assert.ok(rows[0].archived_at, "phải có archived_at sau khi xóa");
+});
+
+test("getAll (trang Dịch vụ & Cảnh báo) không trả về dịch vụ đã archived", async () => {
+  const serviceService = new ServiceService();
+  const suffix = Date.now();
+  const customerId = await createTestCustomer(suffix);
+
+  const service = await serviceService.create({
+    customerId,
+    serviceGroup: "BRCĐ",
+    serviceName: "Internet Fiber Archived GetAll",
+    serviceCode: `GA-${suffix}`,
+    paymentType: "Trả trước",
+    startDate: "2026-01-01",
+    expirationDate: "2026-12-31",
+  });
+  await serviceService.remove(service.id);
+
+  const all = await serviceService.getAll({});
+  assert.ok(!all.some((s) => s.id === service.id));
+});
+
+test("listByCustomer vẫn trả về dịch vụ đã archived, có đánh dấu isArchived để FE hiển thị mờ", async () => {
+  const serviceService = new ServiceService();
+  const suffix = Date.now();
+  const customerId = await createTestCustomer(suffix);
+
+  const service = await serviceService.create({
+    customerId,
+    serviceGroup: "BRCĐ",
+    serviceName: "Internet Fiber Archived ByCustomer",
+    serviceCode: `LBC-${suffix}`,
+    paymentType: "Trả trước",
+    startDate: "2026-01-01",
+    expirationDate: "2026-12-31",
+  });
+  await serviceService.remove(service.id);
+
+  const list = await serviceService.listByCustomer(customerId);
+  const found = list.find((s) => s.id === service.id);
+  assert.ok(found, "dịch vụ đã archived vẫn phải còn hiển thị trên hồ sơ khách hàng");
+  assert.equal(found!.isArchived, true);
+});
+
+test("remove không cho xóa dịch vụ sinh từ hợp đồng (vẫn giữ nguyên hành vi cũ)", async () => {
+  const serviceService = new ServiceService();
+  const suffix = Date.now();
+  const customerId = await createTestCustomer(suffix);
+
+  await serviceService.create({
+    customerId,
+    serviceGroup: "BRCĐ",
+    serviceName: "Internet Fiber Có Hợp Đồng",
+    serviceCode: `CONTRACT-${suffix}`,
+    paymentType: "Trả trước",
+    startDate: "2026-01-01",
+    expirationDate: "2026-12-31",
+  });
+  const rows = await query<any>("SELECT id FROM services WHERE service_code = ?", [
+    `CONTRACT-${suffix}`,
+  ]);
+  await run("UPDATE services SET contract_id = ? WHERE id = ?", [`CTR-${suffix}`, rows[0].id]);
+
+  await assert.rejects(
+    async () => {
+      await serviceService.remove(rows[0].id);
+    },
+    (err: any) => {
+      assert.ok(err instanceof ServiceServiceError);
+      assert.equal(err.status, 400);
+      return true;
+    }
+  );
 });

@@ -49,6 +49,8 @@ export interface ServiceRow {
   invoice_portal_url?: string | null;
   invoice_portal_username?: string | null;
   invoice_portal_password_enc?: string | null;
+  /** NULL = còn dùng; có giá trị = đã "xóa" (soft delete, giữ nguyên dữ liệu). */
+  archived_at?: string | null;
 }
 
 export interface ServiceRecordDto {
@@ -75,6 +77,8 @@ export interface ServiceRecordDto {
   invoicePortalUsername: string | null;
   /** "••••••" nếu đã có mật khẩu, null nếu chưa nhập — KHÔNG BAO GIỜ trả plaintext ở đây. */
   invoicePortalPasswordMasked: string | null;
+  /** true = đã "xóa" (soft delete) — chỉ còn hiển thị (mờ) trên hồ sơ khách hàng, không còn trên trang Dịch vụ & Cảnh báo. */
+  isArchived: boolean;
 }
 
 export class ServiceServiceError extends Error {
@@ -111,6 +115,7 @@ function toServiceRecord(row: ServiceRow): ServiceRecordDto {
     invoicePortalUrl: row.invoice_portal_url ?? null,
     invoicePortalUsername: row.invoice_portal_username ?? null,
     invoicePortalPasswordMasked: row.invoice_portal_password_enc ? MASKED_PASSWORD : null,
+    isArchived: Boolean(row.archived_at),
   };
 }
 
@@ -143,19 +148,25 @@ export interface ServiceDb {
  * dịch vụ bằng ", ", `nearest_expiration` = ngày hết hạn sớm nhất còn hiệu
  * lực từ hôm nay) để bảng danh sách khách hàng cũ (dòng 1 `customers`) vẫn
  * hiển thị đúng sau khi thêm/sửa/xóa dịch vụ của khách.
+ *
+ * `services` liệt kê TẤT CẢ dịch vụ (kể cả đã tắt cảnh báo/archived) — dữ liệu
+ * dịch vụ của khách không bị giảm. `nearest_expiration` chỉ tính trên dịch vụ
+ * CHƯA tắt cảnh báo, vì nó phục vụ việc nhắc hạn/cảnh báo.
  */
 export async function refreshCustomerSummary(
   customerId: string,
   db: ServiceDb = { query, run }
 ): Promise<void> {
-  const rows = await db.query<{ service_name: string; expiration_date: string | null }>(
-    "SELECT service_name, expiration_date FROM services WHERE customer_id = ? ORDER BY expiration_date ASC",
+  const rows = await db.query<{ service_name: string; expiration_date: string | null; archived_at: string | null }>(
+    "SELECT service_name, expiration_date, archived_at FROM services WHERE customer_id = ? ORDER BY expiration_date ASC",
     [customerId]
   );
 
   const servicesJoined = Array.from(new Set(rows.map((r) => r.service_name))).join(", ");
   const today = todayVn();
-  const nearest = rows.find((r) => r.expiration_date !== null && r.expiration_date >= today);
+  const nearest = rows.find(
+    (r) => r.archived_at === null && r.expiration_date !== null && r.expiration_date >= today
+  );
 
   await db.run("UPDATE customers SET services = ?, nearest_expiration = ? WHERE id = ?", [
     servicesJoined || null,
@@ -220,7 +231,7 @@ function resolveInvoiceCredentialWrite(
 
 export class ServiceService {
   async getAll(filters: { staff?: string; expiringWithinDays?: number }): Promise<ServiceRecordDto[]> {
-    let sql = `${SERVICE_SELECT} WHERE 1=1`;
+    let sql = `${SERVICE_SELECT} WHERE s.archived_at IS NULL`;
     const params: any[] = [];
 
     if (filters.staff && filters.staff !== "all") {
@@ -425,6 +436,10 @@ export class ServiceService {
     return toServiceRecord(rows[0]);
   }
 
+  /**
+   * "Xóa" dịch vụ = soft delete (đánh archived_at), KHÔNG DELETE thật — dữ liệu dịch vụ
+   * của khách hàng không bị giảm/mất, chỉ ẩn khỏi trang "Dịch vụ & Cảnh báo"/nhắc hẹn.
+   */
   async remove(id: string): Promise<void> {
     const rows = await query<ServiceRow>(`${SERVICE_SELECT} WHERE s.id = ?`, [id]);
     if (rows.length === 0) {
@@ -435,7 +450,7 @@ export class ServiceService {
     }
     const customerId = rows[0].customer_id;
 
-    await run("DELETE FROM services WHERE id = ?", [id]);
+    await run("UPDATE services SET archived_at = ? WHERE id = ?", [new Date().toISOString(), id]);
 
     if (customerId) {
       await refreshCustomerSummary(customerId);

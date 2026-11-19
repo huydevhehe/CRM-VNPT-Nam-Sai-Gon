@@ -216,7 +216,8 @@ async function createTables() {
       service_code TEXT NOT NULL,
       start_date TEXT NOT NULL,
       expiration_date TEXT, -- NULL = dịch vụ không có thời hạn (vd: hóa đơn điện tử)
-      staff_name TEXT NOT NULL
+      staff_name TEXT NOT NULL,
+      archived_at TEXT -- NULL = còn dùng; có giá trị = đã "xóa" (soft delete, giữ nguyên dữ liệu)
     )
   `);
 
