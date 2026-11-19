@@ -317,11 +317,12 @@ export default function CommissionsPage() {
           {item.paidOutDate && (
             <p className="text-[11px] text-slate-400">{item.paidOutDate}</p>
           )}
-          <div className="mt-0.5">
-            <PayoutStateBadge item={item} />
-          </div>
         </div>
       ),
+    },
+    {
+      header: "Trạng thái chi",
+      cell: (item) => <PayoutStateBadge item={item} />,
     },
     {
       header: "Còn lại",

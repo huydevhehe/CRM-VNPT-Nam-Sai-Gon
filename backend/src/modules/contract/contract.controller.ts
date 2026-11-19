@@ -351,7 +351,9 @@ contractRouter.delete("/:id", requireAuth, requireAdmin, async (req: Request, re
 function contractTemplateExportErrorStatus(error: unknown): number {
   if (error instanceof ContractForbiddenError) return 403;
   if (error instanceof ContractTemplateExportError) return error.status;
-  return 500;
+  if (error instanceof ContractNotFoundError) return 404;
+  const message = error instanceof Error ? error.message : "";
+  return message === "Không tìm thấy Hợp đồng" ? 404 : 500;
 }
 
 // GET /api/contracts/:id/contract-export/preview — xem trước nội dung hợp đồng
@@ -361,8 +363,28 @@ contractRouter.get("/:id/contract-export/preview", requireAuth, async (req: Requ
     const { id } = req.params;
     await contractService.assertCanAccess(id, await resolveStaffScope(req));
     const preview = await contractTemplateExportService.preview(id);
-    res.json({ success: true, data: preview });
+    res.json({ success: true, data: { ...preview, pdfAvailable: isPdfConversionAvailable() } });
   } catch (error: any) {
+    res.status(contractTemplateExportErrorStatus(error)).json({ success: false, message: error.message });
+  }
+});
+
+// GET /api/contracts/:id/contract-export/preview-file — xem trước bản in (PDF) ngay trong trình duyệt,
+// không tải về máy (Content-Disposition: inline). Dùng chung dữ liệu render với "/file".
+contractRouter.get("/:id/contract-export/preview-file", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    await contractService.assertCanAccess(id, await resolveStaffScope(req));
+    const { docx } = await contractTemplateExportService.renderFile(id);
+    const pdf = await convertDocxToPdf(docx);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", 'inline; filename="hop-dong-xem-truoc.pdf"');
+    res.send(pdf);
+  } catch (error: any) {
+    if (error instanceof PdfConverterUnavailableError) {
+      res.status(501).json({ success: false, message: PDF_UNAVAILABLE_MESSAGE });
+      return;
+    }
     res.status(contractTemplateExportErrorStatus(error)).json({ success: false, message: error.message });
   }
 });
