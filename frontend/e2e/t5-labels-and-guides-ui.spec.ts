@@ -17,6 +17,7 @@ test.describe("Nhãn hoa hồng, hướng dẫn KPI, giải thích trang Dịch 
     const headers = page.locator("table thead th");
     await expect(headers.filter({ hasText: "Hoa hồng nhận" })).toHaveCount(1);
     await expect(headers.filter({ hasText: /^Đã chi$/ })).toHaveCount(1);
+    await expect(headers.filter({ hasText: "Trạng thái chi" })).toHaveCount(1);
     await expect(headers.filter({ hasText: "Còn lại" })).toHaveCount(1);
     await expect(headers.filter({ hasText: "Hoa hồng phải chi" })).toHaveCount(0);
     await expect(page.getByTestId("commission-legend")).toContainText("Còn lại = Hoa hồng nhận − Đã chi");
@@ -29,13 +30,13 @@ test.describe("Nhãn hoa hồng, hướng dẫn KPI, giải thích trang Dịch 
     let sumPaid = 0;
     for (let i = 0; i < count; i++) {
       const cells = rows.nth(i).locator("td");
-      // Cột: 5 Hoa hồng nhận, 6 Đã chi, 7 Còn lại
+      // Cột: 5 Hoa hồng nhận, 6 Đã chi, 7 Trạng thái chi, 8 Còn lại
       const received = parseMoney(await cells.nth(5).locator("span").first().innerText());
       const paid = parseMoney(await cells.nth(6).locator("span").first().innerText());
-      const remaining = parseMoney(await cells.nth(7).locator("span").first().innerText());
+      const remaining = parseMoney(await cells.nth(8).locator("span").first().innerText());
       expect(remaining).toBe(received - paid);
       const expectedState = paid <= 0 ? "none" : paid >= received ? "full" : "partial";
-      await expect(cells.nth(6).getByTestId("commission-payout-state")).toHaveAttribute(
+      await expect(cells.nth(7).getByTestId("commission-payout-state")).toHaveAttribute(
         "data-state",
         expectedState
       );

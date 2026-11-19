@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Search, Download, RotateCcw } from "lucide-react";
+import { Search, Download, FileSpreadsheet, RotateCcw } from "lucide-react";
+import * as XLSX from "xlsx";
 import {
   TableFilter,
   FilterValues,
@@ -95,17 +96,22 @@ export default function DataTable<T extends Record<string, any>>({
     setFilterValues({});
   };
 
+  /** Gi\u00e1 tr\u1ecb th\u00f4 t\u1eebng \u00f4, d\u00f9ng chung cho c\u1ea3 xu\u1ea5t CSV v\u00e0 Excel. */
+  function exportCellValue(row: T, col: Column<T>): string {
+    let val: unknown = col.accessorKey ? row[col.accessorKey] : "";
+    if (Array.isArray(val)) val = val.join("; ");
+    if (typeof val === "object" && val !== null) val = JSON.stringify(val);
+    return String(val ?? "");
+  }
+
+  const exportBaseName = `${exportFileName}_${new Date().toISOString().slice(0, 10)}`;
+
   const handleExportCsv = () => {
     if (!filteredData.length) return;
 
     const headers = columns.map((col) => `"${col.header.replace(/"/g, '""')}"`);
     const rows = filteredData.map((row) =>
-      columns.map((col) => {
-        let val = col.accessorKey ? row[col.accessorKey] : "";
-        if (Array.isArray(val)) val = val.join("; ");
-        if (typeof val === "object" && val !== null) val = JSON.stringify(val);
-        return `"${String(val ?? "").replace(/"/g, '""')}"`;
-      })
+      columns.map((col) => `"${exportCellValue(row, col).replace(/"/g, '""')}"`)
     );
 
     const csvContent =
@@ -115,9 +121,21 @@ export default function DataTable<T extends Record<string, any>>({
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${exportFileName}_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `${exportBaseName}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleExportExcel = () => {
+    if (!filteredData.length) return;
+
+    const headers = columns.map((col) => col.header);
+    const rows = filteredData.map((row) => columns.map((col) => exportCellValue(row, col)));
+
+    const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "D\u1eef li\u1ec7u");
+    XLSX.writeFile(workbook, `${exportBaseName}.xlsx`);
   };
 
   return (
@@ -186,10 +204,20 @@ export default function DataTable<T extends Record<string, any>>({
           <button
             onClick={handleExportCsv}
             className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
-            title="Xuất file Excel / CSV"
+            title="Xuất file CSV"
           >
             <Download className="h-3.5 w-3.5 text-slate-500" />
             <span>Xuất CSV</span>
+          </button>
+
+          {/* Export Excel button */}
+          <button
+            onClick={handleExportExcel}
+            className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+            title="Xuất file Excel (.xlsx)"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5 text-slate-500" />
+            <span>Xuất Excel</span>
           </button>
 
           {/* Optional Action Button */}
