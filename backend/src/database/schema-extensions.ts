@@ -38,6 +38,10 @@ export async function applySchemaExtensions(): Promise<void> {
   // dữ liệu hiện có (mọi dòng đã có đều có giá trị, DROP NOT NULL không đụng tới chúng).
   await run("ALTER TABLE services ALTER COLUMN expiration_date DROP NOT NULL");
 
+  // Xóa dịch vụ (nút Xóa trên "Dịch vụ & Cảnh báo"/hồ sơ khách hàng) không còn
+  // DELETE thật — chỉ đánh dấu archived_at để không mất dữ liệu khách hàng.
+  await ensureColumn("services", "archived_at", "TEXT");
+
   await ensureColumn("renewals", "expiry_date", "TEXT");
   await ensureColumn("renewals", "renewed_at", "TEXT");
 

@@ -111,6 +111,8 @@ export interface ServiceRecord {
   invoicePortalUsername?: string | null;
   /** "••••••" nếu đã có mật khẩu; không bao giờ là plaintext. */
   invoicePortalPasswordMasked?: string | null;
+  /** true = đã "xóa"/tắt cảnh báo — không còn trên trang Dịch vụ & Cảnh báo, chỉ còn hiển thị mờ trên hồ sơ khách hàng. */
+  isArchived?: boolean;
 }
 
 // 5. Lead

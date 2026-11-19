@@ -35,13 +35,18 @@ async function resetReminderData(): Promise<void> {
 
 async function createTestService(
   suffix: string,
-  overrides: Partial<{ expirationDate: string | null; staffName: string; customerName: string }> = {}
+  overrides: Partial<{
+    expirationDate: string | null;
+    staffName: string;
+    customerName: string;
+    archivedAt: string | null;
+  }> = {}
 ): Promise<string> {
   const id = `SVC-TEST-${suffix}`;
   const expirationDate = "expirationDate" in overrides ? overrides.expirationDate : "2026-11-18";
   await run(
-    `INSERT INTO services (id, customer_name, service_name, service_code, start_date, expiration_date, staff_name)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO services (id, customer_name, service_name, service_code, start_date, expiration_date, staff_name, archived_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       overrides.customerName ?? `KH Reminder Test ${suffix}`,
@@ -50,6 +55,7 @@ async function createTestService(
       "2026-01-01",
       expirationDate,
       overrides.staffName ?? `AM Reminder Test ${suffix}`,
+      overrides.archivedAt ?? null,
     ]
   );
   return id;
@@ -93,6 +99,32 @@ test("run bỏ qua dịch vụ không có thời hạn (expiration_date NULL), k
   const suffix = `noterm-${Date.now()}`;
   await createTestStaff(suffix, "am-noterm@example.com");
   const serviceId = await createTestService(suffix, { expirationDate: null });
+  await ReminderSettingsService.update({ notifyStaff: true, notifyCustomer: false, daysBefore: [7], extraCc: "" });
+
+  let sendCount = 0;
+  const fakeSend = async () => {
+    sendCount += 1;
+    return { sent: true };
+  };
+
+  await ReminderRunner.run("2026-11-11", { send: fakeSend });
+
+  assert.equal(sendCount, 0);
+  const logs = await query<{ status: string }>(
+    "SELECT status FROM reminder_logs WHERE source = 'service' AND item_id = ?",
+    [serviceId]
+  );
+  assert.equal(logs.length, 0);
+});
+
+test("run bỏ qua dịch vụ đã tắt cảnh báo (archived_at có giá trị), không gửi nhắc hẹn", async () => {
+  await resetReminderData();
+  const suffix = `archived-${Date.now()}`;
+  await createTestStaff(suffix, "am-archived@example.com");
+  const serviceId = await createTestService(suffix, {
+    expirationDate: "2026-11-18",
+    archivedAt: "2026-11-10T00:00:00.000Z",
+  });
   await ReminderSettingsService.update({ notifyStaff: true, notifyCustomer: false, daysBefore: [7], extraCc: "" });
 
   let sendCount = 0;
