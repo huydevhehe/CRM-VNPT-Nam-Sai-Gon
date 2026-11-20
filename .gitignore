@@ -1,41 +1,41 @@
 node_modules/
-VNPT CRM/frontend/node_modules/
-VNPT CRM/backend/node_modules/
+VNPT-CRM/frontend/node_modules/
+VNPT-CRM/backend/node_modules/
 vnpt-web-cong-khai/node_modules/
 .next/
-VNPT CRM/frontend/.next/
+VNPT-CRM/frontend/.next/
 vnpt-web-cong-khai/.next/
 out/
 build/
-VNPT CRM/backend/dist/
+VNPT-CRM/backend/dist/
 next-env.d.ts
 .env*
 !.env.example
 !.env.local.example
 *.tsbuildinfo
 *.log
-VNPT CRM/frontend/test-results/
-VNPT CRM/frontend/playwright-report/
+VNPT-CRM/frontend/test-results/
+VNPT-CRM/frontend/playwright-report/
 
 # Ignore docs folder and all reference docs/archives completely
 docs/
 *.zip
 *.xlsx
-!VNPT CRM/frontend/public/templates/*.xlsx
-!VNPT CRM/frontend/e2e/fixtures/*.xlsx
+!VNPT-CRM/frontend/public/templates/*.xlsx
+!VNPT-CRM/frontend/e2e/fixtures/*.xlsx
 !vnpt-web-cong-khai/public/templates/*.xlsx
 *.docx
-!VNPT CRM/backend/templates/contracts/*.docx
-!VNPT CRM/backend/templates/contracts/appendix/*.docx
+!VNPT-CRM/backend/templates/contracts/*.docx
+!VNPT-CRM/backend/templates/contracts/appendix/*.docx
 *.docx.backup
 ~$*
 *.bak
 
 # Giấy tờ đính kèm khách hàng (PDF/DOC/DOCX) tải lên — không commit file người dùng upload.
-VNPT CRM/backend/uploads/
+VNPT-CRM/backend/uploads/
 
 # Database files
-VNPT CRM/backend/data/
+VNPT-CRM/backend/data/
 *.sqlite
 *.sqlite3
 *.db
