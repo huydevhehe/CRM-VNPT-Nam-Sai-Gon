@@ -25,6 +25,7 @@ docs/
 !VNPT-CRM/frontend/e2e/fixtures/*.xlsx
 !vnpt-web-cong-khai/public/templates/*.xlsx
 *.docx
+!VNPT-CRM/backend/templates/*.docx
 !VNPT-CRM/backend/templates/contracts/*.docx
 !VNPT-CRM/backend/templates/contracts/appendix/*.docx
 *.docx.backup
