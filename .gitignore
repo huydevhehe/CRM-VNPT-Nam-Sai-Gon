@@ -1,38 +1,41 @@
 node_modules/
-frontend/node_modules/
-backend/node_modules/
+VNPT CRM/frontend/node_modules/
+VNPT CRM/backend/node_modules/
+vnpt-web-cong-khai/node_modules/
 .next/
-frontend/.next/
+VNPT CRM/frontend/.next/
+vnpt-web-cong-khai/.next/
 out/
 build/
-backend/dist/
+VNPT CRM/backend/dist/
 next-env.d.ts
 .env*
 !.env.example
 !.env.local.example
 *.tsbuildinfo
 *.log
-frontend/test-results/
-frontend/playwright-report/
+VNPT CRM/frontend/test-results/
+VNPT CRM/frontend/playwright-report/
 
 # Ignore docs folder and all reference docs/archives completely
 docs/
 *.zip
 *.xlsx
-!frontend/public/templates/*.xlsx
-!frontend/e2e/fixtures/*.xlsx
+!VNPT CRM/frontend/public/templates/*.xlsx
+!VNPT CRM/frontend/e2e/fixtures/*.xlsx
+!vnpt-web-cong-khai/public/templates/*.xlsx
 *.docx
-!backend/templates/contracts/*.docx
-!backend/templates/contracts/appendix/*.docx
+!VNPT CRM/backend/templates/contracts/*.docx
+!VNPT CRM/backend/templates/contracts/appendix/*.docx
 *.docx.backup
 ~$*
 *.bak
 
 # Giấy tờ đính kèm khách hàng (PDF/DOC/DOCX) tải lên — không commit file người dùng upload.
-backend/uploads/
+VNPT CRM/backend/uploads/
 
 # Database files
-backend/data/
+VNPT CRM/backend/data/
 *.sqlite
 *.sqlite3
 *.db

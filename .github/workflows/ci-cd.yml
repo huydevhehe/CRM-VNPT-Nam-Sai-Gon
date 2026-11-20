@@ -1,0 +1,191 @@
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+  PGPASSWORD: postgres
+
+jobs:
+  backend:
+    name: Backend (typecheck + test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Test (mỗi file test chạy trên DB sạch riêng)
+        run: |
+          failed=0
+          for f in $(find src -name '*.test.ts' | sort); do
+            echo "::group::$f"
+            psql -h localhost -U postgres -c "DROP DATABASE IF EXISTS ci_test"
+            psql -h localhost -U postgres -c "CREATE DATABASE ci_test"
+            if ! DATABASE_URL=postgres://postgres:postgres@localhost:5432/ci_test \
+              JWT_SECRET=ci-test-secret \
+              npx tsx --test --test-concurrency=1 "$f"; then
+              echo "::error::Test failed: $f"
+              failed=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $failed
+
+  frontend:
+    name: Frontend (typecheck + test + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Unit test
+        run: npm test
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8099/api
+
+  e2e-api:
+    name: E2E API (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ci_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - name: Install backend
+        run: npm ci
+        working-directory: backend
+      - name: Install frontend
+        run: npm ci
+        working-directory: frontend
+      - name: Start backend
+        working-directory: backend
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/ci_e2e
+          JWT_SECRET: ci-e2e-secret
+          PORT: "8099"
+          CORS_ORIGIN: http://localhost:3005
+        run: |
+          nohup npx tsx src/server.ts > ../backend-e2e.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fs http://localhost:8099/api/health > /dev/null; then
+              echo "Backend ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "Backend did not start"; cat ../backend-e2e.log; exit 1
+      - name: Run API e2e
+        working-directory: frontend
+        env:
+          E2E_API_URL: http://localhost:8099/api
+        run: npx playwright test e2e/api --workers=1 --trace=off --reporter=line
+      - name: Upload backend log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-e2e-log
+          path: backend-e2e.log
+
+  deploy:
+    name: Deploy (SSH + PM2)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [backend, frontend, e2e-api]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          if [ -n "$SSH_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          else
+            echo "::warning::SSH_KNOWN_HOSTS chưa đặt, đang tin host key lần đầu (kém an toàn)."
+            ssh-keyscan -p "${SSH_PORT:-22}" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+          fi
+      - name: Deploy backend then frontend
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/home/demo/apps/Fontend-VNPT-Nam-Sai-Gon' }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${SSH_PORT:-22}" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$SSH_USER@$SSH_HOST" "bash -l -s" <<EOF
+          set -euo pipefail
+          cd "$DEPLOY_PATH"
+          git checkout main
+          (cd backend && ./deploy.sh)
+          (cd frontend && ./deploy.sh)
+          pm2 status
+          EOF
