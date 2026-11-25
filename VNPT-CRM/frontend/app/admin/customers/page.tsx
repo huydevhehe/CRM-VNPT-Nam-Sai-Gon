@@ -67,6 +67,9 @@ export default function CustomersPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [editTarget, setEditTarget] = useState<CustomerRecord | null>(null);
+  // Mở sẵn form Tạo khách hàng + điền trước tên/SĐT/email khi đến từ liên kết
+  // "chuyển đổi Cơ hội kinh doanh thành Khách hàng" (vd ?prefillName=...&prefillPhone=...).
+  const [createPrefill, setCreatePrefill] = useState<Partial<CustomerFormValues> | null>(null);
 
   const [deleteTarget, setDeleteTarget] = useState<CustomerRecord | null>(null);
 
@@ -118,6 +121,20 @@ export default function CustomersPage() {
         // Không chặn trang khách hàng nếu danh sách team tải lỗi.
       });
   }
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const prefillName = params.get("prefillName");
+    if (!prefillName) return;
+    queueMicrotask(() => {
+      setCreatePrefill({
+        name: prefillName,
+        phone: params.get("prefillPhone") || "",
+        contactEmail: params.get("prefillEmail") || "",
+      });
+      setShowForm(true);
+    });
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -298,6 +315,7 @@ export default function CustomersPage() {
 
       setData((prev) => [created, ...prev]);
       setShowForm(false);
+      setCreatePrefill(null);
     } catch (err) {
       setFormError(
         err instanceof Error ? err.message : "Không thể thêm khách hàng. Vui lòng thử lại."
@@ -940,9 +958,15 @@ export default function CustomersPage() {
         <CustomerForm
           mode="create"
           initialValues={
-            isAdmin
-              ? undefined
-              : { ...EMPTY_CUSTOMER_FORM, amStaff: user?.name ?? "", amCaringStaff: user?.name ?? "" }
+            createPrefill
+              ? {
+                  ...EMPTY_CUSTOMER_FORM,
+                  ...(!isAdmin && { amStaff: user?.name ?? "", amCaringStaff: user?.name ?? "" }),
+                  ...createPrefill,
+                }
+              : isAdmin
+                ? undefined
+                : { ...EMPTY_CUSTOMER_FORM, amStaff: user?.name ?? "", amCaringStaff: user?.name ?? "" }
           }
           territories={territories}
           teams={teams}
@@ -952,7 +976,10 @@ export default function CustomersPage() {
           submitting={submitting}
           error={formError}
           onSubmit={handleCreateSubmit}
-          onCancel={() => setShowForm(false)}
+          onCancel={() => {
+            setShowForm(false);
+            setCreatePrefill(null);
+          }}
         />
       )}
 

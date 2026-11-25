@@ -263,11 +263,11 @@ test("payment method line shows prepaid months, legacy Trả trước keeps old 
   await resetTestData();
   await insertExportableOrder("HD-PM-1", "GD-PM-1", { paymentMethod: "Trả trước", prepaidMonths: 12 });
   await insertExportableOrder("HD-PM-2", "GD-PM-2", { paymentMethod: "Trả trước", prepaidMonths: null });
-  await insertExportableOrder("HD-PM-3", "GD-PM-3", { paymentMethod: "Theo hợp đồng" });
+  await insertExportableOrder("HD-PM-3", "GD-PM-3", { paymentMethod: "Theo giá trị hợp đồng" });
 
   assert.equal((await service.buildData("HD-PM-1", "1")).HinhThucThanhToan, "Trả trước 12 tháng");
   assert.equal((await service.buildData("HD-PM-2", "1")).HinhThucThanhToan, "Trả trước");
-  assert.equal((await service.buildData("HD-PM-3", "1")).HinhThucThanhToan, "Theo hợp đồng");
+  assert.equal((await service.buildData("HD-PM-3", "1")).HinhThucThanhToan, "Theo giá trị hợp đồng");
 
   const lines = extractDocxLines(service.render(await service.buildData("HD-PM-1", "1")));
   assert.ok(lines.some((l) => l.includes("Hình thức thanh toán: Trả trước 12 tháng")), lines.join("\n"));

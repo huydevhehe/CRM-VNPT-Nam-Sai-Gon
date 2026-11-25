@@ -232,6 +232,7 @@ async function createTables() {
       status TEXT DEFAULT 'Mới tiếp nhận',
       expected_value REAL DEFAULT 0,
       demand_description TEXT,
+      email TEXT, -- không bắt buộc nhập
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )

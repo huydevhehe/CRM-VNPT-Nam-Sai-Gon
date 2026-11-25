@@ -47,10 +47,10 @@ test.describe("Lead / Hợp đồng / Hoa hồng gắn CTV và Phường trên t
     await loginAs(page, "admin");
     await page.goto("/admin/leads");
 
-    await page.getByRole("button", { name: "Tạo Lead mới" }).click();
-    await expect(page.getByRole("heading", { name: "Tạo Lead mới" })).toBeVisible();
+    await page.getByRole("button", { name: "Tạo Cơ hội mới" }).click();
+    await expect(page.getByRole("heading", { name: "Tạo Cơ hội mới" })).toBeVisible();
 
-    const createModal = page.locator("div.fixed:has(h3:text-is('Tạo Lead mới'))");
+    const createModal = page.locator("div.fixed:has(h3:text-is('Tạo Cơ hội mới'))");
     // Popup tạo lead không còn ô Phường và Giá trị dự kiến
     await expect(createModal.locator("label:text-is('Phường')")).toHaveCount(0);
     await expect(createModal.locator("label:text-is('Giá trị dự kiến (₫)')")).toHaveCount(0);
@@ -67,8 +67,8 @@ test.describe("Lead / Hợp đồng / Hoa hồng gắn CTV và Phường trên t
     await expect(ctvSelect).toBeVisible();
     await ctvSelect.selectOption(ctv.id);
 
-    await createModal.getByRole("button", { name: "Tạo Lead", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Tạo Lead mới" })).not.toBeVisible({
+    await createModal.getByRole("button", { name: "Tạo Cơ hội", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Tạo Cơ hội mới" })).not.toBeVisible({
       timeout: 10_000,
     });
 
@@ -80,11 +80,11 @@ test.describe("Lead / Hợp đồng / Hoa hồng gắn CTV và Phường trên t
 
     // Phân công: đổi nhân viên và phường
     await row.getByRole("button", { name: "Phân công" }).click();
-    await expect(page.getByRole("heading", { name: "Phân công Lead" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Phân công Cơ hội" })).toBeVisible();
     await fieldByLabel(page, "Nhân viên phụ trách").selectOption(STAFF_B);
     await fieldByLabel(page, "Phường").selectOption(wards[1].id);
     await page.getByRole("button", { name: "Lưu phân công" }).click();
-    await expect(page.getByRole("heading", { name: "Phân công Lead" })).not.toBeVisible({
+    await expect(page.getByRole("heading", { name: "Phân công Cơ hội" })).not.toBeVisible({
       timeout: 10_000,
     });
 
@@ -127,8 +127,8 @@ test.describe("Lead / Hợp đồng / Hoa hồng gắn CTV và Phường trên t
     await loginAs(page, "admin");
     await page.goto("/admin/leads");
 
-    await page.getByRole("button", { name: "Tạo Lead mới" }).click();
-    const createModal = page.locator("div.fixed:has(h3:text-is('Tạo Lead mới'))");
+    await page.getByRole("button", { name: "Tạo Cơ hội mới" }).click();
+    const createModal = page.locator("div.fixed:has(h3:text-is('Tạo Cơ hội mới'))");
     await expect(createModal).toBeVisible();
 
     // AM Phụ trách mặc định là __RANDOM__
@@ -138,7 +138,7 @@ test.describe("Lead / Hợp đồng / Hoa hồng gắn CTV và Phường trên t
     await fieldByLabel(createModal, "Số điện thoại").fill(phone);
     // Kênh mặc định là Online: bắt buộc chọn nguồn Online ("Chi tiết kênh").
     await createModal.getByTestId("channel-detail-select").selectOption({ label: "Zalo Ads" });
-    await createModal.getByRole("button", { name: "Tạo Lead", exact: true }).click();
+    await createModal.getByRole("button", { name: "Tạo Cơ hội", exact: true }).click();
     await expect(createModal).not.toBeVisible({ timeout: 10_000 });
 
     await page.getByPlaceholder("Tìm theo tên Lead, SĐT, kênh phát triển...").fill(phone);

@@ -322,3 +322,78 @@ test("remove 409 when lead already used to create a contract", async () => {
   const stillThere = await query("SELECT id FROM leads WHERE id = ?", [lead.id]);
   assert.equal(stillThere.length, 1);
 });
+
+test("create: email không bắt buộc, để trống vẫn tạo được", async () => {
+  const service = new LeadService();
+  const suffix = Date.now();
+  const lead = await service.create({
+    customerName: `KH Lead Email Trống ${suffix}`,
+    phone: `090${String(suffix).slice(-7)}`,
+    group: "Lead KH mới",
+    channel: "Online",
+    channelSourceId: ONLINE_SOURCE_ID,
+    staffName: "Nguyễn Thị Tình",
+  });
+
+  assert.equal(lead.email, null);
+});
+
+test("create: lưu đúng email hợp lệ", async () => {
+  const service = new LeadService();
+  const suffix = Date.now();
+  const lead = await service.create({
+    customerName: `KH Lead Email Hợp Lệ ${suffix}`,
+    phone: `090${String(suffix).slice(-7)}`,
+    email: "khach@example.com",
+    group: "Lead KH mới",
+    channel: "Online",
+    channelSourceId: ONLINE_SOURCE_ID,
+    staffName: "Nguyễn Thị Tình",
+  });
+
+  assert.equal(lead.email, "khach@example.com");
+});
+
+test("create: email sai định dạng bị từ chối", async () => {
+  const service = new LeadService();
+  const suffix = Date.now();
+
+  await assert.rejects(
+    async () => {
+      await service.create({
+        customerName: `KH Lead Email Sai ${suffix}`,
+        phone: `090${String(suffix).slice(-7)}`,
+        email: "khong-phai-email",
+        group: "Lead KH mới",
+        channel: "Online",
+        channelSourceId: ONLINE_SOURCE_ID,
+        staffName: "Nguyễn Thị Tình",
+      });
+    },
+    (err: any) => {
+      assert.ok(err instanceof LeadServiceError);
+      assert.equal(err.message, "Email không hợp lệ");
+      assert.equal(err.status, 400);
+      return true;
+    }
+  );
+});
+
+test("update: sửa được email, và xóa trống email bằng chuỗi rỗng", async () => {
+  const service = new LeadService();
+  const suffix = Date.now();
+  const lead = await service.create({
+    customerName: `KH Lead Email Update ${suffix}`,
+    phone: `090${String(suffix).slice(-7)}`,
+    group: "Lead KH mới",
+    channel: "Online",
+    channelSourceId: ONLINE_SOURCE_ID,
+    staffName: "Nguyễn Thị Tình",
+  });
+
+  const updated = await service.update(lead.id, { email: "moi@example.com" }, { isAdmin: true, name: "Admin Test" });
+  assert.equal(updated.email, "moi@example.com");
+
+  const cleared = await service.update(lead.id, { email: "" }, { isAdmin: true, name: "Admin Test" });
+  assert.equal(cleared.email, null);
+});
