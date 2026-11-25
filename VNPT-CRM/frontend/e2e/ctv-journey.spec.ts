@@ -114,11 +114,11 @@ test.describe("Hành trình CTV đầu-cuối", () => {
 
     await test.step("Phân công nhân viên và Phường cho lead", async () => {
       await leadRow.getByRole("button", { name: "Phân công" }).click();
-      await expect(page.getByRole("heading", { name: "Phân công Lead" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Phân công Cơ hội" })).toBeVisible();
       await fieldByLabel(page, "Nhân viên phụ trách").selectOption(STAFF);
       await fieldByLabel(page, "Phường").selectOption(ward.id);
       await page.getByRole("button", { name: "Lưu phân công" }).click();
-      await expect(page.getByRole("heading", { name: "Phân công Lead" })).not.toBeVisible({
+      await expect(page.getByRole("heading", { name: "Phân công Cơ hội" })).not.toBeVisible({
         timeout: 10_000,
       });
       await expect(leadRow).toContainText(STAFF);

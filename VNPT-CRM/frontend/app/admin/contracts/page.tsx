@@ -23,6 +23,7 @@ import DataTable, { Column } from "@/components/admin/shared/DataTable";
 import StatusSelect from "@/components/admin/shared/StatusSelect";
 import ContractImportWizard from "@/components/admin/contract/ContractImportWizard";
 import PaymentRequestModal from "@/components/admin/contract/PaymentRequestModal";
+import ContractExportPreviewModal from "@/components/admin/contract/ContractExportPreviewModal";
 import MoneyInput from "@/components/admin/shared/MoneyInput";
 import { formatMoney } from "@/lib/money";
 import {
@@ -34,7 +35,6 @@ import {
   addContractPayment,
   deleteContractPayment,
   getContractTemplates,
-  downloadContractExportFile,
   deleteContract,
   ContractPaymentDto,
 } from "@/lib/api/contracts.api";
@@ -61,7 +61,7 @@ import {
 
 const CHANNEL_OPTIONS: readonly string[] = LEAD_CHANNELS;
 const SERVICE_GROUPS = ["BRCĐ", "CNTT", "Di động"] as const;
-const PAYMENT_METHODS = ["Trả trước", "Trả hàng tháng", "Theo hợp đồng"] as const;
+const PAYMENT_METHODS = ["Trả trước", "Trả hàng tháng", "Theo giá trị hợp đồng"] as const;
 const PREPAID_METHOD = "Trả trước";
 // Số tháng trả trước: 6 và 12 là phổ biến nên đứng đầu danh sách.
 const PREPAID_MONTH_OPTIONS = [12, 6, 3, 18, 24] as const;
@@ -255,8 +255,7 @@ export default function ContractsPage() {
 
   // T10 (STT 11): bộ mẫu hợp đồng + xuất hợp đồng + xóa đơn hàng
   const [contractTemplates, setContractTemplates] = useState<ContractTemplateOption[]>([]);
-  const [exportingContractId, setExportingContractId] = useState<string | null>(null);
-  const [contractExportError, setContractExportError] = useState<string | null>(null);
+  const [contractPreviewOrder, setContractPreviewOrder] = useState<ContractRecord | null>(null);
   const [deletingOrder, setDeletingOrder] = useState<ContractRecord | null>(null);
   const [deleteBlockedReason, setDeleteBlockedReason] = useState<string | null>(null);
 
@@ -545,25 +544,9 @@ export default function ContractsPage() {
     setShowForm(true);
   }
 
-  /** Xuất hợp đồng từ mẫu (T10, STT 11). Tải trực tiếp DOCX; báo lỗi tiếng Việt nếu mẫu chưa có file. */
-  async function handleExportContract(order: ContractRecord) {
-    setContractExportError(null);
-    setExportingContractId(order.id);
-    try {
-      const blob = await downloadContractExportFile(order.id, "docx");
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `Hop-dong_${order.transactionCode}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      setContractExportError(err instanceof Error ? err.message : "Không xuất được hợp đồng");
-    } finally {
-      setExportingContractId(null);
-    }
+  /** Xuất hợp đồng từ mẫu (T10, STT 11): mở modal xem trước, chọn tải Word/PDF trong đó. */
+  function handleOpenContractPreview(order: ContractRecord) {
+    setContractPreviewOrder(order);
   }
 
   function handleOpenDelete(order: ContractRecord) {
@@ -913,13 +896,12 @@ export default function ContractsPage() {
           </button>
           <button
             type="button"
-            onClick={() => handleExportContract(item)}
-            disabled={exportingContractId === item.id}
-            className="flex h-7 items-center gap-1 rounded-lg bg-violet-50 px-2 text-xs font-semibold text-violet-700 border border-violet-200 hover:bg-violet-100 disabled:opacity-50"
-            title="Xuất hợp đồng từ mẫu"
+            onClick={() => handleOpenContractPreview(item)}
+            className="flex h-7 items-center gap-1 rounded-lg bg-violet-50 px-2 text-xs font-semibold text-violet-700 border border-violet-200 hover:bg-violet-100"
+            title="Xem trước & xuất hợp đồng từ mẫu"
           >
             <FileText className="h-3.5 w-3.5" />
-            <span>{exportingContractId === item.id ? "Đang xuất..." : "Hợp đồng"}</span>
+            <span>Hợp đồng</span>
           </button>
           <button
             type="button"
@@ -1233,11 +1215,19 @@ export default function ContractsPage() {
                   <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     {leadCustomerHint}{" "}
                     <Link
-                      href="/admin/customers"
+                      href={(() => {
+                        const lead = linkableLeads.find((l) => l.id === form.leadId);
+                        const params = new URLSearchParams({
+                          prefillName: lead?.customerName ?? "",
+                          prefillPhone: lead?.phone ?? "",
+                          prefillEmail: lead?.email ?? "",
+                        });
+                        return `/admin/customers?${params.toString()}`;
+                      })()}
                       target="_blank"
                       className="font-semibold text-vnpt underline"
                     >
-                      Mở trang Khách hàng
+                      Mở trang Khách hàng (điền sẵn thông tin Cơ hội)
                     </Link>
                   </p>
                 )}
@@ -1877,20 +1867,12 @@ export default function ContractsPage() {
         />
       )}
 
-      {/* Lỗi xuất hợp đồng (T10, STT 11) — vd mẫu chưa có file, đơn chưa gắn khách. */}
-      {contractExportError && (
-        <div className="fixed bottom-4 right-4 z-50 max-w-sm rounded-xl border border-rose-200 bg-white p-4 shadow-lg">
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-xs font-medium text-rose-700">{contractExportError}</p>
-            <button
-              type="button"
-              onClick={() => setContractExportError(null)}
-              className="text-slate-400 hover:text-slate-600"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
+      {/* Xem trước & xuất hợp đồng từ mẫu (T10, STT 11) */}
+      {contractPreviewOrder && (
+        <ContractExportPreviewModal
+          order={contractPreviewOrder}
+          onClose={() => setContractPreviewOrder(null)}
+        />
       )}
 
       {/* Xóa đơn hàng (T10, STT 11) — chỉ Admin, cascade, chặn 409 khi đã có hoa hồng đã chi. */}

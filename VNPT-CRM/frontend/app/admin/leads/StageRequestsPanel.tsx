@@ -77,7 +77,7 @@ export default function StageRequestsPanel({ onDecided }: Readonly<StageRequests
         <div>
           <h3 className="text-base font-bold text-slate-900">Yêu cầu quay lại bước trước</h3>
           <p className="text-xs text-slate-500">
-            Nhân viên không tự lùi trạng thái Lead được. Duyệt để đổi trạng thái đúng như yêu cầu, hoặc từ chối.
+            Nhân viên không tự lùi trạng thái Cơ hội được. Duyệt để đổi trạng thái đúng như yêu cầu, hoặc từ chối.
           </p>
         </div>
         <select

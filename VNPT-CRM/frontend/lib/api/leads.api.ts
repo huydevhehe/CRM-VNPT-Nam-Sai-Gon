@@ -23,6 +23,7 @@ export type CreateLeadInput = Omit<
 export interface UpdateLeadInput {
   customerName?: string;
   phone?: string;
+  email?: string | null;
   group?: LeadRecord["group"];
   channel?: LeadRecord["channel"];
   channelSourceId?: string | null;
