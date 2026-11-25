@@ -42,6 +42,7 @@ export interface LeadRow {
   pending_requested_by: string | null;
   pending_created_at: string | null;
   note?: string | null;
+  email?: string | null;
 }
 
 export interface PendingStageRequestDto {
@@ -56,6 +57,7 @@ export interface LeadRecordDto {
   id: string;
   customerName: string;
   phone: string;
+  email: string | null;
   group: string;
   channel: string;
   staffName: string;
@@ -76,6 +78,8 @@ export interface LeadRecordDto {
 export interface CreateLeadInput {
   customerName: string;
   phone: string;
+  /** Không bắt buộc nhập. */
+  email?: string | null;
   group: string;
   channel: string;
   staffName: string;
@@ -92,6 +96,7 @@ export interface CreateLeadInput {
 export interface UpdateLeadInput {
   customerName?: unknown;
   phone?: unknown;
+  email?: unknown;
   group?: unknown;
   channel?: unknown;
   channelSourceId?: unknown;
@@ -142,6 +147,7 @@ function toLeadRecord(row: LeadRow): LeadRecordDto {
     id: row.id,
     customerName: row.customer_name,
     phone: row.phone,
+    email: row.email ?? null,
     group: row.group_name,
     channel: row.channel,
     staffName: row.staff_name,
@@ -203,6 +209,26 @@ function parseExpectedValue(raw: unknown): number {
     throw new LeadServiceError("Giá trị dự kiến không được âm", 400);
   }
   return value;
+}
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Email không bắt buộc nhập; nếu có nhập thì phải đúng định dạng. */
+function parseEmail(raw: unknown): string | null {
+  if (raw === undefined || raw === null) {
+    return null;
+  }
+  if (typeof raw !== "string") {
+    throw new LeadServiceError("Email không hợp lệ", 400);
+  }
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (!EMAIL_PATTERN.test(trimmed)) {
+    throw new LeadServiceError("Email không hợp lệ", 400);
+  }
+  return trimmed;
 }
 
 function parseNote(raw: unknown): string | null {
@@ -304,17 +330,19 @@ export class LeadService {
     }
 
     const note = parseNote(data.note);
+    const email = parseEmail(data.email);
 
     const id = `LEAD-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     await run(
       `INSERT INTO leads (
-        id, customer_name, phone, group_name, channel, staff_name,
+        id, customer_name, phone, email, group_name, channel, staff_name,
         status, expected_value, demand_description, territory_id, referred_by_ctv_id, note, channel_source_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         data.customerName,
         data.phone,
+        email,
         data.group,
         data.channel,
         staffName,
@@ -373,6 +401,15 @@ export class LeadService {
         sets.push("phone = ?");
         params.push(value);
         changes.push(`SĐT: ${existing.phone} -> ${value}`);
+      }
+    }
+
+    if (input.email !== undefined) {
+      const value = parseEmail(input.email);
+      if (value !== existing.email) {
+        sets.push("email = ?");
+        params.push(value);
+        changes.push("Email");
       }
     }
 

@@ -13,7 +13,7 @@ const ADMIN_ONLY_MENUS = [
 
 const SHARED_MENUS = [
   "Dashboard tổng hợp",
-  "Lead / Cơ hội",
+  "Cơ hội kinh doanh",
   "Đơn hàng",
   "Quản lý nợ",
   "Khách hàng",

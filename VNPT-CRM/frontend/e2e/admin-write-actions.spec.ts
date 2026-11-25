@@ -142,9 +142,9 @@ test.describe("Hành động ghi dữ liệu trên trang Admin (Task 3-10)", () 
     const customerName = `KH E2E Lead ${uniqueSuffix}`;
     const phone = `09${String(uniqueSuffix).slice(-8)}`;
 
-    await page.getByRole("button", { name: "Tạo Lead mới" }).click();
+    await page.getByRole("button", { name: "Tạo Cơ hội mới" }).click();
     await expect(
-      page.getByRole("heading", { name: "Tạo Lead mới" })
+      page.getByRole("heading", { name: "Tạo Cơ hội mới" })
     ).toBeVisible();
 
     await fieldByLabel(page, "Tên khách hàng / Đầu mối").fill(customerName);
@@ -155,9 +155,9 @@ test.describe("Hành động ghi dữ liệu trên trang Admin (Task 3-10)", () 
     // Kênh mặc định là Online: bắt buộc chọn nguồn Online ("Chi tiết kênh").
     await page.getByTestId("channel-detail-select").selectOption({ label: "Zalo Ads" });
 
-    await page.getByRole("button", { name: "Tạo Lead", exact: true }).click();
+    await page.getByRole("button", { name: "Tạo Cơ hội", exact: true }).click();
     await expect(
-      page.getByRole("heading", { name: "Tạo Lead mới" })
+      page.getByRole("heading", { name: "Tạo Cơ hội mới" })
     ).not.toBeVisible({ timeout: 10_000 });
 
     const searchBox = page.getByPlaceholder(

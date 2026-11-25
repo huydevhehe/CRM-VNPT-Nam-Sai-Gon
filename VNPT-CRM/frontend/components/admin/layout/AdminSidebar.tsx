@@ -45,14 +45,9 @@ const NAV_SECTIONS = [
     label: "KINH DOANH",
     items: [
       {
-        name: "Lead / Cơ hội",
+        name: "Cơ hội kinh doanh",
         href: "/admin/leads",
         icon: Target,
-      },
-      {
-        name: "Danh mục kênh",
-        href: "/admin/channel-sources",
-        icon: Network,
       },
       {
         name: "Đơn hàng",
@@ -119,6 +114,11 @@ const NAV_SECTIONS = [
   {
     label: "VẬN HÀNH",
     items: [
+      {
+        name: "Danh mục kênh",
+        href: "/admin/channel-sources",
+        icon: Network,
+      },
       {
         name: "Nhân viên",
         href: "/admin/employees",

@@ -85,10 +85,10 @@ test.describe("Đơn hàng: sửa nhanh + đề nghị thanh toán (API)", () =>
     expect(monthly.status()).toBe(201);
     expect((await monthly.json()).data.prepaidMonths).toBeNull();
 
-    const byContract = await createOrder(request, "PRE_HD", { paymentMethod: "Theo hợp đồng" });
+    const byContract = await createOrder(request, "PRE_HD", { paymentMethod: "Theo giá trị hợp đồng" });
     expect(byContract.status()).toBe(201);
     const bc = (await byContract.json()).data;
-    expect(bc.paymentMethod).toBe("Theo hợp đồng");
+    expect(bc.paymentMethod).toBe("Theo giá trị hợp đồng");
     expect(bc.prepaidMonths).toBeNull();
 
     // Sửa: đổi sang Trả trước phải kèm số tháng, rồi đổi lại thì xóa số tháng.
@@ -105,7 +105,7 @@ test.describe("Đơn hàng: sửa nhanh + đề nghị thanh toán (API)", () =>
     expect((await patchOk.json()).data.prepaidMonths).toBe(12);
     const patchBack = await request.patch(`${API_URL}/contracts/${bc.id}`, {
       headers: bearer(adminToken),
-      data: { paymentMethod: "Theo hợp đồng" },
+      data: { paymentMethod: "Theo giá trị hợp đồng" },
     });
     expect((await patchBack.json()).data.prepaidMonths).toBeNull();
   });

@@ -51,8 +51,8 @@ test.describe("Lead: Danh mục kênh, chi tiết kênh, sửa Lead, lùi bướ
     await expect(page.getByRole("columnheader", { name: "Phường" })).toHaveCount(0);
     await expect(page.getByRole("columnheader", { name: "Chi tiết kênh" })).toBeVisible();
 
-    await page.getByRole("button", { name: "Tạo Lead mới" }).click();
-    const modal = page.locator("div.fixed:has(h3:text-is('Tạo Lead mới'))");
+    await page.getByRole("button", { name: "Tạo Cơ hội mới" }).click();
+    const modal = page.locator("div.fixed:has(h3:text-is('Tạo Cơ hội mới'))");
     await fieldByLabel(modal, "Tên khách hàng / Đầu mối").fill(customerName);
     await fieldByLabel(modal, "Số điện thoại").fill(phone);
     await fieldByLabel(modal, "AM Phụ trách").selectOption(AM_NAME);
@@ -62,10 +62,10 @@ test.describe("Lead: Danh mục kênh, chi tiết kênh, sửa Lead, lùi bướ
     await expect(modal.getByTestId("channel-detail-picker")).toContainText("Chi tiết kênh");
     await expect(detail.locator("option", { hasText: "Zalo Ads" })).toHaveCount(1);
     await expect(detail.locator("option", { hasText: "Facebook" })).toHaveCount(1);
-    await modal.getByRole("button", { name: "Tạo Lead", exact: true }).click();
+    await modal.getByRole("button", { name: "Tạo Cơ hội", exact: true }).click();
     await expect(modal).toBeVisible(); // bị chặn vì chưa chọn nguồn
     await detail.selectOption({ label: "Zalo Ads" });
-    await modal.getByRole("button", { name: "Tạo Lead", exact: true }).click();
+    await modal.getByRole("button", { name: "Tạo Cơ hội", exact: true }).click();
     await expect(modal).not.toBeVisible({ timeout: 10_000 });
 
     await page.getByPlaceholder(SEARCH).fill(phone);
@@ -75,7 +75,7 @@ test.describe("Lead: Danh mục kênh, chi tiết kênh, sửa Lead, lùi bướ
 
     // Admin sửa: đổi tên + sang kênh Đối tác
     await row.getByTestId("lead-edit").click();
-    const edit = page.locator("div.fixed:has(h3:text-is('Sửa thông tin Lead'))");
+    const edit = page.locator("div.fixed:has(h3:text-is('Sửa thông tin Cơ hội'))");
     await expect(edit).toBeVisible();
     await expect(fieldByLabel(edit, "Tên khách hàng / Đầu mối")).toHaveValue(customerName);
     await fieldByLabel(edit, "Tên khách hàng / Đầu mối").fill(`${customerName} (sửa)`);

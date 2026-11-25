@@ -58,8 +58,8 @@ export const PERMISSION_MODULES: readonly PermissionModule[] = [
   },
   {
     key: "leads",
-    label: "Lead / Cơ hội",
-    note: "AM chỉ thấy và xử lý Lead của mình (ghi chú, chuyển trạng thái tiến lên). Quay lại bước trước phải gửi yêu cầu để Admin duyệt. Sửa thông tin Lead, giao Lead / đổi AM phụ trách, duyệt yêu cầu, xóa Lead chỉ Admin.",
+    label: "Cơ hội kinh doanh",
+    note: "AM chỉ thấy và xử lý Cơ hội của mình (ghi chú, chuyển trạng thái tiến lên). Quay lại bước trước phải gửi yêu cầu để Admin duyệt. Sửa thông tin, giao / đổi AM phụ trách, duyệt yêu cầu, xóa Cơ hội chỉ Admin.",
     access: AM_ACCESS(OWN),
   },
   {

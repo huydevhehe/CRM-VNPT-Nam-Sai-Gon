@@ -81,6 +81,7 @@ leadRouter.post("/", requireAuth, async (req: Request, res: Response) => {
     const {
       customerName,
       phone,
+      email,
       group,
       channel,
       channelSourceId,
@@ -107,6 +108,7 @@ leadRouter.post("/", requireAuth, async (req: Request, res: Response) => {
     const lead = await leadService.create({
       customerName,
       phone,
+      email,
       group,
       channel,
       channelSourceId,

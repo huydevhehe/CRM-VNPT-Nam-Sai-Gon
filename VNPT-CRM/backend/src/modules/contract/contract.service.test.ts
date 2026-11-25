@@ -577,7 +577,7 @@ test("updateStatus and addPayment still work on legacy orders without customer",
 });
 
 // ---------------------------------------------------------------------------
-// STT 6: Hình thức thanh toán — Trả trước kèm số tháng; "Theo hợp đồng"
+// STT 6: Hình thức thanh toán — Trả trước kèm số tháng; "Theo giá trị hợp đồng"
 // ---------------------------------------------------------------------------
 
 const ADMIN_ACTOR = { role: "Admin", name: "Admin" };
@@ -618,7 +618,7 @@ test("create with Trả trước requires prepaid months from 3/6/12/18/24", asy
   }
 });
 
-test("other payment methods drop prepaid months; Theo hợp đồng is accepted", async () => {
+test("other payment methods drop prepaid months; Theo giá trị hợp đồng is accepted", async () => {
   await resetTestData();
   await insertCustomer("C-OTH", "Khách Hình Thức Khác");
 
@@ -635,9 +635,9 @@ test("other payment methods drop prepaid months; Theo hợp đồng is accepted"
     ...BASE_INPUT,
     transactionCode: "GD-OTH-2",
     customerId: "C-OTH",
-    paymentMethod: "Theo hợp đồng",
+    paymentMethod: "Theo giá trị hợp đồng",
   });
-  assert.equal(byContract.paymentMethod, "Theo hợp đồng");
+  assert.equal(byContract.paymentMethod, "Theo giá trị hợp đồng");
   assert.equal(byContract.prepaidMonths, null);
 
   const none = await service.create({ ...BASE_INPUT, transactionCode: "GD-OTH-3", customerId: "C-OTH" });
@@ -685,8 +685,8 @@ test("updateInfo: switching to Trả trước needs months; leaving Trả trư�
     /phải chọn số tháng trả trước/
   );
 
-  const byContract = await service.updateInfo(order.id, { paymentMethod: "Theo hợp đồng", prepaidMonths: 12 }, ADMIN_ACTOR);
-  assert.equal(byContract.paymentMethod, "Theo hợp đồng");
+  const byContract = await service.updateInfo(order.id, { paymentMethod: "Theo giá trị hợp đồng", prepaidMonths: 12 }, ADMIN_ACTOR);
+  assert.equal(byContract.paymentMethod, "Theo giá trị hợp đồng");
   assert.equal(byContract.prepaidMonths, null);
 });
 
