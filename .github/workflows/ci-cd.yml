@@ -32,14 +32,14 @@ jobs:
           --health-retries 10
     defaults:
       run:
-        working-directory: backend
+        working-directory: VNPT-CRM/backend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: VNPT-CRM/backend/package-lock.json
       - run: npm ci
       - name: Typecheck
         run: npx tsc --noEmit
@@ -66,14 +66,14 @@ jobs:
     timeout-minutes: 30
     defaults:
       run:
-        working-directory: frontend
+        working-directory: VNPT-CRM/frontend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: VNPT-CRM/frontend/package-lock.json
       - run: npm ci
       - name: Typecheck
         run: npx tsc --noEmit
@@ -108,16 +108,16 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: |
-            backend/package-lock.json
-            frontend/package-lock.json
+            VNPT-CRM/backend/package-lock.json
+            VNPT-CRM/frontend/package-lock.json
       - name: Install backend
         run: npm ci
-        working-directory: backend
+        working-directory: VNPT-CRM/backend
       - name: Install frontend
         run: npm ci
-        working-directory: frontend
+        working-directory: VNPT-CRM/frontend
       - name: Start backend
-        working-directory: backend
+        working-directory: VNPT-CRM/backend
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/ci_e2e
           JWT_SECRET: ci-e2e-secret
@@ -133,7 +133,7 @@ jobs:
           done
           echo "Backend did not start"; cat ../backend-e2e.log; exit 1
       - name: Run API e2e
-        working-directory: frontend
+        working-directory: VNPT-CRM/frontend
         env:
           E2E_API_URL: http://localhost:8099/api
         run: npx playwright test e2e/api --workers=1 --trace=off --reporter=line
@@ -157,7 +157,7 @@ jobs:
     steps:
       - name: Prepare SSH
         env:
-          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
           SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
@@ -177,7 +177,7 @@ jobs:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/home/demo/apps/Fontend-VNPT-Nam-Sai-Gon' }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/var/www/vnpt-crm' }}
         run: |
           ssh -i ~/.ssh/deploy_key -p "${SSH_PORT:-22}" \
             -o BatchMode=yes -o StrictHostKeyChecking=yes \
@@ -185,7 +185,7 @@ jobs:
           set -euo pipefail
           cd "$DEPLOY_PATH"
           git checkout main
-          (cd backend && ./deploy.sh)
-          (cd frontend && ./deploy.sh)
+          (cd VNPT-CRM/backend && ./deploy.sh)
+          (cd VNPT-CRM/frontend && ./deploy.sh)
           pm2 status
           EOF

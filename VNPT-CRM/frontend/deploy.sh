@@ -18,7 +18,7 @@ git pull
 
 AFTER_COMMIT=$(git rev-parse HEAD)
 
-if git diff --name-only "$BEFORE_COMMIT" "$AFTER_COMMIT" | grep -qE "^(package\.json|package-lock\.json)$"; then
+if git diff --name-only "$BEFORE_COMMIT" "$AFTER_COMMIT" | grep -qE "^VNPT-CRM/frontend/(package\.json|package-lock\.json)$"; then
   echo "==> package.json changed, installing dependencies..."
   npm install
 else
