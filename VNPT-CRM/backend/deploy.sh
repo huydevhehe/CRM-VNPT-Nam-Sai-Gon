@@ -19,7 +19,7 @@ AFTER_COMMIT=$(git rev-parse HEAD)
 
 cd backend
 
-if git diff --name-only "$BEFORE_COMMIT" "$AFTER_COMMIT" | grep -qE "^backend/(package\.json|package-lock\.json)$"; then
+if git diff --name-only "$BEFORE_COMMIT" "$AFTER_COMMIT" | grep -qE "^VNPT-CRM/backend/(package\.json|package-lock\.json)$"; then
   echo "==> package.json changed, installing dependencies..."
   npm install
 else
