@@ -350,10 +350,16 @@ test.describe("API Lead / Hợp đồng / Hoa hồng gắn CTV và Phường", (
       expect(await commissionsOf(request, contract.id)).toHaveLength(1);
     });
 
-    test("HĐ không có CTV thì không sinh hoa hồng", async ({ request }) => {
+    test("HĐ không có CTV nhưng có AM bán hàng thì sinh hoa hồng nội bộ 5% giá trị đơn", async ({
+      request,
+    }) => {
       const contract = (await (await postContract(request, {})).json()).data;
       expect((await setDeployment(request, contract.id, "Hoàn tất")).status()).toBe(200);
-      expect(await commissionsOf(request, contract.id)).toHaveLength(0);
+      const rows = await commissionsOf(request, contract.id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].ctvId).toBeFalsy();
+      expect(rows[0].type).toBe("Hoa hồng nội bộ");
+      expect(rows[0].amount).toBe(500000);
     });
 
     test("đổi totalValue khi còn Chờ chi thì tính lại, khi đã Đã chi thì giữ nguyên", async ({
