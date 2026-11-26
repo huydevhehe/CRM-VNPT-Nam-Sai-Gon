@@ -24,6 +24,35 @@ async function insertCustomer(id: string, name: string, address: string, taxCode
   );
 }
 
+async function insertCustomerWithRepresentative(
+  id: string,
+  name: string,
+  address: string,
+  taxCode: string,
+  rep: { name: string; title: string; idNumber: string; issuedAt: string; issuedPlace: string }
+) {
+  await run(
+    `INSERT INTO customers (
+      id, name, identity_code, address, type, customer_group,
+      representative_name, representative_title, representative_id_number,
+      representative_id_issued_at, representative_id_issued_place
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      name,
+      taxCode,
+      address,
+      "Doanh nghiệp",
+      "Tự phát triển",
+      rep.name,
+      rep.title,
+      rep.idNumber,
+      rep.issuedAt,
+      rep.issuedPlace,
+    ]
+  );
+}
+
 async function insertContract(id: string, customerId: string, template: string, contractNumber: string) {
   await run(
     `INSERT INTO contracts (
@@ -173,6 +202,55 @@ test("renderFile: các mẫu không có phụ lục (hoa_don_dien_tu) vẫn xu�
   assert.equal(zip.file("word/afchunk1.docx"), null, "Mẫu không có phụ lục thì không được chèn altChunk");
   const mainXml = zip.file("word/document.xml")!.asText();
   strictParseOrThrow(mainXml, "word/document.xml (hoa_don_dien_tu)");
+});
+
+test("buildPreview: điền đúng dữ liệu người đại diện khi Khách hàng đã có, không còn báo thiếu", async () => {
+  await resetTestData();
+  await insertCustomerWithRepresentative(
+    "C-REP",
+    "CÔNG TY TNHH NGƯỜI ĐẠI DIỆN",
+    "99 Đường Đại Diện, Quận 1, TP.HCM",
+    "0311111111",
+    {
+      name: "Nguyễn Văn Đại Diện",
+      title: "Giám đốc",
+      idNumber: "079094005678",
+      issuedAt: "15/03/2021",
+      issuedPlace: "Cục Cảnh sát QLHC về TTXH",
+    }
+  );
+  await insertContract("HD-REP", "C-REP", "hoa_don_dien_tu", "HD-REP");
+
+  const preview = await service.preview("HD-REP");
+  const text = preview.lines.join(" ");
+
+  assert.ok(text.includes("Nguyễn Văn Đại Diện"), "Phải chứa tên người đại diện");
+  assert.ok(text.includes("Giám đốc"), "Phải chứa chức vụ người đại diện");
+  assert.ok(text.includes("079094005678"), "Phải chứa số CCCD người đại diện");
+  assert.ok(text.includes("15/03/2021"), "Phải chứa ngày cấp CCCD");
+  assert.ok(text.includes("Cục Cảnh sát QLHC về TTXH"), "Phải chứa nơi cấp CCCD");
+  assert.ok(
+    !preview.missingFields.some((f) => f.includes("đại diện") || f.includes("CCCD")),
+    "Không được báo thiếu dữ liệu người đại diện khi Khách hàng đã có đủ"
+  );
+});
+
+test("buildPreview: Khách hàng chưa có người đại diện thì vẫn xuất được, báo thiếu đúng 5 trường", async () => {
+  await resetTestData();
+  await insertCustomer("C-NOREP", "CÔNG TY TNHH CHƯA CÓ ĐẠI DIỆN", "1 Đường Test, Quận 1, TP.HCM", "0322222222");
+  await insertContract("HD-NOREP", "C-NOREP", "hoa_don_dien_tu", "HD-NOREP");
+
+  const preview = await service.preview("HD-NOREP");
+
+  for (const label of [
+    "Người đại diện",
+    "Chức vụ người đại diện",
+    "Số CCCD/Hộ chiếu người đại diện",
+    "Ngày cấp CCCD",
+    "Nơi cấp CCCD",
+  ]) {
+    assert.ok(preview.missingFields.includes(label), `Phải báo thiếu: ${label}`);
+  }
 });
 
 test("renderFile: file docx CKS gộp xong convert PDF hợp lệ bằng LibreOffice (nếu máy có cài)", async (t) => {
