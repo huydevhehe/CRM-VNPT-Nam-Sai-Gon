@@ -50,6 +50,8 @@ export const WARD_CONTACT_UNITS = [
 ] as const;
 
 export const CTV_COMMISSION_RATE = 0.1;
+/** Hoa hồng nội bộ (AM bán hàng, đơn không có CTV giới thiệu) — suy từ dữ liệu mẫu có sẵn (COM-01/COM-03 = 5% giá trị đơn). */
+export const INTERNAL_COMMISSION_RATE = 0.05;
 
 export const UNASSIGNED_STAFF = "Chưa phân công";
 

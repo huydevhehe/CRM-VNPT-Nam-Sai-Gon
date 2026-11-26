@@ -925,29 +925,37 @@ test("CTV commission auto-generates once when a completed order gains a CTV via 
     ADMIN_ACTOR
   );
 
+  // Hoàn tất mà không có CTV -> tự sinh hoa hồng nội bộ cho AM bán hàng (không im lặng, không báo "không phát sinh" nữa).
   const completed = await service.updateStatus(order.id, { deploymentStatus: "Hoàn tất" });
-  assert.equal(completed.commissionNotice, "Đơn không có CTV giới thiệu nên không phát sinh hoa hồng.");
-  assert.equal((await query("SELECT * FROM commissions WHERE contract_id = ?", [order.id])).length, 0);
+  assert.equal(completed.commissionNotice, null);
+  const internalCommissions = await query<{ ctv_id: string | null; type: string }>(
+    "SELECT * FROM commissions WHERE contract_id = ?",
+    [order.id]
+  );
+  assert.equal(internalCommissions.length, 1);
+  assert.equal(internalCommissions[0].ctv_id, null);
+  assert.equal(internalCommissions[0].type, "Hoa hồng nội bộ");
 
-  // Gán CTV sau khi đã Hoàn tất -> phải tự sinh hoa hồng (không im lặng, không cần tạo lại trạng thái).
+  // Gán CTV sau khi đã Hoàn tất -> phải tự sinh THÊM hoa hồng CTV (hoa hồng nội bộ đã có không chặn việc này).
   const withCtv = await service.updateInfo(
     order.id,
     { channel: "CTV giới thiệu", referredByCtvId: "CTV-T6-4" },
     ADMIN_ACTOR
   );
   assert.equal(withCtv.commissionNotice, null);
-  const commissions1 = await query<{ id: string; ctv_id: string }>(
+  const commissions1 = await query<{ id: string; ctv_id: string | null }>(
     "SELECT * FROM commissions WHERE contract_id = ?",
     [order.id]
   );
-  assert.equal(commissions1.length, 1);
-  assert.equal(commissions1[0].ctv_id, "CTV-T6-4");
+  assert.equal(commissions1.length, 2);
+  assert.ok(commissions1.some((c) => c.ctv_id === "CTV-T6-4"));
+  assert.ok(commissions1.some((c) => c.ctv_id === null));
 
   // Gọi lại updateInfo với cùng CTV (không đổi) -> không tạo thêm hoa hồng.
   await service.updateInfo(order.id, { packageName: "Gói giữ nguyên" }, ADMIN_ACTOR);
-  assert.equal((await query("SELECT * FROM commissions WHERE contract_id = ?", [order.id])).length, 1);
+  assert.equal((await query("SELECT * FROM commissions WHERE contract_id = ?", [order.id])).length, 2);
 
-  // Đổi sang CTV khác sau khi đã có hoa hồng -> KHÔNG tự ghi đè, chỉ báo thông điệp.
+  // Đổi sang CTV khác sau khi đã có hoa hồng CTV -> KHÔNG tự ghi đè, chỉ báo thông điệp.
   await insertCtvUser("CTV-T6-5", "CTV Hoàn Tất Khác", "REF-T6-5");
   const switched = await service.updateInfo(
     order.id,
@@ -955,12 +963,12 @@ test("CTV commission auto-generates once when a completed order gains a CTV via 
     ADMIN_ACTOR
   );
   assert.match(switched.commissionNotice ?? "", /đã có hoa hồng CTV khác/);
-  const commissions2 = await query<{ ctv_id: string }>(
+  const commissions2 = await query<{ ctv_id: string | null }>(
     "SELECT * FROM commissions WHERE contract_id = ?",
     [order.id]
   );
-  assert.equal(commissions2.length, 1);
-  assert.equal(commissions2[0].ctv_id, "CTV-T6-4", "không ghi đè hoa hồng đã có");
+  assert.equal(commissions2.length, 2, "không ghi đè/thêm hoa hồng khi đổi CTV");
+  assert.ok(commissions2.some((c) => c.ctv_id === "CTV-T6-4"), "giữ nguyên hoa hồng CTV cũ");
 });
 
 test("getCtvCommissionGaps lists completed CTV orders missing referred_by_ctv_id (read-only)", async () => {
