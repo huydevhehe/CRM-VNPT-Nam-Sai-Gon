@@ -50,6 +50,12 @@ export async function applySchemaExtensions(): Promise<void> {
   await ensureColumn("customers", "billing_email", "TEXT");
   await ensureColumn("customers", "note", "TEXT");
   await ensureColumn("customers", "referred_by_ctv_id", "TEXT");
+  // Người đại diện pháp luật — chỉ dùng để điền mẫu hợp đồng, không bắt buộc nhập.
+  await ensureColumn("customers", "representative_name", "TEXT");
+  await ensureColumn("customers", "representative_title", "TEXT");
+  await ensureColumn("customers", "representative_id_number", "TEXT");
+  await ensureColumn("customers", "representative_id_issued_at", "TEXT");
+  await ensureColumn("customers", "representative_id_issued_place", "TEXT");
 
   await run(`
     CREATE TABLE IF NOT EXISTS customer_teams (
@@ -337,6 +343,16 @@ export async function applySchemaExtensions(): Promise<void> {
       last_run_date TEXT,
       last_deleted_debts INTEGER DEFAULT 0,
       last_deleted_renewals INTEGER DEFAULT 0
+    )
+  `);
+
+  // Admin đổi tên hiển thị của mẫu hợp đồng (7 mẫu cố định) — chỉ lưu phần
+  // ghi đè, danh sách key/file gốc vẫn định nghĩa tĩnh trong contract-templates.ts.
+  await run(`
+    CREATE TABLE IF NOT EXISTS contract_template_overrides (
+      key TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      updated_at TEXT
     )
   `);
 

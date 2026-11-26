@@ -42,6 +42,11 @@ interface CustomerApiRow {
   referred_by_ctv_code?: string | null;
   channel_source_id?: string | null;
   channel_source_name?: string | null;
+  representative_name?: string | null;
+  representative_title?: string | null;
+  representative_id_number?: string | null;
+  representative_id_issued_at?: string | null;
+  representative_id_issued_place?: string | null;
 }
 
 function mapCustomerRow(row: CustomerApiRow): CustomerRecord {
@@ -82,6 +87,11 @@ function mapCustomerRow(row: CustomerApiRow): CustomerRecord {
     referredByCtvCode: row.referred_by_ctv_code || undefined,
     channelSourceId: row.channel_source_id || undefined,
     channelSourceName: row.channel_source_name || undefined,
+    representativeName: row.representative_name || undefined,
+    representativeTitle: row.representative_title || undefined,
+    representativeIdNumber: row.representative_id_number || undefined,
+    representativeIdIssuedAt: row.representative_id_issued_at || undefined,
+    representativeIdIssuedPlace: row.representative_id_issued_place || undefined,
   };
 }
 
@@ -124,6 +134,12 @@ export interface CreateCustomerInput {
   referredByCtvId?: string | null;
   /** Chi tiết kênh (nguồn Online/đối tác) khi salesChannel là Online/Đối tác. */
   channelSourceId?: string | null;
+  /** Người đại diện pháp luật — chỉ dùng để điền mẫu hợp đồng, không bắt buộc nhập. */
+  representativeName?: string;
+  representativeTitle?: string;
+  representativeIdNumber?: string;
+  representativeIdIssuedAt?: string;
+  representativeIdIssuedPlace?: string;
 }
 
 export type UpdateCustomerInput = Partial<CreateCustomerInput>;

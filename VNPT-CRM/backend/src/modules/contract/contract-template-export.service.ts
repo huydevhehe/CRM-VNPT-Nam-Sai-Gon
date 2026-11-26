@@ -5,7 +5,7 @@ import Docxtemplater from "docxtemplater";
 import { query } from "../../database/db.js";
 import { ContractRow } from "./contract.service.js";
 import { listContractItems } from "./contract-items.js";
-import { findContractTemplate, ContractTemplateDef } from "./contract-templates.js";
+import { ContractTemplateRegistryService, ContractTemplateInfo } from "./contract-template-registry.service.js";
 import { numberToVietnameseWords } from "../../utils/vn-number-words.js";
 import { extractDocxLines } from "./payment-request.service.js";
 import { mergeDocxWithAltChunkAppendices } from "./docx-altchunk-merge.js";
@@ -61,9 +61,10 @@ function money(n: number): string {
 
 export class ContractTemplateExportService {
   private templateDir = path.resolve(process.cwd(), "templates/contracts");
+  private registry = new ContractTemplateRegistryService(this.templateDir);
 
-  private resolveTemplate(templateKey: string | null | undefined): ContractTemplateDef {
-    const tpl = findContractTemplate(templateKey || undefined);
+  private async resolveTemplate(templateKey: string | null | undefined): Promise<ContractTemplateInfo> {
+    const tpl = templateKey ? await this.registry.get(templateKey) : undefined;
     if (!tpl) {
       throw new ContractTemplateExportError(
         "Đơn hàng chưa có mẫu hợp đồng hợp lệ. Vui lòng chọn mẫu hợp đồng trước khi xuất.",
@@ -80,7 +81,7 @@ export class ContractTemplateExportService {
   }
 
   private async buildData(contractId: string): Promise<{
-    tpl: ContractTemplateDef;
+    tpl: ContractTemplateInfo;
     data: Record<string, string | ItemRow[]>;
     missingFields: string[];
   }> {
@@ -89,7 +90,7 @@ export class ContractTemplateExportService {
       throw new ContractTemplateExportError("Không tìm thấy Đơn hàng", 404);
     }
     const contract = rows[0];
-    const tpl = this.resolveTemplate(contract.contract_template);
+    const tpl = await this.resolveTemplate(contract.contract_template);
 
     if (!contract.customer_id) {
       throw new ContractTemplateExportError(
@@ -97,8 +98,19 @@ export class ContractTemplateExportService {
         400
       );
     }
-    const custRows = await query<{ name: string; identity_code: string | null; address: string | null }>(
-      "SELECT name, identity_code, address FROM customers WHERE id = ?",
+    const custRows = await query<{
+      name: string;
+      identity_code: string | null;
+      address: string | null;
+      representative_name: string | null;
+      representative_title: string | null;
+      representative_id_number: string | null;
+      representative_id_issued_at: string | null;
+      representative_id_issued_place: string | null;
+    }>(
+      `SELECT name, identity_code, address, representative_name, representative_title,
+        representative_id_number, representative_id_issued_at, representative_id_issued_place
+       FROM customers WHERE id = ?`,
       [contract.customer_id]
     );
     if (!custRows.length) {
@@ -113,12 +125,24 @@ export class ContractTemplateExportService {
     const address = customer.address || "";
     if (!address) missingFields.push("Địa chỉ khách hàng");
 
-    // Các trường pháp lý của người đại diện khách hàng (người đại diện, chức vụ,
-    // CCCD, ngày/nơi cấp) KHÔNG có trong CRM hiện tại -> để trống có đánh dấu,
-    // KHÔNG tự bịa. Ghi rõ trong missingFields để FE/báo cáo nêu cho user.
-    for (const label of ["Người đại diện", "Chức vụ người đại diện", "Số CCCD/Hộ chiếu người đại diện", "Ngày cấp CCCD", "Nơi cấp CCCD"]) {
-      missingFields.push(label);
+    // Các trường pháp lý của người đại diện khách hàng lấy từ hồ sơ Khách hàng
+    // (không bắt buộc nhập) -> trường nào chưa có thì để trống có đánh dấu,
+    // KHÔNG tự bịa, và ghi rõ trong missingFields để FE/báo cáo nêu cho user.
+    const representativeFields: Array<{ value: string | null; label: string }> = [
+      { value: customer.representative_name, label: "Người đại diện" },
+      { value: customer.representative_title, label: "Chức vụ người đại diện" },
+      { value: customer.representative_id_number, label: "Số CCCD/Hộ chiếu người đại diện" },
+      { value: customer.representative_id_issued_at, label: "Ngày cấp CCCD" },
+      { value: customer.representative_id_issued_place, label: "Nơi cấp CCCD" },
+    ];
+    for (const field of representativeFields) {
+      if (!field.value) missingFields.push(field.label);
     }
+    const nguoiDaiDien = customer.representative_name || BLANK_MARK;
+    const chucVu = customer.representative_title || BLANK_MARK;
+    const cccd = customer.representative_id_number || BLANK_MARK;
+    const ngayCapCCCD = customer.representative_id_issued_at || BLANK_MARK;
+    const noiCapCCCD = customer.representative_id_issued_place || BLANK_MARK;
 
     const now = new Date();
     const signed = contract.signed_date ? new Date(contract.signed_date) : now;
@@ -162,11 +186,11 @@ export class ContractTemplateExportService {
       TenKhachHang: customerName,
       MaSoThue: taxCode,
       DiaChi: address,
-      NguoiDaiDien: BLANK_MARK,
-      ChucVu: BLANK_MARK,
-      CCCD: BLANK_MARK,
-      NgayCapCCCD: BLANK_MARK,
-      NoiCapCCCD: BLANK_MARK,
+      NguoiDaiDien: nguoiDaiDien,
+      ChucVu: chucVu,
+      CCCD: cccd,
+      NgayCapCCCD: ngayCapCCCD,
+      NoiCapCCCD: noiCapCCCD,
       items: itemRows,
       TongTruocVAT: money(subtotal),
       ThueVAT: money(vat),
@@ -192,13 +216,13 @@ export class ContractTemplateExportService {
     return doc.getZip().generate({ type: "nodebuffer", compression: "DEFLATE" });
   }
 
-  private render(tpl: ContractTemplateDef, data: Record<string, unknown>): Buffer {
+  private render(tpl: ContractTemplateInfo, data: Record<string, unknown>): Buffer {
     return this.renderDocxFile(path.join(this.templateDir, tpl.file as string), data);
   }
 
   /** Render hợp đồng chính và gộp thêm các phụ lục (nếu mẫu có khai báo trong
    * TEMPLATE_APPENDICES) thành 1 file docx duy nhất bằng altChunk. */
-  private renderWithAppendices(tpl: ContractTemplateDef, data: Record<string, unknown>): Buffer {
+  private renderWithAppendices(tpl: ContractTemplateInfo, data: Record<string, unknown>): Buffer {
     const mainDocx = this.render(tpl, data);
     const appendixFiles = TEMPLATE_APPENDICES[tpl.key];
     if (!appendixFiles?.length) {
@@ -217,7 +241,7 @@ export class ContractTemplateExportService {
     return { templateKey: tpl.key, templateLabel: tpl.label, missingFields, lines };
   }
 
-  async renderFile(contractId: string): Promise<{ docx: Buffer; tpl: ContractTemplateDef }> {
+  async renderFile(contractId: string): Promise<{ docx: Buffer; tpl: ContractTemplateInfo }> {
     const { tpl, data } = await this.buildData(contractId);
     const docx = this.renderWithAppendices(tpl, data);
     return { docx, tpl };

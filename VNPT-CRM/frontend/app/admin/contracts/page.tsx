@@ -710,6 +710,8 @@ export default function ContractsPage() {
     {
       header: "Mã giao dịch",
       accessorKey: "transactionCode",
+      sticky: true,
+      width: 130,
       cell: (item) => (
         <span className="font-mono font-bold text-vnpt">{item.transactionCode}</span>
       ),
@@ -717,6 +719,8 @@ export default function ContractsPage() {
     {
       header: "Khách hàng",
       accessorKey: "customerName",
+      sticky: true,
+      width: 220,
       cell: (item) => (
         <div>
           <span className="font-bold text-slate-900 block">{item.customerName}</span>
@@ -735,6 +739,8 @@ export default function ContractsPage() {
     {
       header: "AM phát triển",
       accessorKey: "amStaff",
+      sticky: true,
+      width: 150,
       cell: (item) =>
         item.amStaff ? (
           <span className="font-medium text-slate-800">{item.amStaff}</span>
@@ -1143,6 +1149,7 @@ export default function ContractsPage() {
           subtitle="Theo dõi tiến độ triển khai kỹ thuật, AM phát triển, nhóm dịch vụ và thanh toán"
           columns={columns}
           data={visibleData}
+          resizableColumns
           searchPlaceholder="Tìm theo mã giao dịch, khách hàng, AM, mã thuê bao..."
           exportFileName="vnpt_don_hang"
         />

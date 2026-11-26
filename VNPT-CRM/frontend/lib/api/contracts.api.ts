@@ -213,6 +213,24 @@ export function getContractTemplates(): Promise<ContractTemplateOption[]> {
   return apiFetch<ContractTemplateOption[]>("/contracts/templates");
 }
 
+/** Admin đổi tên hiển thị của 1 mẫu hợp đồng. */
+export function renameContractTemplate(key: string, label: string): Promise<ContractTemplateOption> {
+  return apiFetch<ContractTemplateOption>(`/contracts/templates/${key}`, {
+    method: "PATCH",
+    body: JSON.stringify({ label }),
+  });
+}
+
+/** Admin thay file mẫu .docx của 1 mẫu hợp đồng (kể cả mẫu "Chưa có mẫu"). */
+export function uploadContractTemplate(key: string, file: File): Promise<ContractTemplateOption> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiFetch<ContractTemplateOption>(`/contracts/templates/${key}/upload`, {
+    method: "POST",
+    body: formData,
+  });
+}
+
 export interface ContractExportPreviewDto {
   templateKey: string;
   templateLabel: string;
