@@ -582,7 +582,7 @@ test.describe("API khách hàng: AM phụ trách, CTV giới thiệu, dịch v�
 
     const created = await request.post(`${API_URL}/customers`, {
       headers: bearer(amToken),
-      data: newCustomer({ referredByCtvId: ctv.id }),
+      data: newCustomer({ referredByCtvId: ctv.id, salesChannel: "CTV giới thiệu" }),
     });
     expect(created.status()).toBe(201);
     const createdData = (await created.json()).data;
@@ -604,7 +604,7 @@ test.describe("API khách hàng: AM phụ trách, CTV giới thiệu, dịch v�
 
     const attach = await request.patch(`${API_URL}/customers/${id}`, {
       headers: bearer(amToken),
-      data: { referredByCtvId: ctv.id },
+      data: { referredByCtvId: ctv.id, salesChannel: "CTV giới thiệu" },
     });
     expect(attach.status()).toBe(200);
     expect((await attach.json()).data.referred_by_ctv_id).toBe(ctv.id);
@@ -614,7 +614,7 @@ test.describe("API khách hàng: AM phụ trách, CTV giới thiệu, dịch v�
 
     const detach = await request.patch(`${API_URL}/customers/${id}`, {
       headers: bearer(amToken),
-      data: { referredByCtvId: null },
+      data: { referredByCtvId: null, salesChannel: "" },
     });
     expect(detach.status()).toBe(200);
     expect((await detach.json()).data.referred_by_ctv_id).toBeNull();

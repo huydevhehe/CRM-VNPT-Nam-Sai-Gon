@@ -66,6 +66,7 @@ test.describe("Orders API (Đơn hàng)", () => {
         prepaidMonths: 12,
         contractNumber: `20261113/0319653211/VNPT.NSG/VNPT026696`,
         signedDate: "2026-11-13",
+        contractTemplate: "hoa_don_dien_tu",
       },
     });
 
@@ -102,6 +103,7 @@ test.describe("Orders API (Đơn hàng)", () => {
         serviceGroup: "CNTT",
         paymentMethod: "Trả trước",
         prepaidMonths: 12,
+        contractTemplate: "hoa_don_dien_tu",
       },
     });
     expect(createRes.status()).toBe(201);
@@ -132,6 +134,7 @@ test.describe("Orders API (Đơn hàng)", () => {
         amStaff: amKhoaName,
         serviceGroup: "Di động",
         paymentMethod: "Trả hàng tháng",
+        contractTemplate: "hoa_don_dien_tu",
       },
     });
     expect(createRes.status()).toBe(201);
@@ -167,6 +170,7 @@ test.describe("Orders API (Đơn hàng)", () => {
         packageName: "eduOffice",
         paymentMethod: "Trả trước",
         prepaidMonths: 12,
+        contractTemplate: "hoa_don_dien_tu",
       },
     });
     expect(createRes.status()).toBe(201);
@@ -216,6 +220,7 @@ test.describe("Orders API (Đơn hàng)", () => {
       subscriberCodes: [`TB_REQ_${suffix}`],
       totalValue: 1000000,
       channel: "Trực tiếp",
+      contractTemplate: "hoa_don_dien_tu",
     };
 
     const missing = await request.post(`${API_URL}/contracts`, {
@@ -245,6 +250,7 @@ test.describe("Orders API (Đơn hàng)", () => {
         subscriberCodes: [`TB_DER_${suffix}`],
         totalValue: 1000000,
         channel: "Trực tiếp",
+        contractTemplate: "hoa_don_dien_tu",
       },
     });
     expect(res.status()).toBe(201);
@@ -268,6 +274,7 @@ test.describe("Orders API (Đơn hàng)", () => {
       subscriberCodes: [`TB_SC_${suffix}`],
       totalValue: 1000000,
       channel: "Trực tiếp",
+      contractTemplate: "hoa_don_dien_tu",
     });
 
     const outside = await request.post(`${API_URL}/contracts`, {
@@ -296,6 +303,7 @@ test.describe("Orders API (Đơn hàng)", () => {
         subscriberCodes: [`TB_KEEP_${suffix}`],
         totalValue: 1000000,
         channel: "Trực tiếp",
+        contractTemplate: "hoa_don_dien_tu",
       },
     });
     expect(createRes.status()).toBe(201);
@@ -335,6 +343,7 @@ test.describe("Orders API (Đơn hàng)", () => {
         prepaidMonths: 12,
         signedDate: "2026-01-31",
         termMonths: 1,
+        contractTemplate: "hoa_don_dien_tu",
       },
     });
     expect(createRes.status()).toBe(201);
@@ -396,6 +405,7 @@ test.describe("Orders API (Đơn hàng)", () => {
         totalValue: 1000000,
         channel: "Trực tiếp",
         signedDate: "2026-03-10",
+        contractTemplate: "hoa_don_dien_tu",
       },
     });
     expect(createRes.status()).toBe(201);

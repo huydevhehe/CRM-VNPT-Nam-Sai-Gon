@@ -131,6 +131,7 @@ test.describe("API Import hợp đồng từ Excel (POST /api/contracts/import/p
         totalValue: 100000,
         channel: "Online",
         channelSourceId: onlineSourceId,
+        contractTemplate: "hoa_don_dien_tu",
       },
     });
     expect(existingRes.status()).toBe(201);

@@ -67,7 +67,8 @@ test.describe("API Lead / Hợp đồng / Hoa hồng gắn CTV và Phường", (
         ...(customer ? { customerId: customer.id } : {}),
         subscriberCodes: ["0901234567"],
         totalValue: 10000000,
-        channel: "Online",
+        channel: "Trực tiếp",
+        contractTemplate: "hoa_don_dien_tu",
         ...data,
       },
     });
@@ -276,14 +277,18 @@ test.describe("API Lead / Hợp đồng / Hoa hồng gắn CTV và Phường", (
         ).json()
       ).data;
 
-      const inherited = await postContract(request, { leadId: lead.id });
+      const inherited = await postContract(request, { leadId: lead.id, channel: "CTV giới thiệu" });
       expect(inherited.status()).toBe(201);
       const c1 = (await inherited.json()).data;
       expect(c1.leadId).toBe(lead.id);
       expect(c1.referredByCtvId).toBe(ctv.id);
       expect(c1.territoryId).toBe(wardA);
 
-      const overridden = await postContract(request, { leadId: lead.id, territoryId: wardB });
+      const overridden = await postContract(request, {
+        leadId: lead.id,
+        territoryId: wardB,
+        channel: "CTV giới thiệu",
+      });
       expect(overridden.status()).toBe(201);
       const c2 = (await overridden.json()).data;
       expect(c2.referredByCtvId).toBe(ctv.id);
@@ -303,7 +308,7 @@ test.describe("API Lead / Hợp đồng / Hoa hồng gắn CTV và Phường", (
           await postLead(request, leadPayload({ channel: "CTV giới thiệu", referredByCtvId: ctv.id }))
         ).json()
       ).data;
-      const res = await postContract(request, { leadId: lead.id, totalValue });
+      const res = await postContract(request, { leadId: lead.id, totalValue, channel: "CTV giới thiệu" });
       expect(res.status()).toBe(201);
       return (await res.json()).data;
     }
