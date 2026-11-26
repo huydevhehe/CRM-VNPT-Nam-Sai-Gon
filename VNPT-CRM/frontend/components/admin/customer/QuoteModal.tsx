@@ -11,6 +11,10 @@ import {
   type QuoteInput,
   type QuotePreviewDto,
 } from "@/lib/api/customers.api";
+import { getCustomLists, type CustomListItem } from "@/lib/api/custom-lists.api";
+
+/** Tên danh mục tùy biến chứa bảng giá Internet/Fiber (seed sẵn, Admin có thể sửa ở /admin/custom-lists). */
+const SERVICE_CATALOG_LIST_NAME = "Gói dịch vụ Internet/Fiber";
 
 function saveBlob(blob: Blob, filename: string) {
   const url = window.URL.createObjectURL(blob);
@@ -63,7 +67,17 @@ export default function QuoteModal({ customerId, customerName, onClose }: Readon
   const [confirming, setConfirming] = useState(false);
   const [confirmed, setConfirmed] = useState<ConfirmedQuoteExportDto | null>(null);
   const [downloading, setDownloading] = useState<QuoteFormat | null>(null);
+  const [catalogItems, setCatalogItems] = useState<CustomListItem[]>([]);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    getCustomLists()
+      .then((lists) => {
+        const catalog = lists.find((l) => l.name === SERVICE_CATALOG_LIST_NAME);
+        setCatalogItems(catalog?.items.filter((i) => i.active && i.price !== null) ?? []);
+      })
+      .catch(() => setCatalogItems([]));
+  }, []);
 
   const refreshPreview = useCallback(
     (next: QuoteInput) => {
@@ -94,6 +108,21 @@ export default function QuoteModal({ customerId, customerName, onClose }: Readon
 
   function updateField<K extends keyof QuoteInput>(key: K, value: QuoteInput[K]) {
     const next = { ...input, [key]: value };
+    setInput(next);
+    refreshPreview(next);
+  }
+
+  /** Chọn nhanh gói có sẵn trong danh mục — điền Gói cước + Đơn giá, vẫn sửa tay được sau đó. */
+  function handleSelectCatalogItem(itemId: string) {
+    const item = catalogItems.find((i) => i.id === itemId);
+    if (!item || item.price === null) return;
+    const next: QuoteInput = {
+      ...input,
+      serviceType: input.serviceType.trim() || "Internet Fiber",
+      packageName: item.value,
+      unit: input.unit.trim() || "Gói/tháng",
+      unitPrice: item.price,
+    };
     setInput(next);
     refreshPreview(next);
   }
@@ -224,6 +253,29 @@ export default function QuoteModal({ customerId, customerName, onClose }: Readon
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
                 />
               </div>
+              {catalogItems.length > 0 && (
+                <div className="col-span-2">
+                  <label className="mb-1 block text-xs font-semibold text-slate-700">
+                    Chọn nhanh từ danh mục (tùy chọn)
+                  </label>
+                  <select
+                    data-testid="quo-catalog-select"
+                    defaultValue=""
+                    onChange={(e) => {
+                      if (e.target.value) handleSelectCatalogItem(e.target.value);
+                      e.target.value = "";
+                    }}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
+                  >
+                    <option value="">— Chọn gói có sẵn hoặc tự nhập bên dưới —</option>
+                    {catalogItems.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.value} — {item.price?.toLocaleString("vi-VN")} ₫
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="col-span-2">
                 <label className="mb-1 block text-xs font-semibold text-slate-700">Gói cước / Nội dung</label>
                 <input

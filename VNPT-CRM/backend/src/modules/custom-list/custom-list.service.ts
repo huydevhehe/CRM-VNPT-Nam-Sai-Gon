@@ -15,6 +15,8 @@ export interface CustomListItemDto {
   value: string;
   active: boolean;
   sortOrder: number;
+  /** Đơn giá (chưa VAT) — chỉ dùng cho danh mục kiểu bảng giá (vd Gói dịch vụ), null nếu không áp dụng. */
+  price: number | null;
 }
 
 export interface CustomListDto {
@@ -34,6 +36,7 @@ interface CustomListItemRow {
   value: string;
   active: boolean;
   sort_order: number;
+  price: number | string | null;
 }
 
 function normalizeName(value: unknown, label: string): string {
@@ -58,7 +61,19 @@ function toItemDto(row: CustomListItemRow): CustomListItemDto {
     value: row.value,
     active: row.active,
     sortOrder: Number(row.sort_order),
+    price: row.price === null || row.price === undefined ? null : Number(row.price),
   };
+}
+
+function normalizePrice(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) {
+    throw new CustomListError("Đơn giá phải là số không âm", 400);
+  }
+  return num;
 }
 
 export class CustomListService {
@@ -130,12 +145,13 @@ export class CustomListService {
     });
   }
 
-  async addItem(listId: string, value: unknown): Promise<CustomListItemDto> {
+  async addItem(listId: string, value: unknown, price?: unknown): Promise<CustomListItemDto> {
     const list = await this.getList(listId);
     if (!list) {
       throw new CustomListError("Không tìm thấy danh mục", 404);
     }
     const normalized = normalizeName(value, "Giá trị");
+    const normalizedPrice = normalizePrice(price);
     const max = await query<{ max: number | null }>(
       "SELECT MAX(sort_order) AS max FROM custom_list_items WHERE list_id = ?",
       [listId]
@@ -144,8 +160,8 @@ export class CustomListService {
     const id = `CLITEM-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     try {
       await run(
-        "INSERT INTO custom_list_items (id, list_id, value, active, sort_order, created_at) VALUES (?, ?, ?, TRUE, ?, ?)",
-        [id, listId, normalized, sortOrder, new Date().toISOString()]
+        "INSERT INTO custom_list_items (id, list_id, value, active, sort_order, created_at, price) VALUES (?, ?, ?, TRUE, ?, ?, ?)",
+        [id, listId, normalized, sortOrder, new Date().toISOString(), normalizedPrice]
       );
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -159,7 +175,7 @@ export class CustomListService {
 
   async updateItem(
     itemId: string,
-    input: { value?: unknown; active?: unknown }
+    input: { value?: unknown; active?: unknown; price?: unknown }
   ): Promise<CustomListItemDto> {
     const rows = await query<CustomListItemRow>("SELECT * FROM custom_list_items WHERE id = ?", [itemId]);
     if (!rows.length) {
@@ -177,6 +193,10 @@ export class CustomListService {
       }
       sets.push("active = ?");
       params.push(input.active);
+    }
+    if (input.price !== undefined) {
+      sets.push("price = ?");
+      params.push(normalizePrice(input.price));
     }
     if (!sets.length) {
       throw new CustomListError("Không có thông tin cần cập nhật", 400);

@@ -95,7 +95,9 @@ app.use("/api/staff", requireAuth, requireStaff, staffRouter);
 app.use("/api/tasks", requireAuth, requireStaff, taskRouter);
 app.use("/api/reports", requireAuth, requireAdmin, reportRouter);
 app.use("/api/settings", requireAuth, requireAdmin, settingsRouter);
-app.use("/api/custom-lists", requireAuth, requireAdmin, customListRouter);
+// Đọc (GET) mở cho mọi nhân viên đăng nhập — cần để chọn "Gói dịch vụ" khi lập
+// Báo giá; các thao tác sửa/xóa vẫn chỉ Admin (gắn requireAdmin trong từng route).
+app.use("/api/custom-lists", requireAuth, customListRouter);
 app.use("/api/document-registry", requireAuth, requireAdmin, documentRegistryRouter);
 app.use("/api/kpi", requireAuth, requireStaff, kpiRouter);
 app.use("/api/reminders", requireAuth, requireAdmin, reminderRouter);
