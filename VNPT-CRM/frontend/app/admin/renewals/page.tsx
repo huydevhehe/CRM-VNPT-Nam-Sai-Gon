@@ -165,10 +165,13 @@ export default function RenewalsPage() {
     {
       header: "Khách hàng & Địa chỉ",
       accessorKey: "customerName",
+      width: 240,
       cell: (item) => (
         <div>
-          <div className="font-semibold text-slate-900">{item.customerName}</div>
-          <div className="text-[11px] text-slate-400">
+          <div className="truncate font-semibold text-slate-900" title={item.customerName}>
+            {item.customerName}
+          </div>
+          <div className="truncate text-[11px] text-slate-400" title={item.installationAddress}>
             {item.installationAddress}
           </div>
         </div>
@@ -220,6 +223,7 @@ export default function RenewalsPage() {
     {
       header: "Trạng thái",
       accessorKey: "status",
+      width: 190,
       cell: (item) => (
         <div className="flex flex-col gap-1">
           <StatusSelect
@@ -228,7 +232,7 @@ export default function RenewalsPage() {
             onChange={(next) => handleStatusChange(item, next)}
           />
           {item.failureReason && (
-            <span className="text-[10px] text-rose-500 font-medium">
+            <span className="truncate text-[10px] text-rose-500 font-medium" title={item.failureReason}>
               Lý do: {item.failureReason}
             </span>
           )}

@@ -144,10 +144,13 @@ export default function DebtManagementPage() {
     {
       header: "Khách hàng & Địa chỉ",
       accessorKey: "customerName",
+      width: 240,
       cell: (item) => (
         <div>
-          <div className="font-semibold text-slate-900">{item.customerName}</div>
-          <div className="text-[11px] text-slate-400">
+          <div className="truncate font-semibold text-slate-900" title={item.customerName}>
+            {item.customerName}
+          </div>
+          <div className="truncate text-[11px] text-slate-400" title={item.installationAddress}>
             {item.installationAddress}
           </div>
         </div>

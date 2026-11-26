@@ -28,7 +28,7 @@ export interface SelectionProps<T> {
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
 /** Độ rộng tối thiểu mặc định cho cột không khai báo `width` khi bật resizableColumns. */
-const DEFAULT_COL_WIDTH = 140;
+const DEFAULT_COL_WIDTH = 160;
 
 interface DataTableProps<T> {
   title?: string;
@@ -149,7 +149,7 @@ export default function DataTable<T extends Record<string, any>>({
   function startResize(idx: number, e: React.MouseEvent) {
     e.preventDefault();
     const startX = e.clientX;
-    const startWidth = colWidths[idx] ?? columns[idx]?.width ?? thRefs.current[idx]?.offsetWidth ?? 140;
+    const startWidth = colWidths[idx] ?? columns[idx]?.width ?? thRefs.current[idx]?.offsetWidth ?? DEFAULT_COL_WIDTH;
 
     function onMove(ev: MouseEvent) {
       const next = Math.max(60, startWidth + (ev.clientX - startX));
