@@ -294,6 +294,7 @@ function readQuoteInput(body: any) {
     vatPercent: body?.vatPercent === undefined || body?.vatPercent === null ? undefined : Number(body.vatPercent),
     note: body?.note ? String(body.note) : undefined,
     staffName: body?.staffName ? String(body.staffName) : undefined,
+    eoNumber: body?.eoNumber ? String(body.eoNumber) : undefined,
   };
 }
 

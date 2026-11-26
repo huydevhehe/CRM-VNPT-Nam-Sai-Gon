@@ -385,12 +385,14 @@ export interface QuoteInput {
   vatPercent?: number;
   note?: string;
   staffName?: string;
+  eoNumber?: string;
 }
 
 export interface QuoteExportRecordDto {
   id: string;
   customerId: string;
   docNumber: string;
+  eoNumber: string | null;
   exportedBy: string | null;
   exportedAt: string;
   serviceType: string;
