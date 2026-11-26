@@ -73,3 +73,25 @@ export function sendTestEmail(
     body: JSON.stringify({ to, override }),
   });
 }
+
+export type TemplateKey = "payment-request" | "quote";
+
+export interface TemplateInfo {
+  key: TemplateKey;
+  fileName: string;
+  exists: boolean;
+  updatedAt: string | null;
+}
+
+export function listTemplates(): Promise<TemplateInfo[]> {
+  return apiFetch<TemplateInfo[]>("/settings/templates");
+}
+
+export function uploadTemplate(key: TemplateKey, file: File): Promise<TemplateInfo> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiFetch<TemplateInfo>(`/settings/templates/${key}`, {
+    method: "POST",
+    body: formData,
+  });
+}

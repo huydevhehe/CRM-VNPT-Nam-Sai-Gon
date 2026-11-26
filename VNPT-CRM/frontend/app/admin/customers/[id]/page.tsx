@@ -17,6 +17,7 @@ import {
   Wallet,
   Banknote,
   Hourglass,
+  FileText,
   type LucideIcon,
 } from "lucide-react";
 import StatusBadge from "@/components/admin/shared/StatusBadge";
@@ -44,6 +45,7 @@ import CustomerForm, {
 } from "@/components/admin/customer/CustomerForm";
 import CustomerDocuments from "@/components/admin/customer/CustomerDocuments";
 import CustomerServices from "@/components/admin/customer/CustomerServices";
+import QuoteModal from "@/components/admin/customer/QuoteModal";
 
 export default function CustomerDetailPage() {
   const params = useParams<{ id: string }>();
@@ -66,6 +68,7 @@ export default function CustomerDetailPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showQuote, setShowQuote] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -220,6 +223,13 @@ export default function CustomerDetailPage() {
           </div>
         </div>
         <div className="flex gap-2 self-start sm:self-auto">
+          <button
+            onClick={() => setShowQuote(true)}
+            className="flex h-9 items-center gap-1.5 rounded-xl border border-vnpt px-3.5 text-xs font-bold text-vnpt hover:bg-sky-50"
+          >
+            <FileText className="h-4 w-4" />
+            Lập báo giá
+          </button>
           {canEdit && (
             <button
               onClick={() => {
@@ -438,6 +448,14 @@ export default function CustomerDetailPage() {
         onConfirm={handleConfirmDelete}
         onCancel={() => setShowDeleteConfirm(false)}
       />
+
+      {showQuote && (
+        <QuoteModal
+          customerId={customer.id}
+          customerName={customer.name}
+          onClose={() => setShowQuote(false)}
+        />
+      )}
     </div>
   );
 }

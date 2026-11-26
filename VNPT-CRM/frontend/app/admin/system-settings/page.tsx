@@ -1,15 +1,119 @@
 "use client";
 
 import { useEffect, useState, FormEvent } from "react";
-import { Mail, MessageSquare, AlertTriangle, CheckCircle2, ShieldAlert, CreditCard, Send } from "lucide-react";
+import { Mail, MessageSquare, AlertTriangle, CheckCircle2, ShieldAlert, CreditCard, Send, FileText } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
 import {
   getSystemSettings,
   updateSystemSettings,
   sendTestEmail,
+  listTemplates,
+  uploadTemplate,
   SystemSettings,
   SmtpMode,
+  TemplateInfo,
+  TemplateKey,
 } from "@/lib/api/settings.api";
+
+const TEMPLATE_LABELS: Record<TemplateKey, string> = {
+  "payment-request": "Đề nghị thanh toán",
+  quote: "Báo giá",
+};
+
+function TemplateUploadSection() {
+  const [templates, setTemplates] = useState<TemplateInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploadingKey, setUploadingKey] = useState<TemplateKey | null>(null);
+  const [message, setMessage] = useState<{ key: TemplateKey; text: string; isError: boolean } | null>(null);
+
+  function reload() {
+    listTemplates()
+      .then(setTemplates)
+      .catch(() => setTemplates([]))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(reload, []);
+
+  async function handleUpload(key: TemplateKey, file: File) {
+    if (!file.name.toLowerCase().endsWith(".docx")) {
+      setMessage({ key, text: "Chỉ chấp nhận file .docx", isError: true });
+      return;
+    }
+    setUploadingKey(key);
+    setMessage(null);
+    try {
+      await uploadTemplate(key, file);
+      setMessage({ key, text: "Đã cập nhật file mẫu.", isError: false });
+      reload();
+    } catch (err) {
+      setMessage({
+        key,
+        text: err instanceof Error ? err.message : "Tải file mẫu thất bại.",
+        isError: true,
+      });
+    } finally {
+      setUploadingKey(null);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-6">
+      <div className="mb-4 flex items-center gap-2">
+        <FileText className="h-4.5 w-4.5 text-vnpt" />
+        <h2 className="text-sm font-bold text-slate-900">Biểu mẫu văn bản (.docx)</h2>
+      </div>
+
+      {loading ? (
+        <p className="text-xs text-slate-400">Đang tải...</p>
+      ) : (
+        <div className="space-y-3">
+          {(Object.keys(TEMPLATE_LABELS) as TemplateKey[]).map((key) => {
+            const info = templates.find((t) => t.key === key);
+            return (
+              <div
+                key={key}
+                className="flex flex-col gap-2 rounded-xl border border-slate-200 p-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">{TEMPLATE_LABELS[key]}</p>
+                  <p className="text-xs text-slate-500">
+                    {info?.exists
+                      ? `Cập nhật lần cuối: ${info.updatedAt ? new Date(info.updatedAt).toLocaleString("vi-VN") : ""}`
+                      : "Chưa có file mẫu"}
+                  </p>
+                  {message?.key === key && (
+                    <p className={`mt-1 text-xs ${message.isError ? "text-rose-600" : "text-emerald-600"}`}>
+                      {message.text}
+                    </p>
+                  )}
+                </div>
+                <label className="flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl border border-vnpt px-3.5 text-xs font-bold text-vnpt hover:bg-sky-50">
+                  {uploadingKey === key ? "Đang tải lên..." : "Thay file mẫu"}
+                  <input
+                    type="file"
+                    accept=".docx"
+                    className="hidden"
+                    disabled={uploadingKey !== null}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleUpload(key, file);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <p className="mt-3 text-xs text-slate-400">
+        Chỉ thay nguyên file mẫu Word — không sửa nội dung/placeholder trong trình duyệt. File mới phải giữ đúng
+        các biến dạng <code>{"{Ten}"}</code> hoặc <code>{"${ten}"}</code> như file cũ thì hệ thống mới điền được dữ liệu.
+      </p>
+    </div>
+  );
+}
 
 const DEFAULT_PAYMENT_BENEFICIARY = "VNPT thành phố Hồ Chí Minh";
 const DEFAULT_PAYMENT_ACCOUNT_NO = "1058561111";
@@ -594,6 +698,8 @@ export default function SystemSettingsPage() {
           </button>
         </div>
       </form>
+
+      <TemplateUploadSection />
     </div>
   );
 }

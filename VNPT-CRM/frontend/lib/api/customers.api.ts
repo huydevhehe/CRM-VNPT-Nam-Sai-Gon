@@ -359,3 +359,95 @@ export async function downloadCustomerDocument(
   link.click();
   URL.revokeObjectURL(url);
 }
+
+export interface QuoteInput {
+  serviceType: string;
+  packageName: string;
+  unit: string;
+  quantity: number;
+  unitPrice: number;
+  vatPercent?: number;
+  note?: string;
+  staffName?: string;
+}
+
+export interface QuoteExportRecordDto {
+  id: string;
+  customerId: string;
+  docNumber: string;
+  exportedBy: string | null;
+  exportedAt: string;
+  serviceType: string;
+  packageName: string;
+  unit: string;
+  quantity: number;
+  unitPrice: number;
+  vatPercent: number;
+  note: string | null;
+  staffName: string | null;
+  customerName?: string;
+}
+
+export interface QuotePreviewDto {
+  suggestedDocNumber: string;
+  missingFields: string[];
+  lines: string[];
+  pdfAvailable: boolean;
+}
+
+export interface ConfirmedQuoteExportDto extends QuoteExportRecordDto {
+  reused: boolean;
+}
+
+/** Xem trước nội dung báo giá. KHÔNG cấp/tiêu số báo giá. */
+export function getQuotePreview(
+  customerId: string,
+  input: QuoteInput,
+  docNumber?: string
+): Promise<QuotePreviewDto> {
+  const query = docNumber?.trim() ? `?docNumber=${encodeURIComponent(docNumber.trim())}` : "";
+  return apiFetch<QuotePreviewDto>(`/customers/${encodeURIComponent(customerId)}/quote/preview${query}`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Xác nhận lấy số báo giá (điểm duy nhất tiêu số). */
+export function confirmQuote(
+  customerId: string,
+  input: QuoteInput & { docNumber?: string; reuseLatest?: boolean }
+): Promise<ConfirmedQuoteExportDto> {
+  return apiFetch<ConfirmedQuoteExportDto>(`/customers/${encodeURIComponent(customerId)}/quote/confirm`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export type QuoteFormat = "docx" | "pdf";
+
+/** Tải file của một lần đã cấp số báo giá (DOCX/PDF cùng số). */
+export async function downloadQuoteFile(
+  customerId: string,
+  exportId: string,
+  format: QuoteFormat
+): Promise<Blob> {
+  const token = getToken();
+  let res: Response;
+  try {
+    res = await fetch(
+      `${API_BASE_URL}/customers/${encodeURIComponent(customerId)}/quote/file?exportId=${encodeURIComponent(exportId)}&format=${format}`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+    );
+  } catch {
+    throw new Error("Không kết nối được máy chủ. Vui lòng thử lại.");
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.message || `Lỗi tải file (${res.status})`);
+  }
+  return res.blob();
+}
+
+export function listQuoteExports(customerId: string): Promise<QuoteExportRecordDto[]> {
+  return apiFetch<QuoteExportRecordDto[]>(`/customers/${encodeURIComponent(customerId)}/quote/exports`);
+}
