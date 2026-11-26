@@ -11,15 +11,20 @@ set -e
 PORT=8086
 APP_NAME="vnpt-nam-sai-gon"
 
-BEFORE_COMMIT=$(git rev-parse HEAD)
+# So với commit của lần deploy THÀNH CÔNG gần nhất (không phải trước/sau lệnh
+# `git pull` ở dưới) — vì code có thể đã được 1 bước bên ngoài (CI workflow)
+# fetch + reset sẵn về commit mới nhất trước khi script này chạy, khiến
+# `git pull` ở đây không còn gì để kéo và so before/after sẽ luôn ra rỗng.
+LAST_DEPLOY_FILE=".last-deployed-commit"
+PREV_COMMIT=$(cat "$LAST_DEPLOY_FILE" 2>/dev/null || echo "")
 
 echo "==> Pulling latest code..."
 git pull
 
-AFTER_COMMIT=$(git rev-parse HEAD)
+CURRENT_COMMIT=$(git rev-parse HEAD)
 
-if git diff --name-only "$BEFORE_COMMIT" "$AFTER_COMMIT" | grep -qE "^VNPT-CRM/frontend/(package\.json|package-lock\.json)$"; then
-  echo "==> package.json changed, installing dependencies..."
+if [ -z "$PREV_COMMIT" ] || git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" | grep -qE "^VNPT-CRM/frontend/(package\.json|package-lock\.json)$"; then
+  echo "==> package.json changed (or first deploy), installing dependencies..."
   npm install
 else
   echo "==> package.json unchanged, skipping npm install."
@@ -51,6 +56,7 @@ done
 
 if [ "$READY" -eq 1 ]; then
   echo "==> Done. App is running again on port $PORT (pm2 name: $APP_NAME)."
+  echo "$CURRENT_COMMIT" > "$LAST_DEPLOY_FILE"
 else
   echo "==> ERROR: server did not respond on port $PORT after 15s. Last logs:"
   pm2 logs "$APP_NAME" --lines 30 --nostream
