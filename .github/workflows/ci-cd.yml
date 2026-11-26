@@ -184,7 +184,9 @@ jobs:
             "$SSH_USER@$SSH_HOST" "bash -l -s" <<EOF
           set -euo pipefail
           cd "$DEPLOY_PATH"
+          git fetch origin main
           git checkout main
+          git reset --hard origin/main
           (cd VNPT-CRM/backend && ./deploy.sh)
           (cd VNPT-CRM/frontend && ./deploy.sh)
           pm2 status
