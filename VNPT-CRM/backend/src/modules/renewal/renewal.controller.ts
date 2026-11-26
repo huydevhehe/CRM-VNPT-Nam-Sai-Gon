@@ -6,6 +6,7 @@ import { resolveActorName } from "../../middleware/actor.js";
 import { ROLES } from "../../constants/org.js";
 import { HttpError } from "../auth/auth.service.js";
 import { RenewalService } from "./renewal.service.js";
+import { fixMulterFileEncoding } from "../../utils/fix-upload-filename.js";
 
 /** Giá trị chắc chắn không khớp bất kỳ `staff_name` nào — dùng khi không xác định được tên nhân viên hiện tại. */
 const NO_MATCH_STAFF = "\u0000__NO_STAFF__\u0000";
@@ -37,6 +38,7 @@ function handleUpload(req: Request, res: Response, next: NextFunction) {
       res.status(400).json({ success: false, message });
       return;
     }
+    fixMulterFileEncoding(req.file);
     next();
   });
 }

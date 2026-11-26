@@ -5,6 +5,7 @@ import { requireAdmin } from "../../middleware/require-role.js";
 import { resolveStaffScope } from "../../middleware/actor.js";
 import { ServiceService, ServiceServiceError } from "./service.service.js";
 import { ServiceImportService, ServiceImportServiceError } from "./service-import/service-import.service.js";
+import { fixMulterFileEncoding } from "../../utils/fix-upload-filename.js";
 
 export const serviceRouter = Router();
 const serviceService = new ServiceService();
@@ -27,6 +28,7 @@ function handleImportUpload(req: Request, res: Response, next: NextFunction) {
       res.status(400).json({ success: false, message });
       return;
     }
+    fixMulterFileEncoding(req.file);
     next();
   });
 }

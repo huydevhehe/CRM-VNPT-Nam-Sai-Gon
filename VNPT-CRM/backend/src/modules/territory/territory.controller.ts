@@ -6,6 +6,7 @@ import { requireAdmin } from "../../middleware/require-role.js";
 import { TerritoryService, TerritoryServiceError } from "./territory.service.js";
 import { parseWardContactRows } from "./ward-contact-import.js";
 import { stripDiacritics } from "./ward-name.js";
+import { fixMulterFileEncoding } from "../../utils/fix-upload-filename.js";
 
 export const territoryRouter = Router();
 const territoryService = new TerritoryService();
@@ -37,6 +38,7 @@ function handleWardContactUpload(req: Request, res: Response, next: NextFunction
       res.status(400).json({ success: false, message });
       return;
     }
+    fixMulterFileEncoding(req.file);
     next();
   });
 }
