@@ -94,6 +94,7 @@ test.describe("API /api/ctv — dữ liệu theo từng CTV", () => {
         totalValue: CONTRACT_VALUE,
         channel: "CTV giới thiệu",
         leadId: firstLead.id,
+        contractTemplate: "hoa_don_dien_tu",
       },
     });
     expect(contractRes.status()).toBe(201);
@@ -251,6 +252,7 @@ test.describe("API /api/ctv — dữ liệu theo từng CTV", () => {
         totalValue: value,
         channel: "CTV giới thiệu",
         leadId: leadOk.id,
+        contractTemplate: "hoa_don_dien_tu",
       },
     });
     expect(contractRes.status()).toBe(201);
