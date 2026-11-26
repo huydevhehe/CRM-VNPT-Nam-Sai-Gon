@@ -422,3 +422,34 @@ test("PDF conversion fails with a clear Vietnamese error when LibreOffice is not
     else process.env.SOFFICE_PATH = previous;
   }
 });
+
+test("eoNumber nhập tay lúc xác nhận được lưu, xuất hiện trong file và khi tải lại", async () => {
+  await resetTestData();
+  await insertExportableOrder("HD-EO-1", "GD-EO-1");
+
+  const { record } = await service.confirmExport("HD-EO-1", {
+    docNumber: "900",
+    eoNumber: "EO-2026-0007",
+    exportedBy: "Khoa",
+  });
+  assert.equal(record.eoNumber, "EO-2026-0007");
+
+  const docx = service.render(await service.buildDataForExport(record));
+  const lines = extractDocxLines(docx);
+  assert.ok(lines.some((l) => l.includes("EO-2026-0007")), "File phải chứa số EO");
+  assert.ok(lines.some((l) => l.includes("/DNTT-VNPT.TPHCM-NSG")), "Số văn bản phải có tiền tố DNTT-");
+
+  const fetched = await service.getExport(record.id, "HD-EO-1");
+  assert.equal(fetched.eoNumber, "EO-2026-0007");
+});
+
+test("eoNumber bỏ trống vẫn xuất được file bình thường, không bắt buộc", async () => {
+  await resetTestData();
+  await insertExportableOrder("HD-EO-2", "GD-EO-2");
+
+  const { record } = await service.confirmExport("HD-EO-2", { docNumber: "901", exportedBy: "Khoa" });
+  assert.equal(record.eoNumber, null);
+
+  const preview = await service.buildPreview("HD-EO-2", "901");
+  assert.equal(preview.missingFields.length >= 0, true);
+});

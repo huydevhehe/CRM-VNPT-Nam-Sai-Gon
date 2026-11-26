@@ -12,6 +12,7 @@ export const ADMIN_ONLY_PATHS = [
   "/admin/data-transfer",
   "/admin/channel-sources",
   "/admin/custom-lists",
+  "/admin/document-registry",
 ] as const;
 
 export function isAdminOnlyPath(pathname: string | null | undefined): boolean {

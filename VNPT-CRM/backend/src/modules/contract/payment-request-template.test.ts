@@ -53,6 +53,7 @@ test('payment-request docx template contains all required variables', () => {
     '{SdtAM}',
     '{EmailAM}',
     '{NguoiKy}',
+    '{SoEO}',
   ];
   for (const v of newVars) {
     assert.ok(
@@ -77,6 +78,7 @@ test('payment-request docx template contains all required variables', () => {
   assert.equal(docXml.includes('KHOA NSG'), false, 'Hardcoded KHOA NSG must be replaced');
   assert.equal(docXml.includes('Vũ Tiến Khoa – 0838.999.333'), false, 'Hardcoded AM info must be replaced');
   assert.equal(docXml.includes('Lê Văn Thuần'), false, 'Hardcoded signer must be replaced');
+  assert.ok(docXml.includes('/DNTT-VNPT.TPHCM-NSG'), 'Số văn bản phải có tiền tố DNTT- theo Sổ văn bản');
 });
 
 test('payment-request docx template renders without docxtemplater errors', () => {
@@ -106,6 +108,7 @@ test('payment-request docx template renders without docxtemplater errors', () =>
     SdtAM: '0901234567',
     EmailAM: 'an.nv@vnpt.vn',
     NguoiKy: 'Trần Văn Ký',
+    SoEO: 'EO-2026-001',
     GoiCuoc: 'Gói VIP 12M',
     MaTB: 'TB001, TB002',
     HinhThucThanhToan: 'Chuyển khoản',
@@ -122,4 +125,5 @@ test('payment-request docx template renders without docxtemplater errors', () =>
   assert.ok(renderedXml.includes('Dịch vụ Kiểm thử CRM'), 'Rendered docx must contain replaced service name');
   assert.ok(renderedXml.includes('CÔNG TY TNHH TEST CLIENT'), 'Rendered docx must contain replaced customer name');
   assert.ok(renderedXml.includes('10.000.000 đồng'), 'Rendered docx must contain contract value');
+  assert.ok(renderedXml.includes('EO-2026-001'), 'Rendered docx must contain the EO number');
 });

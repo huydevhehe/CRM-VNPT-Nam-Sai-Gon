@@ -103,6 +103,7 @@ export interface PaymentExportRecordDto {
   id: string;
   contractId: string;
   docNumber: string;
+  eoNumber: string | null;
   exportedBy: string | null;
   exportedAt: string;
   transactionCode?: string;
@@ -129,9 +130,13 @@ export interface ConfirmedPaymentExportDto extends PaymentExportRecordDto {
 /** Xem trước văn bản đề nghị thanh toán. KHÔNG cấp/tiêu số văn bản. */
 export function getPaymentRequestPreview(
   contractId: string,
-  docNumber?: string
+  docNumber?: string,
+  eoNumber?: string
 ): Promise<PaymentRequestPreviewDto> {
-  const query = docNumber?.trim() ? `?docNumber=${encodeURIComponent(docNumber.trim())}` : "";
+  const params = new URLSearchParams();
+  if (docNumber?.trim()) params.set("docNumber", docNumber.trim());
+  if (eoNumber?.trim()) params.set("eoNumber", eoNumber.trim());
+  const query = params.toString() ? `?${params.toString()}` : "";
   return apiFetch<PaymentRequestPreviewDto>(`/contracts/${contractId}/payment-request/preview${query}`);
 }
 
@@ -141,7 +146,7 @@ export function getPaymentRequestPreview(
  */
 export function confirmPaymentRequest(
   contractId: string,
-  input: { docNumber?: string; reuseLatest?: boolean }
+  input: { docNumber?: string; eoNumber?: string; reuseLatest?: boolean }
 ): Promise<ConfirmedPaymentExportDto> {
   return apiFetch<ConfirmedPaymentExportDto>(`/contracts/${contractId}/payment-request/confirm`, {
     method: "POST",
