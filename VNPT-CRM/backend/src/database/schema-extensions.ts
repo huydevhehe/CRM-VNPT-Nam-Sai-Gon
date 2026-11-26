@@ -273,6 +273,7 @@ export async function applySchemaExtensions(): Promise<void> {
       exported_at TEXT
     )
   `);
+  await ensureColumn("payment_request_exports", "eo_number", "TEXT");
 
   await run(`
     CREATE TABLE IF NOT EXISTS quote_exports (
@@ -312,6 +313,20 @@ export async function applySchemaExtensions(): Promise<void> {
     )
   `);
   await run("CREATE INDEX IF NOT EXISTS ix_custom_list_items_list ON custom_list_items(list_id)");
+
+  // Sổ văn bản - Tờ trình: nội dung soạn ngoài CRM, hệ thống chỉ đăng ký/cấp số
+  // thủ công (nhập tay) để tránh trùng số trong năm.
+  await run(`
+    CREATE TABLE IF NOT EXISTS memo_registry (
+      id TEXT PRIMARY KEY,
+      year TEXT NOT NULL,
+      doc_number TEXT NOT NULL,
+      note TEXT,
+      registered_by TEXT,
+      registered_at TEXT,
+      UNIQUE (year, doc_number)
+    )
+  `);
 
   await applyContractQuickEditSchema();
 

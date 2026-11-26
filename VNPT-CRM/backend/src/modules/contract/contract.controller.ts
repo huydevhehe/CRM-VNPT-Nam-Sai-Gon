@@ -451,7 +451,8 @@ contractRouter.get("/:id/payment-request/preview", requireAuth, async (req: Requ
     const { id } = req.params;
     await contractService.assertCanAccess(id, await resolveStaffScope(req));
     const docNumber = req.query.docNumber ? String(req.query.docNumber) : undefined;
-    const preview = await paymentRequestService.buildPreview(id, docNumber);
+    const eoNumber = req.query.eoNumber ? String(req.query.eoNumber) : undefined;
+    const preview = await paymentRequestService.buildPreview(id, docNumber, eoNumber);
     res.json({ success: true, data: { ...preview, pdfAvailable: isPdfConversionAvailable() } });
   } catch (error: any) {
     sendPaymentRequestError(res, error);
@@ -465,7 +466,8 @@ contractRouter.get("/:id/payment-request/preview-file", requireAuth, async (req:
     await contractService.assertCanAccess(id, await resolveStaffScope(req));
     const suggested = await paymentRequestService.suggestNextDocNumber(new Date().getFullYear());
     const docNumber = (req.query.docNumber ? String(req.query.docNumber).trim() : "") || suggested || "…";
-    const data = await paymentRequestService.buildData(id, docNumber);
+    const eoNumber = req.query.eoNumber ? String(req.query.eoNumber).trim() : "";
+    const data = await paymentRequestService.buildData(id, docNumber, new Date(), eoNumber);
     await sendPaymentRequestFile(res, data, "pdf", "inline");
   } catch (error: any) {
     sendPaymentRequestError(res, error);
@@ -478,10 +480,11 @@ contractRouter.post("/:id/payment-request/confirm", requireAuth, async (req: Req
   try {
     const { id } = req.params;
     await contractService.assertCanAccess(id, await resolveStaffScope(req));
-    const { docNumber, reuseLatest } = req.body ?? {};
+    const { docNumber, eoNumber, reuseLatest } = req.body ?? {};
     const exportedBy = (await resolveActorName(req)) || req.user?.name || "Admin";
     const result = await paymentRequestService.confirmExport(id, {
       docNumber: docNumber === undefined || docNumber === null ? null : String(docNumber),
+      eoNumber: eoNumber === undefined || eoNumber === null ? null : String(eoNumber),
       exportedBy,
       reuseLatest: reuseLatest === true,
     });
