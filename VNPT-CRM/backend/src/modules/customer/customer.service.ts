@@ -193,6 +193,11 @@ export class CustomerService {
       note?: string;
       referredByCtvId?: string;
       channelSourceId?: string;
+      representativeName?: string;
+      representativeTitle?: string;
+      representativeIdNumber?: string;
+      representativeIdIssuedAt?: string;
+      representativeIdIssuedPlace?: string;
     },
     operator?: CustomerOperator
   ) {
@@ -257,8 +262,9 @@ export class CustomerService {
         id, name, identity_code, type, customer_group, phone, address, services, am_staff, am_caring_staff,
         handover_batch, handover_date, territory_id, customer_code, status, team_id, sales_channel,
         contact_name, contact_email, billing_name, billing_phone, billing_email, note, referred_by_ctv_id,
-        channel_source_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        channel_source_id, representative_name, representative_title, representative_id_number,
+        representative_id_issued_at, representative_id_issued_place
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         data.name,
@@ -285,6 +291,11 @@ export class CustomerService {
         data.note || null,
         referredByCtvId || null,
         channelSourceId || null,
+        data.representativeName || null,
+        data.representativeTitle || null,
+        data.representativeIdNumber || null,
+        data.representativeIdIssuedAt || null,
+        data.representativeIdIssuedPlace || null,
       ]
     );
 
@@ -387,6 +398,11 @@ export class CustomerService {
       billingEmail: "billing_email",
       note: "note",
       referredByCtvId: "referred_by_ctv_id",
+      representativeName: "representative_name",
+      representativeTitle: "representative_title",
+      representativeIdNumber: "representative_id_number",
+      representativeIdIssuedAt: "representative_id_issued_at",
+      representativeIdIssuedPlace: "representative_id_issued_place",
     };
 
     if (patch.customerGroup !== undefined && !isValidGroup(patch.customerGroup)) {

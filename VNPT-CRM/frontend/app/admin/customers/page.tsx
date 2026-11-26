@@ -311,6 +311,11 @@ export default function CustomersPage() {
         billingName: values.billingName || undefined,
         billingPhone: values.billingPhone || undefined,
         billingEmail: values.billingEmail || undefined,
+        representativeName: values.representativeName || undefined,
+        representativeTitle: values.representativeTitle || undefined,
+        representativeIdNumber: values.representativeIdNumber || undefined,
+        representativeIdIssuedAt: values.representativeIdIssuedAt || undefined,
+        representativeIdIssuedPlace: values.representativeIdIssuedPlace || undefined,
       });
 
       setData((prev) => [created, ...prev]);
@@ -354,6 +359,11 @@ export default function CustomersPage() {
         billingName: values.billingName || undefined,
         billingPhone: values.billingPhone || undefined,
         billingEmail: values.billingEmail || undefined,
+        representativeName: values.representativeName || undefined,
+        representativeTitle: values.representativeTitle || undefined,
+        representativeIdNumber: values.representativeIdNumber || undefined,
+        representativeIdIssuedAt: values.representativeIdIssuedAt || undefined,
+        representativeIdIssuedPlace: values.representativeIdIssuedPlace || undefined,
         ...channelPatch,
       });
 

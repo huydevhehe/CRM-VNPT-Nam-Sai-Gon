@@ -29,6 +29,52 @@ test("create stores contact and billing info separately", async () => {
   assert.equal(result.customer.billing_email, "khai@example.com");
 });
 
+test("create and update store representative (người đại diện) fields, optional", async () => {
+  const service = new CustomerService();
+  const suffix = Date.now();
+
+  const created = await service.create({
+    name: `Công ty Test Người Đại Diện ${suffix}`,
+    type: "Doanh nghiệp",
+    customerGroup: "Tự phát triển",
+    representativeName: "Nguyễn Văn A",
+    representativeTitle: "Giám đốc",
+    representativeIdNumber: "079094001234",
+    representativeIdIssuedAt: "2020-05-10",
+    representativeIdIssuedPlace: "Cục Cảnh sát QLHC về TTXH",
+  });
+
+  assert.equal(created.customer.representative_name, "Nguyễn Văn A");
+  assert.equal(created.customer.representative_title, "Giám đốc");
+  assert.equal(created.customer.representative_id_number, "079094001234");
+  assert.equal(created.customer.representative_id_issued_at, "2020-05-10");
+  assert.equal(created.customer.representative_id_issued_place, "Cục Cảnh sát QLHC về TTXH");
+
+  const updated = await service.update(
+    created.customer.id,
+    { representativeName: "Trần Thị B", representativeTitle: "Phó giám đốc" },
+    { name: "Quản trị viên", role: "Admin" }
+  );
+  assert.equal(updated.representative_name, "Trần Thị B");
+  assert.equal(updated.representative_title, "Phó giám đốc");
+  // Các trường khác không đụng tới vẫn giữ nguyên.
+  assert.equal(updated.representative_id_number, "079094001234");
+});
+
+test("create without representative fields leaves them empty (không bắt buộc)", async () => {
+  const service = new CustomerService();
+  const suffix = Date.now();
+
+  const result = await service.create({
+    name: `Công ty Không Người Đại Diện ${suffix}`,
+    type: "Doanh nghiệp",
+    customerGroup: "Tự phát triển",
+  });
+
+  assert.equal(result.customer.representative_name, null);
+  assert.equal(result.customer.representative_title, null);
+});
+
 test("create accepts PTM địa bàn group", async () => {
   const service = new CustomerService();
   const suffix = Date.now();

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import { Search, Download, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   TableFilter,
@@ -67,6 +67,21 @@ export default function DataTable<T extends Record<string, any>>({
   const [pageSize, setPageSize] = useState<number>(20);
   const [colWidths, setColWidths] = useState<Record<number, number>>({});
   const thRefs = useRef<(HTMLTableCellElement | null)[]>([]);
+
+  // Cột ghim (sticky) có thể nằm liên tiếp nhau (vd 3 cột đầu) — mỗi cột cần
+  // offset `left` bằng tổng độ rộng các cột ghim đứng trước nó, không phải 0.
+  const stickyLeftOffsets = useMemo(() => {
+    const offsets: number[] = [];
+    let acc = 0;
+    for (let i = 0; i < columns.length; i++) {
+      offsets[i] = acc;
+      if (columns[i].sticky) {
+        acc += colWidths[i] ?? columns[i].width ?? thRefs.current[i]?.offsetWidth ?? 140;
+      }
+    }
+    return offsets;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columns, colWidths]);
 
   const dataAfterFilters = filters
     ? applyTableFilters(data, filters, filterValues)
@@ -167,7 +182,7 @@ export default function DataTable<T extends Record<string, any>>({
     URL.revokeObjectURL(url);
   };
 
-  const stickyLeftClass = "sticky left-0 z-10";
+  const stickyLeftClass = "sticky z-10";
 
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white shadow-xs">
@@ -286,7 +301,10 @@ export default function DataTable<T extends Record<string, any>>({
                     thRefs.current[idx] = el;
                   }}
                   className={`relative px-4 py-3 ${col.sticky ? `${stickyLeftClass} bg-slate-50` : ""} ${col.className || ""}`}
-                  style={!resizableColumns && col.width ? { width: col.width } : undefined}
+                  style={{
+                    ...(!resizableColumns && col.width ? { width: col.width } : {}),
+                    ...(col.sticky ? { left: stickyLeftOffsets[idx] } : {}),
+                  }}
                 >
                   {col.header}
                   {resizableColumns && (
@@ -337,6 +355,7 @@ export default function DataTable<T extends Record<string, any>>({
                           className={`px-4 py-3.5 whitespace-nowrap ${
                             resizableColumns ? "overflow-hidden text-ellipsis" : ""
                           } ${col.sticky ? `${stickyLeftClass} bg-white` : ""} ${col.className || ""}`}
+                          style={col.sticky ? { left: stickyLeftOffsets[cIdx] } : undefined}
                         >
                           {col.cell
                             ? col.cell(row)

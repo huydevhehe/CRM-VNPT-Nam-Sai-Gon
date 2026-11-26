@@ -85,6 +85,12 @@ export interface CustomerRecord {
   referredByCtvCode?: string;
   channelSourceId?: string | null;
   channelSourceName?: string | null;
+  /** Người đại diện pháp luật — chỉ dùng để điền mẫu hợp đồng, không bắt buộc nhập. */
+  representativeName?: string;
+  representativeTitle?: string;
+  representativeIdNumber?: string;
+  representativeIdIssuedAt?: string;
+  representativeIdIssuedPlace?: string;
 }
 
 // 4. Service & Alert

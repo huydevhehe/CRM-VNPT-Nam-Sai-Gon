@@ -41,6 +41,11 @@ export interface CustomerFormValues {
   billingName: string;
   billingPhone: string;
   billingEmail: string;
+  representativeName: string;
+  representativeTitle: string;
+  representativeIdNumber: string;
+  representativeIdIssuedAt: string;
+  representativeIdIssuedPlace: string;
 }
 
 export const EMPTY_CUSTOMER_FORM: CustomerFormValues = {
@@ -65,6 +70,11 @@ export const EMPTY_CUSTOMER_FORM: CustomerFormValues = {
   billingName: "",
   billingPhone: "",
   billingEmail: "",
+  representativeName: "",
+  representativeTitle: "",
+  representativeIdNumber: "",
+  representativeIdIssuedAt: "",
+  representativeIdIssuedPlace: "",
 };
 
 export function customerToFormValues(customer: CustomerRecord): CustomerFormValues {
@@ -90,6 +100,11 @@ export function customerToFormValues(customer: CustomerRecord): CustomerFormValu
     billingName: customer.billingName || "",
     billingPhone: customer.billingPhone || "",
     billingEmail: customer.billingEmail || "",
+    representativeName: customer.representativeName || "",
+    representativeTitle: customer.representativeTitle || "",
+    representativeIdNumber: customer.representativeIdNumber || "",
+    representativeIdIssuedAt: customer.representativeIdIssuedAt || "",
+    representativeIdIssuedPlace: customer.representativeIdIssuedPlace || "",
   };
 }
 
@@ -553,6 +568,71 @@ export default function CustomerForm({
                   type="email"
                   value={values.billingEmail}
                   onChange={(e) => set("billingEmail", e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Người đại diện pháp luật — không bắt buộc, chỉ dùng để tự động điền mẫu hợp đồng */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400">
+              Người đại diện pháp luật (để điền hợp đồng, không bắt buộc)
+            </h4>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label htmlFor="cf-rep-name" className={labelClass}>
+                  Họ tên người đại diện
+                </label>
+                <input
+                  id="cf-rep-name"
+                  value={values.representativeName}
+                  onChange={(e) => set("representativeName", e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label htmlFor="cf-rep-title" className={labelClass}>
+                  Chức vụ
+                </label>
+                <input
+                  id="cf-rep-title"
+                  value={values.representativeTitle}
+                  onChange={(e) => set("representativeTitle", e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label htmlFor="cf-rep-id-number" className={labelClass}>
+                  Số CCCD/Hộ chiếu
+                </label>
+                <input
+                  id="cf-rep-id-number"
+                  value={values.representativeIdNumber}
+                  onChange={(e) => set("representativeIdNumber", e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label htmlFor="cf-rep-id-issued-at" className={labelClass}>
+                  Ngày cấp
+                </label>
+                <input
+                  id="cf-rep-id-issued-at"
+                  placeholder="VD: 15/03/2021"
+                  value={values.representativeIdIssuedAt}
+                  onChange={(e) => set("representativeIdIssuedAt", e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div className="col-span-2">
+                <label htmlFor="cf-rep-id-issued-place" className={labelClass}>
+                  Nơi cấp
+                </label>
+                <input
+                  id="cf-rep-id-issued-place"
+                  value={values.representativeIdIssuedPlace}
+                  onChange={(e) => set("representativeIdIssuedPlace", e.target.value)}
                   className={inputClass}
                 />
               </div>
