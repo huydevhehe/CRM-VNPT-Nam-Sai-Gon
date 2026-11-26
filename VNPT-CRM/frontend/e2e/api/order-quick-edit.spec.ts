@@ -35,6 +35,7 @@ test.describe("Đơn hàng: sửa nhanh + đề nghị thanh toán (API)", () =>
         channel: "Trực tiếp",
         amStaff: defaultAm,
         packageName: "Gói test",
+        contractTemplate: "hoa_don_dien_tu",
         ...extra,
       },
     });
@@ -119,6 +120,7 @@ test.describe("Đơn hàng: sửa nhanh + đề nghị thanh toán (API)", () =>
         subscriberCodes: [`TB_NOAM_${suffix}`],
         totalValue: 1000,
         channel: "Trực tiếp",
+        contractTemplate: "hoa_don_dien_tu",
       },
     });
     expect(none.status()).toBe(400);
@@ -139,6 +141,7 @@ test.describe("Đơn hàng: sửa nhanh + đề nghị thanh toán (API)", () =>
         subscriberCodes: [`TB_OWNAM_${suffix}`],
         totalValue: 1000,
         channel: "Trực tiếp",
+        contractTemplate: "hoa_don_dien_tu",
       },
     });
     expect(own.status()).toBe(201);

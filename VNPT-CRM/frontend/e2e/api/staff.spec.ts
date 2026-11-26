@@ -344,6 +344,7 @@ test.describe("API Quản lý Nhân viên (POST /api/staff)", () => {
         channel: "Trực tiếp",
         amStaff: name,
         signedDate: `${month}-10`,
+        contractTemplate: "hoa_don_dien_tu",
       },
     });
     expect(createOrderRes.status()).toBe(201);

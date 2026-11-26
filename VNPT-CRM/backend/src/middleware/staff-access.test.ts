@@ -410,6 +410,7 @@ test("Đơn hàng: AM không tạo đơn cho AM khác, không đổi AM phụ tr
       subscriberCodes: ["TB1"],
       totalValue: 1000,
       channel: "Trực tiếp",
+      contractTemplate: "hoa_don_dien_tu",
       ...extra,
     });
 
