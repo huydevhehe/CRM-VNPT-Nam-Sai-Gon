@@ -8,6 +8,7 @@ import { CustomerService, CustomerServiceError } from "./customer.service.js";
 import { CustomerDocumentService, CustomerDocumentServiceError } from "./customer-document.service.js";
 import { ServiceService } from "../service/service.service.js";
 import { CustomerImportService, CustomerImportServiceError } from "./customer-import/customer-import.service.js";
+import { fixMulterFileEncoding } from "../../utils/fix-upload-filename.js";
 import {
   QuoteService,
   QuoteBlockedError,
@@ -40,6 +41,7 @@ function handleDocUpload(req: Request, res: Response, next: NextFunction) {
       res.status(400).json({ success: false, message });
       return;
     }
+    fixMulterFileEncoding(req.file);
     next();
   });
 }
@@ -73,6 +75,7 @@ function handleImportUpload(req: Request, res: Response, next: NextFunction) {
       res.status(400).json({ success: false, message });
       return;
     }
+    fixMulterFileEncoding(req.file);
     next();
   });
 }
@@ -488,6 +491,7 @@ customerRouter.post(
         res.status(400).json({ success: false, message: "Vui lòng đính kèm file Excel (.xlsx / .xls)" });
         return;
       }
+      fixMulterFileEncoding(req.file);
       const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
       const sheetName = workbook.SheetNames[0];
       if (!sheetName) {
