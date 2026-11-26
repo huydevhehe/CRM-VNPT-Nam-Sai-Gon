@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { RotateCw, UploadCloud, Clock, CheckCircle, AlertTriangle, Pencil, X } from "lucide-react";
 import KpiCard from "@/components/admin/shared/KpiCard";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
+import RetentionWarningBanner from "@/components/admin/shared/RetentionWarningBanner";
 import {
   RenewalRecord,
   RenewalStatus,
@@ -135,10 +136,19 @@ export default function RenewalsPage() {
     return item.cohort === selectedCohort;
   });
 
+  function monthLabel(item: RenewalRecord): string {
+    const source = item.createdAt || item.expiryDate;
+    if (!source) return "Chưa rõ tháng";
+    const ym = source.slice(0, 7);
+    return /^\d{4}-\d{2}$/.test(ym) ? `Tháng ${ym}` : "Chưa rõ tháng";
+  }
+
   const columns: Column<RenewalRecord>[] = [
     {
       header: "Mã giao dịch",
       accessorKey: "transactionCode",
+      sticky: true,
+      width: 150,
       cell: (item) => (
         <span className="font-mono font-bold text-vnpt">
           {item.transactionCode}
@@ -358,6 +368,9 @@ export default function RenewalsPage() {
         </button>
       </div>
 
+      {/* Cảnh báo dữ liệu sắp tự động xóa (quá 1 năm lưu trữ) */}
+      {selectedCohort !== "KPI" && <RetentionWarningBanner type="renewal" />}
+
       {/* Data Table */}
       {selectedCohort === "KPI" ? (
         <StaffKpiTable kpiKeys={["ghtt_t", "ghtt_t1"]} />
@@ -376,9 +389,12 @@ export default function RenewalsPage() {
       ) : (
         <DataTable
           title="Danh sách giao dịch gia hạn trả trước"
-          subtitle="Quản lý chống trùng mã giao dịch theo từng thuê bao"
+          subtitle="Quản lý chống trùng mã giao dịch theo từng thuê bao — nhóm theo tháng"
           columns={columns}
           data={filteredData}
+          pagination
+          resizableColumns
+          groupBy={monthLabel}
           filters={[
             ...(isAdmin
               ? [
