@@ -8,6 +8,20 @@ import { CustomerService, CustomerServiceError } from "./customer.service.js";
 import { CustomerDocumentService, CustomerDocumentServiceError } from "./customer-document.service.js";
 import { ServiceService } from "../service/service.service.js";
 import { CustomerImportService, CustomerImportServiceError } from "./customer-import/customer-import.service.js";
+import {
+  QuoteService,
+  QuoteBlockedError,
+  QuoteConflictError,
+  QuoteInputError,
+  QuoteNotFoundError,
+  type QuoteData,
+} from "./quote.service.js";
+import {
+  convertDocxToPdf,
+  isPdfConversionAvailable,
+  PdfConverterUnavailableError,
+  PDF_UNAVAILABLE_MESSAGE,
+} from "../contract/docx-to-pdf.js";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -35,6 +49,7 @@ const customerService = new CustomerService();
 const customerDocumentService = new CustomerDocumentService();
 const serviceService = new ServiceService();
 const customerImportService = new CustomerImportService();
+const quoteService = new QuoteService();
 
 function sendError(res: Response, error: any) {
   const status = error instanceof CustomerServiceError ? error.status : 500;
@@ -222,6 +237,130 @@ customerRouter.get("/:id/documents", requireAuth, async (req: Request, res: Resp
     res.json({ success: true, data: docs });
   } catch (error: any) {
     sendDocError(res, error);
+  }
+});
+
+function quoteErrorStatus(error: unknown): number {
+  if (error instanceof QuoteConflictError) return 409;
+  if (error instanceof QuoteInputError || error instanceof QuoteBlockedError) return 400;
+  if (error instanceof QuoteNotFoundError) return 404;
+  if (error instanceof PdfConverterUnavailableError) return 501;
+  return 500;
+}
+
+function sendQuoteError(res: Response, error: unknown): void {
+  const message = error instanceof Error ? error.message : "Lỗi không xác định";
+  res.status(quoteErrorStatus(error)).json({ success: false, message });
+}
+
+function parseQuoteFileFormat(raw: unknown): "docx" | "pdf" | null {
+  const value = typeof raw === "string" ? raw.trim().toLowerCase() : "docx";
+  if (value === "" || value === "docx" || value === "doc") return "docx";
+  return value === "pdf" ? "pdf" : null;
+}
+
+const QUOTE_DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+async function sendQuoteFile(
+  res: Response,
+  data: QuoteData,
+  format: "docx" | "pdf",
+  disposition: "attachment" | "inline" = "attachment"
+): Promise<void> {
+  const docx = quoteService.render(data);
+  const baseName = `Bao-gia_${data.soBaoGia}`;
+  if (format === "pdf") {
+    const pdf = await convertDocxToPdf(docx);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `${disposition}; filename="${baseName}.pdf"`);
+    res.send(pdf);
+    return;
+  }
+  res.setHeader("Content-Type", QUOTE_DOCX_MIME);
+  res.setHeader("Content-Disposition", `${disposition}; filename="${baseName}.docx"`);
+  res.send(docx);
+}
+
+function readQuoteInput(body: any) {
+  return {
+    serviceType: String(body?.serviceType ?? ""),
+    packageName: String(body?.packageName ?? ""),
+    unit: String(body?.unit ?? ""),
+    quantity: Number(body?.quantity ?? 0),
+    unitPrice: Number(body?.unitPrice ?? 0),
+    vatPercent: body?.vatPercent === undefined || body?.vatPercent === null ? undefined : Number(body.vatPercent),
+    note: body?.note ? String(body.note) : undefined,
+    staffName: body?.staffName ? String(body.staffName) : undefined,
+  };
+}
+
+// GET /api/customers/:id/quote/preview?docNumber= — xem trước, KHÔNG cấp số báo giá.
+// Body/query dùng chung readQuoteInput để nhập thông tin dịch vụ cần báo giá.
+customerRouter.post("/:id/quote/preview", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const docNumber = req.query.docNumber ? String(req.query.docNumber) : undefined;
+    const preview = await quoteService.buildPreview(id, readQuoteInput(req.body), docNumber);
+    res.json({ success: true, data: { ...preview, pdfAvailable: isPdfConversionAvailable() } });
+  } catch (error: any) {
+    sendQuoteError(res, error);
+  }
+});
+
+// POST /api/customers/:id/quote/confirm — XÁC NHẬN lấy số báo giá (điểm duy nhất tiêu số).
+customerRouter.post("/:id/quote/confirm", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { docNumber, reuseLatest } = req.body ?? {};
+    const exportedBy = req.user?.name ?? req.user?.id ?? "Admin";
+    const result = await quoteService.confirmExport(id, {
+      ...readQuoteInput(req.body),
+      docNumber: docNumber === undefined || docNumber === null ? null : String(docNumber),
+      exportedBy,
+      reuseLatest: reuseLatest === true,
+    });
+    res.status(result.reused ? 200 : 201).json({
+      success: true,
+      data: { ...result.record, reused: result.reused },
+    });
+  } catch (error: any) {
+    sendQuoteError(res, error);
+  }
+});
+
+// GET /api/customers/:id/quote/file?exportId=&format=docx|pdf — tải file của một lần đã cấp số.
+customerRouter.get("/:id/quote/file", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const format = parseQuoteFileFormat(req.query.format);
+    if (!format) {
+      res.status(400).json({ success: false, message: "Định dạng không hợp lệ (docx hoặc pdf)" });
+      return;
+    }
+    const exportId = req.query.exportId ? String(req.query.exportId) : "";
+    if (!exportId) {
+      res.status(400).json({ success: false, message: "Thiếu mã lần cấp số báo giá" });
+      return;
+    }
+    if (format === "pdf" && !isPdfConversionAvailable()) {
+      res.status(501).json({ success: false, message: PDF_UNAVAILABLE_MESSAGE });
+      return;
+    }
+    const record = await quoteService.getExport(exportId, id);
+    const data = await quoteService.buildDataForExport(record);
+    await sendQuoteFile(res, data, format);
+  } catch (error: any) {
+    sendQuoteError(res, error);
+  }
+});
+
+// GET /api/customers/:id/quote/exports — lịch sử các lần đã cấp số báo giá của khách.
+customerRouter.get("/:id/quote/exports", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const list = await quoteService.listExports(req.params.id);
+    res.json({ success: true, data: list });
+  } catch (error: any) {
+    sendQuoteError(res, error);
   }
 });
 
