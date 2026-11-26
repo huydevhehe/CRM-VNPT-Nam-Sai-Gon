@@ -113,6 +113,12 @@ export async function applySchemaExtensions(): Promise<void> {
     `CREATE UNIQUE INDEX IF NOT EXISTS ux_commissions_contract_ctv ON commissions(contract_id, ctv_id)
      WHERE contract_id IS NOT NULL AND ctv_id IS NOT NULL`
   );
+  // Hoa hồng nội bộ (đơn không có CTV, ghi nhận cho AM bán hàng) — idempotent
+  // theo contract_id (chỉ 1 dòng nội bộ / đơn), ctv_id luôn NULL ở loại này.
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS ux_commissions_contract_internal ON commissions(contract_id)
+     WHERE contract_id IS NOT NULL AND ctv_id IS NULL AND type = 'Hoa hồng nội bộ'`
+  );
 
   await ensureColumn("staff", "hrm_code", "TEXT");
   await ensureColumn("staff", "staff_type", "TEXT");
@@ -382,11 +388,63 @@ export async function applySchemaExtensions(): Promise<void> {
     }
   });
 
+  // Dữ liệu hoa hồng cũ (seed COM-01..04) không có contract_id, chỉ "mồ côi"
+  // join tạm qua transaction_code -> gắn lại contract_id thật 1 lần duy nhất.
+  // Dòng nào không khớp đúng 1 đơn hàng thì ghi vào audit_logs để Admin tự xử lý tay.
+  await runMigrationOnce("commission_relink_orphans_v1", async () => {
+    await relinkOrphanCommissions();
+  });
+
   await applyLeadChannelSchema();
   await applyReminderEmailSchema();
   await applyT6Schema();
   await applyT8Schema();
   await applyT10Schema();
+}
+
+/**
+ * Gắn lại contract_id cho các dòng hoa hồng "mồ côi" (contract_id NULL) bằng
+ * cách khớp transaction_code với đúng 1 đơn hàng. Dòng nào không khớp đúng 1
+ * đơn (0 hoặc nhiều hơn 1) thì bỏ qua, không đoán — ghi vào audit_logs để
+ * Admin tự xử lý tay. Export riêng (không chỉ gọi qua runMigrationOnce) để
+ * test trực tiếp được, không phụ thuộc trạng thái "đã chạy 1 lần".
+ */
+export async function relinkOrphanCommissions(): Promise<{ relinked: number; unmatchedCount: number }> {
+  const orphans = await query<{ id: string; transaction_code: string; recipient_name: string }>(
+    "SELECT id, transaction_code, recipient_name FROM commissions WHERE contract_id IS NULL"
+  );
+
+  let relinked = 0;
+  const unmatched: string[] = [];
+  for (const row of orphans) {
+    const matches = await query<{ id: string }>(
+      "SELECT id FROM contracts WHERE transaction_code = ?",
+      [row.transaction_code]
+    );
+    if (matches.length === 1) {
+      await run("UPDATE commissions SET contract_id = ? WHERE id = ?", [matches[0].id, row.id]);
+      relinked += 1;
+    } else {
+      unmatched.push(`${row.id} (${row.recipient_name}, mã GD: ${row.transaction_code})`);
+    }
+  }
+
+  if (relinked > 0 || unmatched.length > 0) {
+    await run(
+      'INSERT INTO audit_logs (id, "user", action, details) VALUES (?, ?, ?, ?)',
+      [
+        `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        "Hệ thống (migration)",
+        "Gắn lại hoa hồng mồ côi theo mã giao dịch",
+        `Đã gắn lại ${relinked} dòng hoa hồng vào đúng đơn hàng.` +
+          (unmatched.length
+            ? ` Còn ${unmatched.length} dòng không tự gắn được (không khớp đúng 1 đơn hàng), cần xử lý tay: ${unmatched.join("; ")}`
+            : ""),
+      ]
+    );
+  }
+
+  return { relinked, unmatchedCount: unmatched.length };
 }
 
 const TERRITORY_BACKFILL_KEY = "territory_backfill_v1";

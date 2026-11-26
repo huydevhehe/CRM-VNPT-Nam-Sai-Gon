@@ -3,7 +3,10 @@ import { todayVn } from "../../utils/date-vn.js";
 import {
   CTV_COMMISSION_INITIAL_STATUS,
   CTV_COMMISSION_TYPE,
+  INTERNAL_COMMISSION_INITIAL_STATUS,
+  INTERNAL_COMMISSION_TYPE,
   calcCtvCommission,
+  calcInternalCommission,
 } from "./commission.rules.js";
 
 /** Dòng thuần của bảng commissions (không kèm dữ liệu join). */
@@ -76,6 +79,8 @@ export interface CommissionContractInput {
   transaction_code: string;
   total_value: number;
   referred_by_ctv_id: string | null;
+  /** AM bán hàng của đơn — dùng để sinh hoa hồng nội bộ khi đơn không có CTV. */
+  am_staff?: string | null;
 }
 
 export interface UpdatePayoutInput {
@@ -231,16 +236,22 @@ export class CommissionService {
   }
 
   /**
-   * Sinh hoa hồng CTV cho hợp đồng. Idempotent theo (contract_id, ctv_id):
-   * gọi nhiều lần vẫn chỉ có một dòng. Trả về null nếu hợp đồng không gắn CTV
-   * hoặc CTV không còn tồn tại.
+   * Sinh hoa hồng cho hợp đồng Hoàn tất: có CTV giới thiệu -> hoa hồng chi
+   * kênh (CTV); không có CTV -> hoa hồng nội bộ ghi nhận cho AM bán hàng của
+   * đơn. Idempotent — gọi nhiều lần vẫn chỉ có một dòng mỗi loại.
    */
   async createForContract(contract: CommissionContractInput): Promise<CommissionRecordDto | null> {
     const ctvId = contract.referred_by_ctv_id;
-    if (!ctvId) {
-      return null;
+    if (ctvId) {
+      return this.createCtvCommission(contract, ctvId);
     }
+    return this.createInternalCommission(contract);
+  }
 
+  private async createCtvCommission(
+    contract: CommissionContractInput,
+    ctvId: string
+  ): Promise<CommissionRecordDto | null> {
     const existing = await query<CommissionRow>(
       "SELECT * FROM commissions WHERE contract_id = ? AND ctv_id = ?",
       [contract.id, ctvId]
@@ -293,12 +304,71 @@ export class CommissionService {
     return this.getJoinedById(id);
   }
 
-  /** Tính lại số tiền hoa hồng CTV của hợp đồng, chỉ khi còn "Chờ chi". */
+  /**
+   * Sinh hoa hồng nội bộ cho AM bán hàng khi đơn Hoàn tất không có CTV giới
+   * thiệu. Trả về null nếu đơn không có AM bán hàng (dữ liệu thiếu).
+   */
+  private async createInternalCommission(
+    contract: CommissionContractInput
+  ): Promise<CommissionRecordDto | null> {
+    const amStaff = (contract.am_staff || "").trim();
+    if (!amStaff) {
+      return null;
+    }
+
+    const existing = await query<CommissionRow>(
+      "SELECT * FROM commissions WHERE contract_id = ? AND ctv_id IS NULL AND type = ?",
+      [contract.id, INTERNAL_COMMISSION_TYPE]
+    );
+    if (existing.length) {
+      return this.getJoinedById(existing[0].id);
+    }
+
+    const id = `HH-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    try {
+      await run(
+        `INSERT INTO commissions (
+          id, recipient_name, type, transaction_code, amount, status, date, contract_id, ctv_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+        [
+          id,
+          amStaff,
+          INTERNAL_COMMISSION_TYPE,
+          contract.transaction_code,
+          calcInternalCommission(Number(contract.total_value)),
+          INTERNAL_COMMISSION_INITIAL_STATUS,
+          todayVn(),
+          contract.id,
+        ]
+      );
+    } catch (error) {
+      if (!isUniqueViolation(error)) {
+        throw error;
+      }
+      const existingAfterRace = await query<CommissionRow>(
+        "SELECT * FROM commissions WHERE contract_id = ? AND ctv_id IS NULL AND type = ?",
+        [contract.id, INTERNAL_COMMISSION_TYPE]
+      );
+      if (!existingAfterRace.length) {
+        throw error;
+      }
+      return this.getJoinedById(existingAfterRace[0].id);
+    }
+
+    return this.getJoinedById(id);
+  }
+
+  /** Tính lại số tiền hoa hồng (CTV hoặc nội bộ) của hợp đồng, chỉ khi còn ở trạng thái khởi tạo ("Chờ chi"/"Chờ nhận"). */
   async recalculateForContract(contractId: string, totalValue: number): Promise<void> {
     await run(
       `UPDATE commissions SET amount = ?, updated_at = CURRENT_TIMESTAMP
        WHERE contract_id = ? AND ctv_id IS NOT NULL AND type = ? AND status = ?`,
       [calcCtvCommission(totalValue), contractId, CTV_COMMISSION_TYPE, CTV_COMMISSION_INITIAL_STATUS]
+    );
+    await run(
+      `UPDATE commissions SET amount = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE contract_id = ? AND ctv_id IS NULL AND type = ? AND status = ?`,
+      [calcInternalCommission(totalValue), contractId, INTERNAL_COMMISSION_TYPE, INTERNAL_COMMISSION_INITIAL_STATUS]
     );
   }
 

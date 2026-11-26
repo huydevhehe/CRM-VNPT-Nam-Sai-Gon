@@ -569,29 +569,47 @@ export class ContractService {
   }
 
   /**
-   * Khi đơn chuyển "Hoàn tất": nếu có CTV và chưa có hoa hồng nào cho đơn này thì
-   * sinh hoa hồng; nếu đã có hoa hồng (của CTV khác, do đổi CTV sau khi Hoàn tất)
-   * thì KHÔNG tự ghi đè, chỉ trả thông điệp để FE hiển thị. Không có CTV thì trả
-   * thông điệp giải thích rõ lý do không phát sinh (thay vì im lặng).
+   * Khi đơn chuyển "Hoàn tất": có CTV giới thiệu -> sinh hoa hồng chi kênh (nếu
+   * chưa có); không có CTV -> sinh hoa hồng nội bộ cho AM bán hàng (nếu chưa
+   * có). Nếu đơn đã có hoa hồng (của CTV khác, do đổi CTV sau khi Hoàn tất)
+   * thì KHÔNG tự ghi đè, chỉ trả thông điệp để FE hiển thị.
    */
   private async applyCommissionTransition(
     contractId: string,
     deploymentStatus: string,
     referredByCtvId: string | null,
     transactionCode: string,
-    totalValue: number
+    totalValue: number,
+    amStaff: string | null
   ): Promise<string | null> {
     if (deploymentStatus !== "Hoàn tất") {
       return null;
     }
-    if (!referredByCtvId) {
-      return "Đơn không có CTV giới thiệu nên không phát sinh hoa hồng.";
-    }
+
     const existingCommissions = await query<{ ctv_id: string | null }>(
       "SELECT ctv_id FROM commissions WHERE contract_id = ?",
       [contractId]
     );
-    if (!existingCommissions.length) {
+
+    if (!referredByCtvId) {
+      if (existingCommissions.some((c) => c.ctv_id === null)) {
+        return null;
+      }
+      await commissionService.createForContract({
+        id: contractId,
+        transaction_code: transactionCode,
+        total_value: totalValue,
+        referred_by_ctv_id: null,
+        am_staff: amStaff,
+      });
+      return null;
+    }
+
+    // Chỉ xét các dòng hoa hồng CTV (ctv_id khác null) khi quyết định có tạo
+    // thêm hay không — 1 dòng hoa hồng nội bộ có sẵn (do lúc Hoàn tất chưa có
+    // CTV) không chặn việc sinh hoa hồng CTV khi CTV được gán sau đó.
+    const existingCtvCommissions = existingCommissions.filter((c) => c.ctv_id !== null);
+    if (!existingCtvCommissions.length) {
       await commissionService.createForContract({
         id: contractId,
         transaction_code: transactionCode,
@@ -600,7 +618,7 @@ export class ContractService {
       });
       return null;
     }
-    if (existingCommissions.some((c) => c.ctv_id === referredByCtvId)) {
+    if (existingCtvCommissions.some((c) => c.ctv_id === referredByCtvId)) {
       return null;
     }
     return "Hợp đồng đã có hoa hồng CTV khác, hệ thống không tự tạo thêm khi đổi CTV. Vui lòng xử lý tay nếu cần.";
@@ -683,7 +701,8 @@ export class ContractService {
       nextDeploymentStatus,
       current.referred_by_ctv_id,
       current.transaction_code,
-      nextTotalValue
+      nextTotalValue,
+      current.am_staff
     );
 
     const updated = await query<ContractRow>(`${CONTRACT_SELECT} WHERE c.id = ?`, [id]);
@@ -986,7 +1005,8 @@ export class ContractService {
             current.deployment_status,
             nextReferredByCtvId,
             current.transaction_code,
-            finalTotalValue
+            finalTotalValue,
+            amStaff
           )
         : null;
 

@@ -71,6 +71,93 @@ test("createForContract rethrows a non-unique constraint violation instead of sw
   );
 });
 
+test("createForContract: đơn không có CTV nhưng có AM bán hàng -> sinh hoa hồng nội bộ 5% giá trị đơn, gắn đúng contract_id", async () => {
+  const suffix = Date.now();
+  const contractId = `CTR-INTERNAL-${suffix}`;
+  await createTestContract({
+    id: contractId,
+    transactionCode: `GD-INTERNAL-${suffix}`,
+    customerName: `Khách Nội Bộ ${suffix}`,
+    totalValue: 10000000,
+    amStaff: "Nguyễn Thị Tình",
+  });
+
+  const service = new CommissionService();
+  const created = await service.createForContract({
+    id: contractId,
+    transaction_code: `GD-INTERNAL-${suffix}`,
+    total_value: 10000000,
+    referred_by_ctv_id: null,
+    am_staff: "Nguyễn Thị Tình",
+  });
+
+  assert.ok(created);
+  assert.equal(created!.type, "Hoa hồng nội bộ");
+  assert.equal(created!.amount, 500000); // 5% của 10.000.000
+  assert.equal(created!.contractId, contractId);
+  assert.equal(created!.ctvId, null);
+  assert.equal(created!.customerName, `Khách Nội Bộ ${suffix}`);
+  assert.equal(created!.referrerName, "Nguyễn Thị Tình");
+
+  // Gọi lại lần 2 phải idempotent — không tạo thêm dòng mới.
+  const createdAgain = await service.createForContract({
+    id: contractId,
+    transaction_code: `GD-INTERNAL-${suffix}`,
+    total_value: 10000000,
+    referred_by_ctv_id: null,
+    am_staff: "Nguyễn Thị Tình",
+  });
+  assert.equal(createdAgain!.id, created!.id);
+
+  const all = await query("SELECT id FROM commissions WHERE contract_id = ?", [contractId]);
+  assert.equal(all.length, 1);
+});
+
+test("createForContract: đơn không CTV và không có AM bán hàng -> không tạo hoa hồng (trả về null)", async () => {
+  const suffix = Date.now();
+  const service = new CommissionService();
+  const result = await service.createForContract({
+    id: `CTR-NOAM-${suffix}`,
+    transaction_code: `GD-NOAM-${suffix}`,
+    total_value: 5000000,
+    referred_by_ctv_id: null,
+    am_staff: null,
+  });
+  assert.equal(result, null);
+
+  const rows = await query("SELECT id FROM commissions WHERE transaction_code = ?", [
+    `GD-NOAM-${suffix}`,
+  ]);
+  assert.equal(rows.length, 0);
+});
+
+test("recalculateForContract cập nhật lại số tiền hoa hồng nội bộ khi giá trị đơn đổi, chỉ khi còn Chờ nhận", async () => {
+  const suffix = Date.now();
+  const contractId = `CTR-RECALC-INT-${suffix}`;
+  await createTestContract({
+    id: contractId,
+    transactionCode: `GD-RECALC-INT-${suffix}`,
+    customerName: `Khách Recalc Nội Bộ ${suffix}`,
+    totalValue: 10000000,
+    amStaff: "Nguyễn Thị Tình",
+  });
+
+  const service = new CommissionService();
+  const created = await service.createForContract({
+    id: contractId,
+    transaction_code: `GD-RECALC-INT-${suffix}`,
+    total_value: 10000000,
+    referred_by_ctv_id: null,
+    am_staff: "Nguyễn Thị Tình",
+  });
+  assert.equal(created!.amount, 500000);
+
+  await service.recalculateForContract(contractId, 20000000);
+  const updated = await service.getAll();
+  const row = updated.find((c) => c.id === created!.id);
+  assert.equal(row!.amount, 1000000); // 5% của 20.000.000
+});
+
 test("updateAmount updates amount and note, preserving other fields", async () => {
   const service = new CommissionService();
   const id = `HH-TEST-AMOUNT-${Date.now()}`;
