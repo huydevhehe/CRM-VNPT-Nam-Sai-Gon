@@ -18,6 +18,7 @@ import { staffRouter } from "./modules/staff/staff.controller.js";
 import { taskRouter } from "./modules/task/task.controller.js";
 import { reportRouter } from "./modules/report/report.controller.js";
 import { settingsRouter } from "./modules/settings/settings.controller.js";
+import { customListRouter } from "./modules/custom-list/custom-list.controller.js";
 import { ctvRouter } from "./modules/ctv/ctv.controller.js";
 import { ctvAccountsRouter } from "./modules/ctv/ctv-accounts.controller.js";
 import { publicRouter } from "./modules/public/public.controller.js";
@@ -91,6 +92,7 @@ app.use("/api/staff", requireAuth, requireStaff, staffRouter);
 app.use("/api/tasks", requireAuth, requireStaff, taskRouter);
 app.use("/api/reports", requireAuth, requireAdmin, reportRouter);
 app.use("/api/settings", requireAuth, requireAdmin, settingsRouter);
+app.use("/api/custom-lists", requireAuth, requireAdmin, customListRouter);
 app.use("/api/kpi", requireAuth, requireStaff, kpiRouter);
 app.use("/api/reminders", requireAuth, requireAdmin, reminderRouter);
 

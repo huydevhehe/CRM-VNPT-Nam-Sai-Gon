@@ -5,6 +5,7 @@ import multer from "multer";
 import { requireAuth } from "../../middleware/require-auth.js";
 import { SettingsService } from "./settings.service.js";
 import { sendTestMail } from "../notification/email.service.js";
+import { fixMulterFileEncoding } from "../../utils/fix-upload-filename.js";
 
 export const settingsRouter = Router();
 
@@ -52,6 +53,7 @@ settingsRouter.post(
         res.status(400).json({ success: false, message });
         return;
       }
+      fixMulterFileEncoding(req.file);
       next();
     });
   },

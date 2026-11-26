@@ -22,6 +22,7 @@ import {
   Settings,
   Settings2,
   Network,
+  ListPlus,
   X,
 } from "lucide-react";
 
@@ -143,6 +144,11 @@ const NAV_SECTIONS = [
         name: "Cài đặt hệ thống",
         href: "/admin/system-settings",
         icon: Settings,
+      },
+      {
+        name: "Danh mục tùy biến",
+        href: "/admin/custom-lists",
+        icon: ListPlus,
       },
     ],
   },

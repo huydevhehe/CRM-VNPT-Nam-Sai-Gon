@@ -3,6 +3,7 @@ import multer from "multer";
 import { requireAuth } from "../../middleware/require-auth.js";
 import { requireAdmin } from "../../middleware/require-role.js";
 import { resolveActorName, resolveStaffScope } from "../../middleware/actor.js";
+import { fixMulterFileEncoding } from "../../utils/fix-upload-filename.js";
 import {
   ContractService,
   ContractForbiddenError,
@@ -60,6 +61,7 @@ function handleImportUpload(req: Request, res: Response, next: NextFunction) {
       res.status(400).json({ success: false, message });
       return;
     }
+    fixMulterFileEncoding(req.file);
     next();
   });
 }
