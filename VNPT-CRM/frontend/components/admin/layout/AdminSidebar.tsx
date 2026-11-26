@@ -23,6 +23,7 @@ import {
   Settings2,
   Network,
   ListPlus,
+  BookText,
   X,
 } from "lucide-react";
 
@@ -59,6 +60,11 @@ const NAV_SECTIONS = [
         name: "Đề nghị thanh toán",
         href: "/admin/payment-requests",
         icon: FileText,
+      },
+      {
+        name: "Sổ văn bản",
+        href: "/admin/document-registry",
+        icon: BookText,
       },
       {
         name: "Hoa hồng",
