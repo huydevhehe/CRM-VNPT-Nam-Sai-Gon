@@ -13,10 +13,13 @@ export interface CreateQuoteInput {
   vatPercent?: number;
   note?: string;
   staffName?: string;
+  /** Số EO từ hệ thống E-Office bên ngoài — nhập tay tự do, không bắt buộc. */
+  eoNumber?: string | null;
 }
 
 export interface QuoteData {
   soBaoGia: string;
+  soEO: string;
   loaiHinhDichVu: string;
   tenDoanhNghiepA: string;
   diaChiA: string;
@@ -45,6 +48,7 @@ export interface QuoteExportRecord {
   id: string;
   customerId: string;
   docNumber: string;
+  eoNumber: string | null;
   exportedBy: string | null;
   exportedAt: string;
   serviceType: string;
@@ -90,6 +94,7 @@ interface QuoteExportRow {
   id: string;
   customer_id: string;
   doc_number: string;
+  eo_number?: string | null;
   exported_by: string | null;
   exported_at: string;
   service_type: string | null;
@@ -108,6 +113,7 @@ function toExportRecord(r: QuoteExportRow): QuoteExportRecord {
     id: r.id,
     customerId: r.customer_id,
     docNumber: r.doc_number,
+    eoNumber: r.eo_number ?? null,
     exportedBy: r.exported_by,
     exportedAt: r.exported_at,
     serviceType: r.service_type || "",
@@ -206,6 +212,7 @@ export class QuoteService {
 
     return {
       soBaoGia: docNumber,
+      soEO: input.eoNumber?.trim() || "",
       loaiHinhDichVu: input.serviceType || "",
       tenDoanhNghiepA: customer.name || "",
       diaChiA: customer.address || "",
@@ -281,6 +288,7 @@ export class QuoteService {
       vatPercent: record.vatPercent,
       note: record.note || undefined,
       staffName: record.staffName || undefined,
+      eoNumber: record.eoNumber || undefined,
     });
   }
 
@@ -339,15 +347,17 @@ export class QuoteService {
       const id = `QUO-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const exportedAt = now.toISOString();
       const vatPercent = input.vatPercent ?? 10;
+      const eoNumber = input.eoNumber?.trim() || null;
       await tx.run(
         `INSERT INTO quote_exports (
-          id, customer_id, doc_number, service_type, package_name, unit, quantity, unit_price,
+          id, customer_id, doc_number, eo_number, service_type, package_name, unit, quantity, unit_price,
           vat_percent, note, staff_name, exported_by, exported_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
           customerId,
           docNumber,
+          eoNumber,
           input.serviceType,
           input.packageName,
           input.unit,
@@ -366,6 +376,7 @@ export class QuoteService {
           id,
           customerId,
           docNumber,
+          eoNumber,
           exportedBy: input.exportedBy,
           exportedAt,
           serviceType: input.serviceType,

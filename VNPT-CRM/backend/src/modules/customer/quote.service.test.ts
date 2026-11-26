@@ -214,3 +214,51 @@ test("listExports returns exports for a customer ordered by most recent", async 
   assert.equal(list.length, 2);
   assert.equal(list[0].customerId, "CUS-QUO-9");
 });
+
+test("buildData điền Số EO vào nội dung báo giá, cho phép để trống", async () => {
+  await resetTestData();
+  await insertCustomer("CUS-QUO-10");
+
+  const withEo = await service.buildData("CUS-QUO-10", "1", { ...sampleInput, eoNumber: "EO-2026-0088" });
+  assert.equal(withEo.soEO, "EO-2026-0088");
+
+  const withoutEo = await service.buildData("CUS-QUO-10", "1", sampleInput);
+  assert.equal(withoutEo.soEO, "");
+});
+
+test("render hiển thị Số EO trong nội dung file khi có nhập", async () => {
+  await resetTestData();
+  await insertCustomer("CUS-QUO-11");
+  const data = await service.buildData("CUS-QUO-11", "30", { ...sampleInput, eoNumber: "EO-2026-0099" });
+  const buffer = service.render(data);
+  const lines = extractDocxLines(buffer);
+  assert.ok(lines.join("\n").includes("EO-2026-0099"));
+});
+
+test("confirmExport lưu Số EO (tùy chọn, nhập tay) cùng lần cấp số", async () => {
+  await resetTestData();
+  await insertCustomer("CUS-QUO-12");
+
+  const { record } = await service.confirmExport("CUS-QUO-12", {
+    ...sampleInput,
+    exportedBy: "admin",
+    eoNumber: "  EO-2026-0100  ",
+  });
+  assert.equal(record.eoNumber, "EO-2026-0100");
+
+  const { record: withoutEo } = await service.confirmExport("CUS-QUO-12", { ...sampleInput, exportedBy: "admin" });
+  assert.equal(withoutEo.eoNumber, null);
+});
+
+test("buildDataForExport khôi phục đúng Số EO đã lưu", async () => {
+  await resetTestData();
+  await insertCustomer("CUS-QUO-13");
+
+  const { record } = await service.confirmExport("CUS-QUO-13", {
+    ...sampleInput,
+    exportedBy: "admin",
+    eoNumber: "EO-2026-0200",
+  });
+  const data = await service.buildDataForExport(record);
+  assert.equal(data.soEO, "EO-2026-0200");
+});

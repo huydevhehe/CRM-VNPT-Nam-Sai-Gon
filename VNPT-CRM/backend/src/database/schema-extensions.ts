@@ -305,6 +305,7 @@ export async function applySchemaExtensions(): Promise<void> {
     )
   `);
   await run("CREATE INDEX IF NOT EXISTS ix_quote_exports_customer ON quote_exports(customer_id)");
+  await ensureColumn("quote_exports", "eo_number", "TEXT");
 
   await run(`
     CREATE TABLE IF NOT EXISTS custom_lists (
