@@ -9,6 +9,8 @@
   --color-vnpt-darker: #0a4a8c;
   --color-vnpt-light: #eaf3fc;
   --color-vnpt-accent: #f26522;
+  --font-inter: "Inter";
+  --font-montserrat: "Montserrat";
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, "Segoe UI", sans-serif;
   --font-display: var(--font-montserrat), var(--font-inter), ui-sans-serif, sans-serif;
 }
