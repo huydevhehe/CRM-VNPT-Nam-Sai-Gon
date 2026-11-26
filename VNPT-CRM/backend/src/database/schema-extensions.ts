@@ -274,6 +274,25 @@ export async function applySchemaExtensions(): Promise<void> {
     )
   `);
 
+  await run(`
+    CREATE TABLE IF NOT EXISTS quote_exports (
+      id TEXT PRIMARY KEY,
+      customer_id TEXT NOT NULL,
+      doc_number TEXT NOT NULL,
+      service_type TEXT,
+      package_name TEXT,
+      unit TEXT,
+      quantity REAL,
+      unit_price REAL,
+      vat_percent REAL,
+      note TEXT,
+      staff_name TEXT,
+      exported_by TEXT,
+      exported_at TEXT
+    )
+  `);
+  await run("CREATE INDEX IF NOT EXISTS ix_quote_exports_customer ON quote_exports(customer_id)");
+
   await applyContractQuickEditSchema();
 
   await ensureColumn("services", "customer_id", "TEXT");
