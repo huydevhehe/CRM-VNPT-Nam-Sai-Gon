@@ -21,10 +21,12 @@ export default function CustomListsPage() {
 
   const [newListName, setNewListName] = useState("");
   const [newItemValue, setNewItemValue] = useState("");
+  const [newItemPrice, setNewItemPrice] = useState("");
   const [editingListId, setEditingListId] = useState<string | null>(null);
   const [editingListName, setEditingListName] = useState("");
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editingItemValue, setEditingItemValue] = useState("");
+  const [editingItemPrice, setEditingItemPrice] = useState("");
 
   function reload() {
     setLoading(true);
@@ -84,8 +86,10 @@ export default function CustomListsPage() {
     if (!selected || !newItemValue.trim()) return;
     setError(null);
     try {
-      const item = await addCustomListItem(selected.id, newItemValue.trim());
+      const price = newItemPrice.trim() ? Number(newItemPrice) : undefined;
+      const item = await addCustomListItem(selected.id, newItemValue.trim(), price);
       setNewItemValue("");
+      setNewItemPrice("");
       setLists((prev) =>
         prev.map((l) => (l.id === selected.id ? { ...l, items: [...l.items, item] } : l))
       );
@@ -98,7 +102,8 @@ export default function CustomListsPage() {
     if (!selected || !editingItemValue.trim()) return;
     setError(null);
     try {
-      const updated = await updateCustomListItem(itemId, { value: editingItemValue.trim() });
+      const price = editingItemPrice.trim() ? Number(editingItemPrice) : null;
+      const updated = await updateCustomListItem(itemId, { value: editingItemValue.trim(), price });
       setLists((prev) =>
         prev.map((l) =>
           l.id === selected.id
@@ -268,6 +273,14 @@ export default function CustomListsPage() {
                             onChange={(e) => setEditingItemValue(e.target.value)}
                             className="w-full rounded-lg border border-slate-200 px-2 py-1 text-sm focus:border-vnpt focus:outline-none"
                           />
+                          <input
+                            type="number"
+                            min={0}
+                            value={editingItemPrice}
+                            onChange={(e) => setEditingItemPrice(e.target.value)}
+                            placeholder="Đơn giá (tùy chọn)"
+                            className="w-36 shrink-0 rounded-lg border border-slate-200 px-2 py-1 text-sm focus:border-vnpt focus:outline-none"
+                          />
                           <button
                             onClick={() => handleRenameItem(item.id)}
                             className="shrink-0 rounded-lg bg-vnpt px-2 py-1 text-xs font-bold text-white"
@@ -279,6 +292,11 @@ export default function CustomListsPage() {
                         <>
                           <span className={`text-sm ${item.active ? "text-slate-800" : "text-slate-400 line-through"}`}>
                             {item.value}
+                            {item.price !== null && (
+                              <span className="ml-2 text-xs font-medium text-slate-400">
+                                {item.price.toLocaleString("vi-VN")} ₫
+                              </span>
+                            )}
                           </span>
                           <div className="flex items-center gap-1">
                             <button
@@ -292,6 +310,7 @@ export default function CustomListsPage() {
                               onClick={() => {
                                 setEditingItemId(item.id);
                                 setEditingItemValue(item.value);
+                                setEditingItemPrice(item.price !== null ? String(item.price) : "");
                               }}
                               className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                             >
@@ -321,6 +340,15 @@ export default function CustomListsPage() {
                     onChange={(e) => setNewItemValue(e.target.value)}
                     placeholder="Thêm giá trị mới..."
                     className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-vnpt focus:outline-none"
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    data-testid="new-item-price"
+                    value={newItemPrice}
+                    onChange={(e) => setNewItemPrice(e.target.value)}
+                    placeholder="Đơn giá (tùy chọn)"
+                    className="w-36 shrink-0 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm focus:border-vnpt focus:outline-none"
                   />
                   <button
                     type="submit"

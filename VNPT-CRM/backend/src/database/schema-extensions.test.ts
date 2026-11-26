@@ -114,6 +114,29 @@ test("backfill runs only once: a deliberately cleared territory_id stays NULL ac
   await run("UPDATE leads SET territory_id = 'TB-01' WHERE id = 'LEAD-01'");
 });
 
+test("initDatabase seeds the 'Gói dịch vụ Internet/Fiber' custom list once, with price per package", async () => {
+  await initDatabase();
+
+  const lists = await query<{ id: string }>("SELECT id FROM custom_lists WHERE name = ?", [
+    "Gói dịch vụ Internet/Fiber",
+  ]);
+  assert.equal(lists.length, 1, "danh mục phải tồn tại đúng 1 lần");
+
+  const items = await query<{ value: string; price: number | string | null }>(
+    "SELECT value, price FROM custom_list_items WHERE list_id = ? ORDER BY sort_order",
+    [lists[0].id]
+  );
+  assert.equal(items.length, 22);
+  const fiberXtra2 = items.find((i) => i.value === "Fiber Xtra 2");
+  assert.equal(Number(fiberXtra2?.price), 500000);
+
+  // Admin xóa bớt/sửa dữ liệu -> initDatabase chạy lại KHÔNG được tự thêm lại.
+  await run("DELETE FROM custom_list_items WHERE list_id = ?", [lists[0].id]);
+  await initDatabase();
+  const afterRestart = await query("SELECT id FROM custom_list_items WHERE list_id = ?", [lists[0].id]);
+  assert.equal(afterRestart.length, 0, "migration chỉ chạy 1 lần, không ghi đè dữ liệu Admin đã sửa");
+});
+
 test("relinkOrphanCommissions: gắn lại contract_id khi transaction_code khớp đúng 1 đơn hàng, bỏ qua khi không khớp", async () => {
   await initDatabase();
   const suffix = Date.now();

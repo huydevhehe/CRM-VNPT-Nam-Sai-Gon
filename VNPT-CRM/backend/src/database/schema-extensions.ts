@@ -325,6 +325,9 @@ export async function applySchemaExtensions(): Promise<void> {
     )
   `);
   await run("CREATE INDEX IF NOT EXISTS ix_custom_list_items_list ON custom_list_items(list_id)");
+  // Đơn giá (chưa VAT) — chỉ dùng cho danh mục kiểu bảng giá (vd Gói dịch vụ Internet/Fiber
+  // dùng để chọn nhanh khi lập Báo giá), null với các danh mục khác (vd Kênh bán).
+  await ensureColumn("custom_list_items", "price", "REAL");
 
   // Sổ văn bản - Tờ trình: nội dung soạn ngoài CRM, hệ thống chỉ đăng ký/cấp số
   // thủ công (nhập tay) để tránh trùng số trong năm.
@@ -393,6 +396,57 @@ export async function applySchemaExtensions(): Promise<void> {
   // Dòng nào không khớp đúng 1 đơn hàng thì ghi vào audit_logs để Admin tự xử lý tay.
   await runMigrationOnce("commission_relink_orphans_v1", async () => {
     await relinkOrphanCommissions();
+  });
+
+  // Danh mục tùy biến "Gói dịch vụ Internet/Fiber" (đơn giá chưa VAT) — dữ
+  // liệu khởi tạo lấy từ bảng giá Internet thật khách gửi, dùng để chọn nhanh
+  // khi lập Báo giá thay vì gõ tay. Chỉ tạo 1 lần; Admin có thể sửa/xóa sau đó
+  // qua /admin/custom-lists, migration không tự chạy lại ghi đè.
+  await runMigrationOnce("quote_service_catalog_internet_fiber_v1", async () => {
+    const existing = await query<{ id: string }>("SELECT id FROM custom_lists WHERE name = ?", [
+      "Gói dịch vụ Internet/Fiber",
+    ]);
+    if (existing.length) return;
+
+    const listId = `CLIST-SEED-${Date.now()}`;
+    await run("INSERT INTO custom_lists (id, name, created_at) VALUES (?, ?, ?)", [
+      listId,
+      "Gói dịch vụ Internet/Fiber",
+      new Date().toISOString(),
+    ]);
+
+    const packages: [string, number][] = [
+      ["Fiber Xtra 2", 500000],
+      ["Fiber Xtra 3", 1600000],
+      ["Fiber Xtra 4", 5000000],
+      ["Fiber Xtra 5", 8000000],
+      ["Fiber Xtra 6", 15000000],
+      ["Fiber Eco 1", 320000],
+      ["Fiber Eco 2", 380000],
+      ["Fiber Eco 3", 780000],
+      ["Fiber Eco 4", 1000000],
+      ["Fiber 4", 2000000],
+      ["Fiber Eco 5", 3200000],
+      ["Fiber 5", 5000000],
+      ["Fiber S1", 380000],
+      ["Fiber S2", 600000],
+      ["Fiber S3", 740000],
+      ["Fiber 6", 9000000],
+      ["Fiber Vip 6", 12000000],
+      ["Fiber 7", 16000000],
+      ["Fiber Vip 7", 20000000],
+      ["Fiber 8", 25000000],
+      ["Fiber Vip 8", 30000000],
+      ["Fiber Vip 9", 55000000],
+    ];
+    for (let i = 0; i < packages.length; i++) {
+      const [name, price] = packages[i];
+      await run(
+        `INSERT INTO custom_list_items (id, list_id, value, active, sort_order, created_at, price)
+         VALUES (?, ?, ?, TRUE, ?, ?, ?)`,
+        [`CLITEM-SEED-${Date.now()}-${i}`, listId, name, i + 1, new Date().toISOString(), price]
+      );
+    }
   });
 
   await applyLeadChannelSchema();

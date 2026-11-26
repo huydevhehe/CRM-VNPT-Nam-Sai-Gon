@@ -71,6 +71,32 @@ test("addItem thêm giá trị vào danh mục, chặn trùng, giữ thứ tự 
   );
 });
 
+test("addItem/updateItem: price tùy chọn — nhập số hợp lệ, chặn số âm, có thể xóa về null", async () => {
+  await resetTestData();
+  const list = await service.createList("Gói dịch vụ Internet/Fiber");
+
+  const withPrice = await service.addItem(list.id, "Fiber Xtra 2", 500000);
+  assert.equal(withPrice.price, 500000);
+
+  const withoutPrice = await service.addItem(list.id, "Fiber Xtra 3");
+  assert.equal(withoutPrice.price, null);
+
+  await assert.rejects(
+    () => service.addItem(list.id, "Fiber Xtra 4", -1000),
+    (err: unknown) => {
+      assert.ok(err instanceof CustomListError);
+      assert.equal((err as CustomListError).status, 400);
+      return true;
+    }
+  );
+
+  const updated = await service.updateItem(withoutPrice.id, { price: 700000 });
+  assert.equal(updated.price, 700000);
+
+  const cleared = await service.updateItem(updated.id, { price: null });
+  assert.equal(cleared.price, null);
+});
+
 test("updateItem sửa giá trị hoặc ẩn/hiện", async () => {
   await resetTestData();
   const list = await service.createList("Kênh bán");

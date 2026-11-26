@@ -6,6 +6,8 @@ export interface CustomListItem {
   value: string;
   active: boolean;
   sortOrder: number;
+  /** Đơn giá (chưa VAT) — chỉ dùng cho danh mục kiểu bảng giá (vd Gói dịch vụ), null nếu không áp dụng. */
+  price: number | null;
 }
 
 export interface CustomList {
@@ -36,16 +38,20 @@ export async function deleteCustomList(id: string): Promise<void> {
   await apiFetch<void>(`/custom-lists/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-export function addCustomListItem(listId: string, value: string): Promise<CustomListItem> {
+export function addCustomListItem(
+  listId: string,
+  value: string,
+  price?: number | null
+): Promise<CustomListItem> {
   return apiFetch<CustomListItem>(`/custom-lists/${encodeURIComponent(listId)}/items`, {
     method: "POST",
-    body: JSON.stringify({ value }),
+    body: JSON.stringify({ value, price }),
   });
 }
 
 export function updateCustomListItem(
   itemId: string,
-  input: { value?: string; active?: boolean }
+  input: { value?: string; active?: boolean; price?: number | null }
 ): Promise<CustomListItem> {
   return apiFetch<CustomListItem>(`/custom-lists/items/${encodeURIComponent(itemId)}`, {
     method: "PATCH",
