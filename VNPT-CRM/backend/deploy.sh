@@ -8,19 +8,24 @@ set -e
 PORT=3005
 APP_NAME="vnpt-backend-api"
 
-cd "$(dirname "$0")/.."
+# So với commit của lần deploy THÀNH CÔNG gần nhất (không phải trước/sau lệnh
+# `git pull` ở dưới) — vì code có thể đã được 1 bước bên ngoài (CI workflow)
+# fetch + reset sẵn về commit mới nhất trước khi script này chạy, khiến
+# `git pull` ở đây không còn gì để kéo và so before/after sẽ luôn ra rỗng.
+LAST_DEPLOY_FILE="$(dirname "$0")/.last-deployed-commit"
+PREV_COMMIT=$(cat "$LAST_DEPLOY_FILE" 2>/dev/null || echo "")
 
-BEFORE_COMMIT=$(git rev-parse HEAD)
+cd "$(dirname "$0")/.."
 
 echo "==> Pulling latest code..."
 git pull
 
-AFTER_COMMIT=$(git rev-parse HEAD)
+CURRENT_COMMIT=$(git rev-parse HEAD)
 
 cd backend
 
-if git diff --name-only "$BEFORE_COMMIT" "$AFTER_COMMIT" | grep -qE "^VNPT-CRM/backend/(package\.json|package-lock\.json)$"; then
-  echo "==> package.json changed, installing dependencies..."
+if [ -z "$PREV_COMMIT" ] || git diff --name-only "$PREV_COMMIT" "$CURRENT_COMMIT" | grep -qE "^VNPT-CRM/backend/(package\.json|package-lock\.json)$"; then
+  echo "==> package.json changed (or first deploy), installing dependencies..."
   npm install
 else
   echo "==> package.json unchanged, skipping npm install."
@@ -51,6 +56,7 @@ if [ "$READY" -eq 1 ]; then
   echo "==> Done. Backend is running again on port $PORT (pm2 name: $APP_NAME)."
   curl -s "http://localhost:$PORT/api/health"
   echo
+  echo "$CURRENT_COMMIT" > "$LAST_DEPLOY_FILE"
 else
   echo "==> ERROR: server did not respond on port $PORT after 15s. Last logs:"
   pm2 logs "$APP_NAME" --lines 30 --nostream
