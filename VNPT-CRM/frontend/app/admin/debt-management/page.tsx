@@ -5,6 +5,7 @@ import { Receipt, UploadCloud, CheckCircle2, AlertCircle, Plus, X } from "lucide
 import KpiCard from "@/components/admin/shared/KpiCard";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
 import StatusBadge from "@/components/admin/shared/StatusBadge";
+import RetentionWarningBanner from "@/components/admin/shared/RetentionWarningBanner";
 import { DebtRecord, StaffRecord } from "@/lib/crm/types/crm.types";
 import { createDebt, getDebts, importDebtsExcel } from "@/lib/api/debts.api";
 import { getStaff } from "@/lib/api/staff.api";
@@ -124,10 +125,16 @@ export default function DebtManagementPage() {
     }
   }
 
+  const sortedByMonth = [...filteredByTab].sort((a, b) =>
+    b.month.localeCompare(a.month)
+  );
+
   const columns: Column<DebtRecord>[] = [
     {
       header: "Mã thuê bao",
       accessorKey: "subscriberCode",
+      sticky: true,
+      width: 140,
       cell: (item) => (
         <span className="font-mono font-bold text-vnpt">
           {item.subscriberCode}
@@ -310,6 +317,9 @@ export default function DebtManagementPage() {
         </button>
       </div>
 
+      {/* Cảnh báo dữ liệu sắp tự động xóa (quá 1 năm lưu trữ) */}
+      {activeTab !== "kpi" && <RetentionWarningBanner type="debt" />}
+
       {/* Main Table */}
       {activeTab === "kpi" ? (
         <StaffKpiTable kpiKeys={["thu_ngay"]} />
@@ -328,9 +338,12 @@ export default function DebtManagementPage() {
       ) : (
         <DataTable
           title="Danh sách công nợ theo thuê bao"
-          subtitle="Dữ liệu chi tiết từng mã thanh toán và tình trạng gạch nợ"
+          subtitle="Dữ liệu chi tiết từng mã thanh toán và tình trạng gạch nợ — nhóm theo tháng"
           columns={columns}
-          data={filteredByTab}
+          data={sortedByMonth}
+          pagination
+          resizableColumns
+          groupBy={(row) => `Tháng ${row.month}`}
           filters={[
             ...(isAdmin
               ? [

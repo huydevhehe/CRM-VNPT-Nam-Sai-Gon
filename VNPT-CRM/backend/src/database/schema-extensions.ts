@@ -328,6 +328,18 @@ export async function applySchemaExtensions(): Promise<void> {
     )
   `);
 
+  // Lưu ngày chạy gần nhất của job tự động xóa công nợ/gia hạn quá 1 năm lưu
+  // trữ (data-retention) — 1 dòng duy nhất (id = 'default'), tránh chạy lại
+  // nhiều lần trong cùng 1 ngày.
+  await run(`
+    CREATE TABLE IF NOT EXISTS retention_state (
+      id TEXT PRIMARY KEY,
+      last_run_date TEXT,
+      last_deleted_debts INTEGER DEFAULT 0,
+      last_deleted_renewals INTEGER DEFAULT 0
+    )
+  `);
+
   await applyContractQuickEditSchema();
 
   await ensureColumn("services", "customer_id", "TEXT");

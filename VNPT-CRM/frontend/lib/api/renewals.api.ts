@@ -24,6 +24,7 @@ interface RenewalApiRow {
   failure_reason?: string | null;
   expiry_date?: string | null;
   renewed_at?: string | null;
+  created_at?: string;
 }
 
 function mapRenewalRow(row: RenewalApiRow): RenewalRecord {
@@ -44,6 +45,7 @@ function mapRenewalRow(row: RenewalApiRow): RenewalRecord {
       | undefined,
     expiryDate: row.expiry_date ?? null,
     renewedAt: row.renewed_at ?? null,
+    createdAt: row.created_at,
   };
 }
 

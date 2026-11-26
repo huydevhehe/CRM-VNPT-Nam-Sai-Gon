@@ -49,6 +49,7 @@ export interface RenewalRecord {
   failureReason?: RenewalFailureReason;
   expiryDate?: string | null; // Ngày hết hạn dịch vụ (YYYY-MM-DD)
   renewedAt?: string | null; // Ngày gia hạn thành công (YYYY-MM-DD)
+  createdAt?: string; // Thời điểm tạo bản ghi — dùng để nhóm theo tháng
 }
 
 // 3. Customer
