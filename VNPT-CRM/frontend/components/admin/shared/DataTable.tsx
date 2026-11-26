@@ -27,6 +27,8 @@ export interface SelectionProps<T> {
 }
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
+/** Độ rộng tối thiểu mặc định cho cột không khai báo `width` khi bật resizableColumns. */
+const DEFAULT_COL_WIDTH = 140;
 
 interface DataTableProps<T> {
   title?: string;
@@ -76,12 +78,24 @@ export default function DataTable<T extends Record<string, any>>({
     for (let i = 0; i < columns.length; i++) {
       offsets[i] = acc;
       if (columns[i].sticky) {
-        acc += colWidths[i] ?? columns[i].width ?? thRefs.current[i]?.offsetWidth ?? 140;
+        acc += colWidths[i] ?? columns[i].width ?? thRefs.current[i]?.offsetWidth ?? DEFAULT_COL_WIDTH;
       }
     }
     return offsets;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columns, colWidths]);
+
+  // Khi bật resizableColumns, bảng cần một độ rộng THẬT (tổng độ rộng các cột) thay vì
+  // w-full co vừa khung — nếu không, table-layout:fixed sẽ ép co hết các cột lại cho vừa
+  // màn hình thay vì tràn ra để overflow-x-auto cuộn được.
+  const totalTableWidth = useMemo(() => {
+    let total = selection ? 40 : 0;
+    for (let i = 0; i < columns.length; i++) {
+      total += colWidths[i] ?? columns[i].width ?? DEFAULT_COL_WIDTH;
+    }
+    return total;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columns, colWidths, selection]);
 
   const dataAfterFilters = filters
     ? applyTableFilters(data, filters, filterValues)
@@ -268,16 +282,20 @@ export default function DataTable<T extends Record<string, any>>({
       {/* Table view */}
       <div className="overflow-x-auto">
         <table
-          className="w-full min-w-160 text-left text-xs"
-          style={resizableColumns ? { tableLayout: "fixed" } : undefined}
+          className={resizableColumns ? "text-left text-xs" : "w-full min-w-160 text-left text-xs"}
+          style={
+            resizableColumns
+              ? { tableLayout: "fixed", width: totalTableWidth, minWidth: totalTableWidth }
+              : undefined
+          }
         >
           {resizableColumns && (
             <colgroup>
-              {selection && <col />}
+              {selection && <col style={{ width: 40 }} />}
               {columns.map((col, idx) => (
                 <col
                   key={idx}
-                  style={{ width: colWidths[idx] ?? col.width }}
+                  style={{ width: colWidths[idx] ?? col.width ?? DEFAULT_COL_WIDTH }}
                 />
               ))}
             </colgroup>
