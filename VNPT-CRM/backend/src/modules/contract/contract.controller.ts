@@ -3,13 +3,14 @@ import multer from "multer";
 import { requireAuth } from "../../middleware/require-auth.js";
 import { requireAdmin } from "../../middleware/require-role.js";
 import { resolveActorName, resolveStaffScope } from "../../middleware/actor.js";
+import { fixMulterFileEncoding } from "../../utils/fix-upload-filename.js";
 import {
   ContractService,
   ContractForbiddenError,
   ContractNotFoundError,
   ContractDeleteBlockedError,
 } from "./contract.service.js";
-import { CONTRACT_TEMPLATES } from "./contract-templates.js";
+import { ContractTemplateRegistryService } from "./contract-template-registry.service.js";
 import {
   ContractTemplateExportService,
   ContractTemplateExportError,
@@ -42,6 +43,7 @@ const contractService = new ContractService();
 const paymentRequestService = new PaymentRequestService();
 const contractImportService = new ContractImportService();
 const contractTemplateExportService = new ContractTemplateExportService();
+const contractTemplateRegistry = new ContractTemplateRegistryService();
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -60,6 +62,7 @@ function handleImportUpload(req: Request, res: Response, next: NextFunction) {
       res.status(400).json({ success: false, message });
       return;
     }
+    fixMulterFileEncoding(req.file);
     next();
   });
 }
@@ -116,9 +119,72 @@ contractRouter.post(
 
 // GET /api/contracts/templates — danh sách mẫu hợp đồng (T10, STT 11), kèm mẫu nào có file/chưa có.
 // Mọi user đăng nhập đều xem được (để hiển thị ở form tạo/sửa đơn).
-contractRouter.get("/templates", requireAuth, (_req: Request, res: Response) => {
-  res.json({ success: true, data: CONTRACT_TEMPLATES });
+contractRouter.get("/templates", requireAuth, async (_req: Request, res: Response) => {
+  try {
+    const data = await contractTemplateRegistry.list();
+    res.json({ success: true, data });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
 });
+
+// PATCH /api/contracts/templates/:key — Admin đổi tên hiển thị của 1 mẫu hợp đồng.
+contractRouter.patch("/templates/:key", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const { label } = req.body ?? {};
+    const updated = await contractTemplateRegistry.rename(req.params.key, String(label ?? ""));
+    res.json({ success: true, data: updated });
+  } catch (error: any) {
+    const statusCode = typeof error.status === "number" ? error.status : 400;
+    res.status(statusCode).json({ success: false, message: error.message });
+  }
+});
+
+const contractTemplateUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+});
+
+// POST /api/contracts/templates/:key/upload — Admin thay file mẫu .docx (field "file").
+contractRouter.post(
+  "/templates/:key/upload",
+  requireAuth,
+  requireAdmin,
+  (req: Request, res: Response, next: NextFunction) => {
+    contractTemplateUpload.single("file")(req, res, (err: unknown) => {
+      if (err) {
+        const message =
+          err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE"
+            ? "File vượt quá 10 MB"
+            : err instanceof Error
+              ? err.message
+              : "Lỗi upload file";
+        res.status(400).json({ success: false, message });
+        return;
+      }
+      next();
+    });
+  },
+  async (req: Request, res: Response) => {
+    try {
+      const file = req.file;
+      if (!file) {
+        res.status(400).json({ success: false, message: "Thiếu file mẫu .docx" });
+        return;
+      }
+      if (!file.originalname.toLowerCase().endsWith(".docx")) {
+        res.status(400).json({ success: false, message: "Chỉ chấp nhận file .docx" });
+        return;
+      }
+      contractTemplateRegistry.saveFile(req.params.key, file.buffer);
+      const updated = await contractTemplateRegistry.get(req.params.key);
+      res.json({ success: true, data: updated });
+    } catch (error: any) {
+      const statusCode = typeof error.status === "number" ? error.status : 400;
+      res.status(statusCode).json({ success: false, message: error.message });
+    }
+  }
+);
 
 // GET /api/contracts/ctv-commission-gaps — báo cáo chỉ đọc, chỉ Admin (phải khai báo TRƯỚC /:id).
 contractRouter.get("/ctv-commission-gaps", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
@@ -449,7 +515,8 @@ contractRouter.get("/:id/payment-request/preview", requireAuth, async (req: Requ
     const { id } = req.params;
     await contractService.assertCanAccess(id, await resolveStaffScope(req));
     const docNumber = req.query.docNumber ? String(req.query.docNumber) : undefined;
-    const preview = await paymentRequestService.buildPreview(id, docNumber);
+    const eoNumber = req.query.eoNumber ? String(req.query.eoNumber) : undefined;
+    const preview = await paymentRequestService.buildPreview(id, docNumber, eoNumber);
     res.json({ success: true, data: { ...preview, pdfAvailable: isPdfConversionAvailable() } });
   } catch (error: any) {
     sendPaymentRequestError(res, error);
@@ -463,7 +530,8 @@ contractRouter.get("/:id/payment-request/preview-file", requireAuth, async (req:
     await contractService.assertCanAccess(id, await resolveStaffScope(req));
     const suggested = await paymentRequestService.suggestNextDocNumber(new Date().getFullYear());
     const docNumber = (req.query.docNumber ? String(req.query.docNumber).trim() : "") || suggested || "…";
-    const data = await paymentRequestService.buildData(id, docNumber);
+    const eoNumber = req.query.eoNumber ? String(req.query.eoNumber).trim() : "";
+    const data = await paymentRequestService.buildData(id, docNumber, new Date(), eoNumber);
     await sendPaymentRequestFile(res, data, "pdf", "inline");
   } catch (error: any) {
     sendPaymentRequestError(res, error);
@@ -476,10 +544,11 @@ contractRouter.post("/:id/payment-request/confirm", requireAuth, async (req: Req
   try {
     const { id } = req.params;
     await contractService.assertCanAccess(id, await resolveStaffScope(req));
-    const { docNumber, reuseLatest } = req.body ?? {};
+    const { docNumber, eoNumber, reuseLatest } = req.body ?? {};
     const exportedBy = (await resolveActorName(req)) || req.user?.name || "Admin";
     const result = await paymentRequestService.confirmExport(id, {
       docNumber: docNumber === undefined || docNumber === null ? null : String(docNumber),
+      eoNumber: eoNumber === undefined || eoNumber === null ? null : String(eoNumber),
       exportedBy,
       reuseLatest: reuseLatest === true,
     });

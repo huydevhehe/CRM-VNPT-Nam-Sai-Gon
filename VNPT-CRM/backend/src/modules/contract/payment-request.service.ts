@@ -30,6 +30,7 @@ export interface PaymentRequestData {
   SdtAM: string;
   EmailAM: string;
   NguoiKy: string;
+  SoEO: string;
   missingFields: string[];
 }
 
@@ -37,6 +38,7 @@ export interface PaymentExportRecord {
   id: string;
   contractId: string;
   docNumber: string;
+  eoNumber: string | null;
   exportedBy: string | null;
   exportedAt: string;
   transactionCode?: string;
@@ -46,6 +48,8 @@ export interface PaymentExportRecord {
 export interface ConfirmExportInput {
   /** Bỏ trống = hệ thống tự cấp số kế tiếp tại thời điểm xác nhận. */
   docNumber?: string | null;
+  /** Số EO từ hệ thống E-Office bên ngoài — nhập tay tự do, không bắt buộc. */
+  eoNumber?: string | null;
   exportedBy: string;
   /** Đơn đã có số văn bản thì dùng lại số đó, không cấp số mới. */
   reuseLatest?: boolean;
@@ -75,6 +79,7 @@ interface ExportRow {
   id: string;
   contract_id: string;
   doc_number: string;
+  eo_number?: string | null;
   exported_by: string | null;
   exported_at: string;
   transaction_code?: string | null;
@@ -86,6 +91,7 @@ function toExportRecord(r: ExportRow): PaymentExportRecord {
     id: r.id,
     contractId: r.contract_id,
     docNumber: r.doc_number,
+    eoNumber: r.eo_number ?? null,
     exportedBy: r.exported_by,
     exportedAt: r.exported_at,
     transactionCode: r.transaction_code || undefined,
@@ -172,7 +178,8 @@ export class PaymentRequestService {
   async buildData(
     contractId: string,
     docNumber: string,
-    now: Date = new Date()
+    now: Date = new Date(),
+    eoNumber: string = ""
   ): Promise<PaymentRequestData> {
     const contractRows = await query<ContractRow>("SELECT * FROM contracts WHERE id = ?", [contractId]);
     if (!contractRows.length) {
@@ -295,6 +302,7 @@ export class PaymentRequestService {
       SdtAM: amPhone,
       EmailAM: amEmail,
       NguoiKy: config.paymentSignerName,
+      SoEO: eoNumber,
       missingFields,
     };
   }
@@ -319,10 +327,10 @@ export class PaymentRequestService {
   }
 
   /** Dữ liệu xem trước: KHÔNG ghi gì vào DB, không tiêu số văn bản. */
-  async buildPreview(contractId: string, docNumber?: string): Promise<PaymentRequestPreview> {
+  async buildPreview(contractId: string, docNumber?: string, eoNumber?: string): Promise<PaymentRequestPreview> {
     const suggestedDocNumber = await this.suggestNextDocNumber(new Date().getFullYear());
     const shown = docNumber?.trim() || suggestedDocNumber || "…";
-    const data = await this.buildData(contractId, shown);
+    const data = await this.buildData(contractId, shown, new Date(), eoNumber?.trim() || "");
     const lines = extractDocxLines(this.render(data));
     const latestExport = await this.latestExportForContract(contractId);
     return { suggestedDocNumber, missingFields: data.missingFields, lines, latestExport };
@@ -350,7 +358,7 @@ export class PaymentRequestService {
 
   /** Dựng dữ liệu để tải lại file của một lần đã cấp số: dùng đúng số và ngày của lần đó. */
   async buildDataForExport(record: PaymentExportRecord): Promise<PaymentRequestData> {
-    return this.buildData(record.contractId, record.docNumber, new Date(record.exportedAt));
+    return this.buildData(record.contractId, record.docNumber, new Date(record.exportedAt), record.eoNumber || "");
   }
 
   /**
@@ -409,10 +417,11 @@ export class PaymentRequestService {
 
       const id = `EXP-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const exportedAt = now.toISOString();
+      const eoNumber = input.eoNumber?.trim() || null;
       await tx.run(
-        `INSERT INTO payment_request_exports (id, contract_id, doc_number, exported_by, exported_at)
-         VALUES (?, ?, ?, ?, ?)`,
-        [id, contractId, docNumber, input.exportedBy, exportedAt]
+        `INSERT INTO payment_request_exports (id, contract_id, doc_number, eo_number, exported_by, exported_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [id, contractId, docNumber, eoNumber, input.exportedBy, exportedAt]
       );
       await tx.run('INSERT INTO audit_logs (id, "user", action, details) VALUES (?, ?, ?, ?)', [
         `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -422,7 +431,7 @@ export class PaymentRequestService {
       ]);
 
       return {
-        record: { id, contractId, docNumber, exportedBy: input.exportedBy, exportedAt },
+        record: { id, contractId, docNumber, eoNumber, exportedBy: input.exportedBy, exportedAt },
         reused: false,
       };
     });

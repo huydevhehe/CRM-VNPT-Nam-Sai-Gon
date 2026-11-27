@@ -50,3 +50,4 @@ VNPT-CRM/backend/data/
 .worktrees/
 .superpowers/
 .playwright-mcp/
+.last-deployed-commit

@@ -1,22 +1,16 @@
 "use client";
 
-import { useEffect, useState, FormEvent, useMemo } from "react";
-import Link from "next/link";
-import { FileText, Download, AlertTriangle, X, Search, RefreshCw } from "lucide-react";
+import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { Download, AlertTriangle, Search, RefreshCw } from "lucide-react";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
-import {
-  getContracts,
-  listPaymentExports,
-  getPaymentRequestPreview,
-  PaymentExportRecordDto,
-} from "@/lib/api/contracts.api";
+import { getContracts, listPaymentExports, PaymentExportRecordDto } from "@/lib/api/contracts.api";
 import { ContractRecord } from "@/lib/crm/types/crm.types";
 import { API_BASE_URL, getToken } from "@/lib/api/client";
-
-const ORDER_WITHOUT_CUSTOMER_MESSAGE =
-  "Đơn hàng chưa gắn khách hàng. Vui lòng cập nhật khách hàng cho đơn trước khi xuất Đề nghị thanh toán";
+import PaymentRequestModal from "@/components/admin/contract/PaymentRequestModal";
 
 export default function PaymentRequestsPage() {
+  const router = useRouter();
   const [contracts, setContracts] = useState<ContractRecord[]>([]);
   const [exportsList, setExportsList] = useState<PaymentExportRecordDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,11 +20,6 @@ export default function PaymentRequestsPage() {
   const [searchOrderQuery, setSearchOrderQuery] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<ContractRecord | null>(null);
 
-  // Export Modal state
-  const [docNumber, setDocNumber] = useState("");
-  const [missingFields, setMissingFields] = useState<string[]>([]);
-  const [exportError, setExportError] = useState<string | null>(null);
-  const [blockedMessage, setBlockedMessage] = useState<string | null>(null);
   const [redownloadError, setRedownloadError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
 
@@ -58,32 +47,9 @@ export default function PaymentRequestsPage() {
     }
   }
 
-  async function handleSelectOrder(order: ContractRecord) {
-    setSelectedOrder(order);
-    setExportError(null);
-    setBlockedMessage(null);
-    setMissingFields([]);
-    if (!order.customerId) {
-      setBlockedMessage(ORDER_WITHOUT_CUSTOMER_MESSAGE);
-      return;
-    }
-    try {
-      const preview = await getPaymentRequestPreview(order.id);
-      setDocNumber(preview.suggestedDocNumber || "1");
-      setMissingFields(preview.missingFields || []);
-    } catch (err) {
-      setBlockedMessage(err instanceof Error ? err.message : "Không thể tải xem trước");
-    }
-  }
-
+  /** Tải lại file Word của một lần đã cấp số (dùng ở nhật ký xuất, không mở modal mới). */
   async function handleDownload(orderId: string, transactionCode: string, num: string) {
-    if (!num.trim()) {
-      setExportError("Số văn bản là bắt buộc");
-      return;
-    }
-
     setDownloading(true);
-    setExportError(null);
     setRedownloadError(null);
     try {
       const token = getToken();
@@ -112,10 +78,8 @@ export default function PaymentRequestsPage() {
       // Reload exports log
       const updatedExports = await listPaymentExports();
       setExportsList(updatedExports);
-      setSelectedOrder(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Không thể xuất file";
-      setExportError(message);
       setRedownloadError(message);
     } finally {
       setDownloading(false);
@@ -259,7 +223,7 @@ export default function PaymentRequestsPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => handleSelectOrder(ord)}
+                  onClick={() => setSelectedOrder(ord)}
                   className="flex items-center gap-1 rounded-lg bg-vnpt px-3 py-1.5 text-xs font-bold text-white hover:bg-vnpt-dark"
                 >
                   <Download className="h-3.5 w-3.5" />
@@ -318,119 +282,15 @@ export default function PaymentRequestsPage() {
         )}
       </div>
 
-      {/* Export Modal */}
       {selectedOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <div className="mb-4 flex items-center justify-between border-b pb-3">
-              <div>
-                <h3 className="text-base font-bold text-slate-900">
-                  Xuất đề nghị thanh toán
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Mã GD: <span className="font-mono font-bold text-vnpt">{selectedOrder.transactionCode}</span> ·{" "}
-                  <span className="font-semibold text-slate-800">{selectedOrder.customerName}</span>
-                </p>
-              </div>
-              <button
-                onClick={() => setSelectedOrder(null)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {blockedMessage ? (
-              <div className="space-y-4">
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                  <div className="flex items-center gap-1.5 font-bold">
-                    <AlertTriangle className="h-4 w-4 text-amber-600" />
-                    Không thể xuất Đề nghị thanh toán
-                  </div>
-                  <p className="mt-1">{blockedMessage}</p>
-                </div>
-                <div className="flex justify-end gap-2 pt-2 border-t">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedOrder(null)}
-                    className="rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
-                  >
-                    Đóng
-                  </button>
-                  <Link
-                    href={`/admin/contracts?ma=${encodeURIComponent(selectedOrder.transactionCode)}`}
-                    className="flex items-center gap-1.5 rounded-xl bg-vnpt px-4 py-2 text-xs font-bold text-white hover:bg-vnpt-dark"
-                  >
-                    <span>Đến trang Đơn hàng để cập nhật</span>
-                  </Link>
-                </div>
-              </div>
-            ) : (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleDownload(selectedOrder.id, selectedOrder.transactionCode, docNumber);
-              }}
-              className="space-y-4"
-            >
-              {missingFields.length > 0 && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                  <div className="flex items-center gap-1.5 font-bold">
-                    <AlertTriangle className="h-4 w-4 text-amber-600" />
-                    Cảnh báo: Đơn hàng còn thiếu thông tin
-                  </div>
-                  <p className="mt-1">
-                    Còn thiếu: <span className="font-semibold">{missingFields.join(", ")}</span>.
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-amber-700">
-                    Vẫn có thể xuất văn bản (chỗ thiếu sẽ để trống trong file Word).
-                  </p>
-                </div>
-              )}
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-slate-700">
-                  Số văn bản <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  required
-                  value={docNumber}
-                  onChange={(e) => setDocNumber(e.target.value)}
-                  placeholder="VD: 706"
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
-                />
-                <p className="mt-1 text-[11px] text-slate-400">
-                  Gợi ý tự động tăng theo năm hiện tại
-                </p>
-              </div>
-
-              {exportError && (
-                <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">
-                  {exportError}
-                </p>
-              )}
-
-              <div className="flex justify-end gap-2 pt-2 border-t">
-                <button
-                  type="button"
-                  onClick={() => setSelectedOrder(null)}
-                  className="rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  disabled={downloading}
-                  className="flex items-center gap-1.5 rounded-xl bg-vnpt px-4 py-2 text-xs font-bold text-white hover:bg-vnpt-dark disabled:opacity-60"
-                >
-                  <Download className="h-4 w-4" />
-                  <span>{downloading ? "Đang tạo file..." : "Tải file Word"}</span>
-                </button>
-              </div>
-            </form>
-            )}
-          </div>
-        </div>
+        <PaymentRequestModal
+          order={selectedOrder}
+          onClose={() => {
+            setSelectedOrder(null);
+            loadData();
+          }}
+          onEditOrder={(order) => router.push(`/admin/contracts?ma=${encodeURIComponent(order.transactionCode)}`)}
+        />
       )}
     </div>
   );

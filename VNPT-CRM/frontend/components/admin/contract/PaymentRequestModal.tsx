@@ -54,6 +54,7 @@ export default function PaymentRequestModal({
   const [preview, setPreview] = useState<PaymentRequestPreviewDto | null>(null);
   const [docNumber, setDocNumber] = useState("");
   const [numberEdited, setNumberEdited] = useState(false);
+  const [eoNumber, setEoNumber] = useState("");
   const [dismissLatest, setDismissLatest] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -99,10 +100,10 @@ export default function PaymentRequestModal({
   }, [pdfPreviewUrl]);
 
   const refreshPreview = useCallback(
-    (nextNumber: string) => {
+    (nextNumber: string, nextEoNumber: string) => {
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
       refreshTimer.current = setTimeout(() => {
-        getPaymentRequestPreview(order.id, nextNumber)
+        getPaymentRequestPreview(order.id, nextNumber, nextEoNumber)
           .then((data) => setPreview((prev) => (prev ? { ...prev, lines: data.lines } : data)))
           .catch(() => undefined);
       }, 400);
@@ -115,7 +116,14 @@ export default function PaymentRequestModal({
     setNumberEdited(true);
     setError(null);
     setPdfPreviewUrl(null);
-    refreshPreview(value);
+    refreshPreview(value, eoNumber);
+  }
+
+  function handleEoNumberChange(value: string) {
+    setEoNumber(value);
+    setError(null);
+    setPdfPreviewUrl(null);
+    refreshPreview(docNumber, value);
   }
 
   async function handleConfirm(reuseLatest = false) {
@@ -126,6 +134,7 @@ export default function PaymentRequestModal({
       const typed = numberEdited ? docNumber.trim() : "";
       const result = await confirmPaymentRequest(order.id, {
         docNumber: typed || undefined,
+        eoNumber: eoNumber.trim() || undefined,
         reuseLatest,
       });
       setConfirmed(result);
@@ -390,8 +399,22 @@ export default function PaymentRequestModal({
                 {preview?.suggestedDocNumber
                   ? `Số kế tiếp dự kiến: ${preview.suggestedDocNumber}. `
                   : "Năm nay chưa có số nào. "}
-                Số chỉ thật sự được cấp khi bạn bấm <b>Xác nhận &amp; lấy số văn bản</b>; xem trước nhiều lần không làm tăng số.
+                Số chỉ thật sự được cấp khi bạn bấm <b>Xuất trình ký</b>; xem trước nhiều lần không làm tăng số.
               </p>
+            </div>
+
+            <div>
+              <label htmlFor="pr-eo-number" className="mb-1 block text-xs font-semibold text-slate-700">
+                Số EO (tùy chọn)
+              </label>
+              <input
+                id="pr-eo-number"
+                data-testid="pr-eo-number"
+                value={eoNumber}
+                onChange={(e) => handleEoNumberChange(e.target.value)}
+                placeholder="Số từ hệ thống E-Office (nếu có)"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-vnpt focus:outline-none"
+              />
             </div>
 
             {error && (
@@ -416,7 +439,7 @@ export default function PaymentRequestModal({
                 className="flex items-center gap-1.5 rounded-xl bg-vnpt px-4 py-2 text-xs font-bold text-white hover:bg-vnpt-dark disabled:opacity-60"
               >
                 <CheckCircle className="h-4 w-4" />
-                <span>{confirming ? "Đang cấp số..." : "Xác nhận & lấy số văn bản"}</span>
+                <span>{confirming ? "Đang xuất trình ký..." : "Xuất trình ký"}</span>
               </button>
             </div>
           </div>

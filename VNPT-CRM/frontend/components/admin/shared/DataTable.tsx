@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Search, Download, RotateCcw } from "lucide-react";
+import { Fragment, useMemo, useRef, useState } from "react";
+import { Search, Download, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   TableFilter,
   FilterValues,
@@ -14,6 +14,10 @@ export interface Column<T> {
   accessorKey?: keyof T;
   cell?: (item: T) => React.ReactNode;
   className?: string;
+  /** Độ rộng khởi tạo (px). Người dùng có thể kéo giãn thêm nếu `resizableColumns` bật. */
+  width?: number;
+  /** Ghim cột này bên trái khi cuộn ngang (vd cột mã thuê bao / mã giao dịch). */
+  sticky?: boolean;
 }
 
 export interface SelectionProps<T> {
@@ -21,6 +25,10 @@ export interface SelectionProps<T> {
   selectedIds: Set<string>;
   onChange: (ids: Set<string>) => void;
 }
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
+/** Độ rộng tối thiểu mặc định cho cột không khai báo `width` khi bật resizableColumns. */
+const DEFAULT_COL_WIDTH = 160;
 
 interface DataTableProps<T> {
   title?: string;
@@ -33,6 +41,12 @@ interface DataTableProps<T> {
   actionButton?: React.ReactNode;
   /** Tuỳ chọn: hiện cột checkbox chọn dòng (Đợt 8, Task 5). Không truyền thì bảng hoạt động như trước. */
   selection?: SelectionProps<T>;
+  /** Bật phân trang phía client với các lựa chọn 10/20/50/100. Không truyền = hiện toàn bộ (hành vi cũ). */
+  pagination?: boolean;
+  /** Cho phép kéo giãn độ rộng từng cột bằng chuột. */
+  resizableColumns?: boolean;
+  /** Nhóm các dòng theo khoá trả về (vd tháng) — chèn dòng tiêu đề nhóm. Dữ liệu nên đã được sắp xếp theo cùng thứ tự với khoá nhóm. */
+  groupBy?: (row: T) => string;
 }
 
 export default function DataTable<T extends Record<string, any>>({
@@ -45,9 +59,43 @@ export default function DataTable<T extends Record<string, any>>({
   exportFileName = "vnpt_crm_export",
   actionButton,
   selection,
+  pagination = false,
+  resizableColumns = false,
+  groupBy,
 }: DataTableProps<T>) {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterValues, setFilterValues] = useState<FilterValues>({});
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(20);
+  const [colWidths, setColWidths] = useState<Record<number, number>>({});
+  const thRefs = useRef<(HTMLTableCellElement | null)[]>([]);
+
+  // Cột ghim (sticky) có thể nằm liên tiếp nhau (vd 3 cột đầu) — mỗi cột cần
+  // offset `left` bằng tổng độ rộng các cột ghim đứng trước nó, không phải 0.
+  const stickyLeftOffsets = useMemo(() => {
+    const offsets: number[] = [];
+    let acc = 0;
+    for (let i = 0; i < columns.length; i++) {
+      offsets[i] = acc;
+      if (columns[i].sticky) {
+        acc += colWidths[i] ?? columns[i].width ?? thRefs.current[i]?.offsetWidth ?? DEFAULT_COL_WIDTH;
+      }
+    }
+    return offsets;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columns, colWidths]);
+
+  // Khi bật resizableColumns, bảng cần một độ rộng THẬT (tổng độ rộng các cột) thay vì
+  // w-full co vừa khung — nếu không, table-layout:fixed sẽ ép co hết các cột lại cho vừa
+  // màn hình thay vì tràn ra để overflow-x-auto cuộn được.
+  const totalTableWidth = useMemo(() => {
+    let total = selection ? 40 : 0;
+    for (let i = 0; i < columns.length; i++) {
+      total += colWidths[i] ?? columns[i].width ?? DEFAULT_COL_WIDTH;
+    }
+    return total;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columns, colWidths, selection]);
 
   const dataAfterFilters = filters
     ? applyTableFilters(data, filters, filterValues)
@@ -62,6 +110,12 @@ export default function DataTable<T extends Record<string, any>>({
       return String(val).toLowerCase().includes(term);
     });
   });
+
+  const totalPages = pagination ? Math.max(1, Math.ceil(filteredData.length / pageSize)) : 1;
+  const safePage = Math.min(page, totalPages);
+  const pagedData = pagination
+    ? filteredData.slice((safePage - 1) * pageSize, safePage * pageSize)
+    : filteredData;
 
   const selectedCount = selection
     ? filteredData.filter((row) => selection.selectedIds.has(selection.getRowId(row))).length
@@ -87,6 +141,28 @@ export default function DataTable<T extends Record<string, any>>({
     selection.onChange(next);
   }
 
+  function handlePageSizeChange(nextSize: number) {
+    setPageSize(nextSize);
+    setPage(1);
+  }
+
+  function startResize(idx: number, e: React.MouseEvent) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = colWidths[idx] ?? columns[idx]?.width ?? thRefs.current[idx]?.offsetWidth ?? DEFAULT_COL_WIDTH;
+
+    function onMove(ev: MouseEvent) {
+      const next = Math.max(60, startWidth + (ev.clientX - startX));
+      setColWidths((prev) => ({ ...prev, [idx]: next }));
+    }
+    function onUp() {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }
+
   const hasActiveFilter = Object.values(filterValues).some(
     (v) => v !== "" && v !== undefined
   );
@@ -109,7 +185,7 @@ export default function DataTable<T extends Record<string, any>>({
     );
 
     const csvContent =
-      "\ufeff" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
+      "﻿" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -119,6 +195,8 @@ export default function DataTable<T extends Record<string, any>>({
     link.click();
     URL.revokeObjectURL(url);
   };
+
+  const stickyLeftClass = "sticky z-10";
 
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white shadow-xs">
@@ -140,7 +218,10 @@ export default function DataTable<T extends Record<string, any>>({
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setPage(1);
+              }}
               placeholder={searchPlaceholder}
               className="h-9 w-48 rounded-xl border border-slate-200 bg-slate-50/70 pr-3 pl-8 text-xs text-slate-800 transition-all focus:border-blue-500 focus:bg-white focus:outline-hidden sm:w-60"
             />
@@ -155,9 +236,10 @@ export default function DataTable<T extends Record<string, any>>({
                   key={f.id}
                   aria-label={f.label}
                   value={filterValues[f.id] || ""}
-                  onChange={(e) =>
-                    setFilterValues((prev) => ({ ...prev, [f.id]: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    setFilterValues((prev) => ({ ...prev, [f.id]: e.target.value }));
+                    setPage(1);
+                  }}
                   className="h-9 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 text-xs text-slate-800 transition-all focus:border-blue-500 focus:bg-white focus:outline-hidden"
                 >
                   <option value="">Tất cả {f.label}</option>
@@ -199,7 +281,25 @@ export default function DataTable<T extends Record<string, any>>({
 
       {/* Table view */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-160 text-left text-xs">
+        <table
+          className={resizableColumns ? "text-left text-xs" : "w-full min-w-160 text-left text-xs"}
+          style={
+            resizableColumns
+              ? { tableLayout: "fixed", width: totalTableWidth, minWidth: totalTableWidth }
+              : undefined
+          }
+        >
+          {resizableColumns && (
+            <colgroup>
+              {selection && <col style={{ width: 40 }} />}
+              {columns.map((col, idx) => (
+                <col
+                  key={idx}
+                  style={{ width: colWidths[idx] ?? col.width ?? DEFAULT_COL_WIDTH }}
+                />
+              ))}
+            </colgroup>
+          )}
           <thead className="border-b border-slate-100 bg-slate-50/80 text-[11px] font-bold tracking-wider text-slate-500 uppercase">
             <tr>
               {selection && (
@@ -213,47 +313,81 @@ export default function DataTable<T extends Record<string, any>>({
                 </th>
               )}
               {columns.map((col, idx) => (
-                <th key={idx} className={`px-4 py-3 ${col.className || ""}`}>
+                <th
+                  key={idx}
+                  ref={(el) => {
+                    thRefs.current[idx] = el;
+                  }}
+                  className={`relative px-4 py-3 ${col.sticky ? `${stickyLeftClass} bg-slate-50` : ""} ${col.className || ""}`}
+                  style={{
+                    ...(!resizableColumns && col.width ? { width: col.width } : {}),
+                    ...(col.sticky ? { left: stickyLeftOffsets[idx] } : {}),
+                  }}
+                >
                   {col.header}
+                  {resizableColumns && (
+                    <span
+                      onMouseDown={(e) => startResize(idx, e)}
+                      className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize select-none hover:bg-blue-300/60"
+                      title="Kéo để đổi độ rộng cột"
+                    />
+                  )}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-slate-700">
-            {filteredData.length > 0 ? (
-              filteredData.map((row, rIdx) => (
-                <tr
-                  key={row.id || rIdx}
-                  className="transition-colors hover:bg-blue-50/30"
-                >
-                  {selection && (
-                    <td className="px-4 py-3.5">
-                      <input
-                        type="checkbox"
-                        aria-label="Chọn dòng"
-                        checked={selection.selectedIds.has(selection.getRowId(row))}
-                        onChange={(e) => toggleSelectRow(selection.getRowId(row), e.target.checked)}
-                      />
-                    </td>
-                  )}
-                  {columns.map((col, cIdx) => (
-                    <td
-                      key={cIdx}
-                      className={`px-4 py-3.5 whitespace-nowrap ${
-                        col.className || ""
-                      }`}
-                    >
-                      {col.cell
-                        ? col.cell(row)
-                        : col.accessorKey
-                        ? Array.isArray(row[col.accessorKey])
-                          ? row[col.accessorKey].join(", ")
-                          : String(row[col.accessorKey] ?? "—")
-                        : "—"}
-                    </td>
-                  ))}
-                </tr>
-              ))
+            {pagedData.length > 0 ? (
+              pagedData.map((row, rIdx) => {
+                const groupLabel = groupBy ? groupBy(row) : null;
+                const prevGroupLabel =
+                  groupBy && rIdx > 0 ? groupBy(pagedData[rIdx - 1]) : null;
+                const showGroupHeader = groupBy && groupLabel !== prevGroupLabel;
+
+                return (
+                  <Fragment key={row.id || rIdx}>
+                    {showGroupHeader && (
+                      <tr className="bg-slate-100/80">
+                        <td
+                          colSpan={columns.length + (selection ? 1 : 0)}
+                          className="px-4 py-2 text-[11px] font-bold tracking-wide text-slate-600 uppercase"
+                        >
+                          {groupLabel}
+                        </td>
+                      </tr>
+                    )}
+                    <tr className="transition-colors hover:bg-blue-50/30">
+                      {selection && (
+                        <td className="px-4 py-3.5">
+                          <input
+                            type="checkbox"
+                            aria-label="Chọn dòng"
+                            checked={selection.selectedIds.has(selection.getRowId(row))}
+                            onChange={(e) => toggleSelectRow(selection.getRowId(row), e.target.checked)}
+                          />
+                        </td>
+                      )}
+                      {columns.map((col, cIdx) => (
+                        <td
+                          key={cIdx}
+                          className={`px-4 py-3.5 whitespace-nowrap ${
+                            resizableColumns ? "overflow-hidden text-ellipsis" : ""
+                          } ${col.sticky ? `${stickyLeftClass} bg-white` : ""} ${col.className || ""}`}
+                          style={col.sticky ? { left: stickyLeftOffsets[cIdx] } : undefined}
+                        >
+                          {col.cell
+                            ? col.cell(row)
+                            : col.accessorKey
+                            ? Array.isArray(row[col.accessorKey])
+                              ? row[col.accessorKey].join(", ")
+                              : String(row[col.accessorKey] ?? "—")
+                            : "—"}
+                        </td>
+                      ))}
+                    </tr>
+                  </Fragment>
+                );
+              })
             ) : (
               <tr>
                 <td
@@ -268,12 +402,57 @@ export default function DataTable<T extends Record<string, any>>({
         </table>
       </div>
 
-      {/* Footer count */}
-      <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
+      {/* Footer count + pagination */}
+      <div className="flex flex-col gap-3 border-t border-slate-100 px-5 py-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
         <span>
-          Hiển thị <strong>{filteredData.length}</strong> /{" "}
-          <strong>{data.length}</strong> bản ghi
+          Hiển thị{" "}
+          <strong>
+            {pagination && filteredData.length > 0
+              ? `${(safePage - 1) * pageSize + 1}-${Math.min(safePage * pageSize, filteredData.length)}`
+              : filteredData.length}
+          </strong>{" "}
+          / <strong>{data.length}</strong> bản ghi
         </span>
+
+        {pagination && (
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-500">Số dòng/trang:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+              className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-xs focus:border-blue-500 focus:outline-hidden"
+            >
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={safePage <= 1}
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+              aria-label="Trang trước"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <span className="text-[11px] font-medium text-slate-600">
+              Trang {safePage}/{totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={safePage >= totalPages}
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+              aria-label="Trang sau"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
         <span className="text-[11px] text-slate-400">
           VNPT Nam Sài Gòn · CRM V2
         </span>
@@ -281,4 +460,3 @@ export default function DataTable<T extends Record<string, any>>({
     </div>
   );
 }
-

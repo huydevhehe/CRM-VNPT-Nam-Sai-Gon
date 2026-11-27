@@ -103,6 +103,7 @@ export interface PaymentExportRecordDto {
   id: string;
   contractId: string;
   docNumber: string;
+  eoNumber: string | null;
   exportedBy: string | null;
   exportedAt: string;
   transactionCode?: string;
@@ -129,9 +130,13 @@ export interface ConfirmedPaymentExportDto extends PaymentExportRecordDto {
 /** Xem trước văn bản đề nghị thanh toán. KHÔNG cấp/tiêu số văn bản. */
 export function getPaymentRequestPreview(
   contractId: string,
-  docNumber?: string
+  docNumber?: string,
+  eoNumber?: string
 ): Promise<PaymentRequestPreviewDto> {
-  const query = docNumber?.trim() ? `?docNumber=${encodeURIComponent(docNumber.trim())}` : "";
+  const params = new URLSearchParams();
+  if (docNumber?.trim()) params.set("docNumber", docNumber.trim());
+  if (eoNumber?.trim()) params.set("eoNumber", eoNumber.trim());
+  const query = params.toString() ? `?${params.toString()}` : "";
   return apiFetch<PaymentRequestPreviewDto>(`/contracts/${contractId}/payment-request/preview${query}`);
 }
 
@@ -141,7 +146,7 @@ export function getPaymentRequestPreview(
  */
 export function confirmPaymentRequest(
   contractId: string,
-  input: { docNumber?: string; reuseLatest?: boolean }
+  input: { docNumber?: string; eoNumber?: string; reuseLatest?: boolean }
 ): Promise<ConfirmedPaymentExportDto> {
   return apiFetch<ConfirmedPaymentExportDto>(`/contracts/${contractId}/payment-request/confirm`, {
     method: "POST",
@@ -206,6 +211,24 @@ export function getCtvCommissionGaps(): Promise<CtvCommissionGapDto[]> {
 /** Danh sách mẫu hợp đồng (7 mẫu cố định) — mẫu `available=false` chưa có file, FE phải vô hiệu hóa nút xuất. */
 export function getContractTemplates(): Promise<ContractTemplateOption[]> {
   return apiFetch<ContractTemplateOption[]>("/contracts/templates");
+}
+
+/** Admin đổi tên hiển thị của 1 mẫu hợp đồng. */
+export function renameContractTemplate(key: string, label: string): Promise<ContractTemplateOption> {
+  return apiFetch<ContractTemplateOption>(`/contracts/templates/${key}`, {
+    method: "PATCH",
+    body: JSON.stringify({ label }),
+  });
+}
+
+/** Admin thay file mẫu .docx của 1 mẫu hợp đồng (kể cả mẫu "Chưa có mẫu"). */
+export function uploadContractTemplate(key: string, file: File): Promise<ContractTemplateOption> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiFetch<ContractTemplateOption>(`/contracts/templates/${key}/upload`, {
+    method: "POST",
+    body: formData,
+  });
 }
 
 export interface ContractExportPreviewDto {

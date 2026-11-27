@@ -42,6 +42,11 @@ interface CustomerApiRow {
   referred_by_ctv_code?: string | null;
   channel_source_id?: string | null;
   channel_source_name?: string | null;
+  representative_name?: string | null;
+  representative_title?: string | null;
+  representative_id_number?: string | null;
+  representative_id_issued_at?: string | null;
+  representative_id_issued_place?: string | null;
 }
 
 function mapCustomerRow(row: CustomerApiRow): CustomerRecord {
@@ -82,6 +87,11 @@ function mapCustomerRow(row: CustomerApiRow): CustomerRecord {
     referredByCtvCode: row.referred_by_ctv_code || undefined,
     channelSourceId: row.channel_source_id || undefined,
     channelSourceName: row.channel_source_name || undefined,
+    representativeName: row.representative_name || undefined,
+    representativeTitle: row.representative_title || undefined,
+    representativeIdNumber: row.representative_id_number || undefined,
+    representativeIdIssuedAt: row.representative_id_issued_at || undefined,
+    representativeIdIssuedPlace: row.representative_id_issued_place || undefined,
   };
 }
 
@@ -124,6 +134,12 @@ export interface CreateCustomerInput {
   referredByCtvId?: string | null;
   /** Chi tiết kênh (nguồn Online/đối tác) khi salesChannel là Online/Đối tác. */
   channelSourceId?: string | null;
+  /** Người đại diện pháp luật — chỉ dùng để điền mẫu hợp đồng, không bắt buộc nhập. */
+  representativeName?: string;
+  representativeTitle?: string;
+  representativeIdNumber?: string;
+  representativeIdIssuedAt?: string;
+  representativeIdIssuedPlace?: string;
 }
 
 export type UpdateCustomerInput = Partial<CreateCustomerInput>;
@@ -358,4 +374,103 @@ export async function downloadCustomerDocument(
   link.download = fallbackName;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+export interface QuoteInput {
+  serviceType: string;
+  packageName: string;
+  unit: string;
+  quantity: number;
+  unitPrice: number;
+  vatPercent?: number;
+  note?: string;
+  staffName?: string;
+  eoNumber?: string;
+}
+
+export interface QuoteExportRecordDto {
+  id: string;
+  customerId: string;
+  docNumber: string;
+  eoNumber: string | null;
+  exportedBy: string | null;
+  exportedAt: string;
+  serviceType: string;
+  packageName: string;
+  unit: string;
+  quantity: number;
+  unitPrice: number;
+  vatPercent: number;
+  note: string | null;
+  staffName: string | null;
+  customerName?: string;
+}
+
+export interface QuotePreviewDto {
+  suggestedDocNumber: string;
+  missingFields: string[];
+  lines: string[];
+  pdfAvailable: boolean;
+}
+
+export interface ConfirmedQuoteExportDto extends QuoteExportRecordDto {
+  reused: boolean;
+}
+
+/** Xem trước nội dung báo giá. KHÔNG cấp/tiêu số báo giá. */
+export function getQuotePreview(
+  customerId: string,
+  input: QuoteInput,
+  docNumber?: string
+): Promise<QuotePreviewDto> {
+  const query = docNumber?.trim() ? `?docNumber=${encodeURIComponent(docNumber.trim())}` : "";
+  return apiFetch<QuotePreviewDto>(`/customers/${encodeURIComponent(customerId)}/quote/preview${query}`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Xác nhận lấy số báo giá (điểm duy nhất tiêu số). */
+export function confirmQuote(
+  customerId: string,
+  input: QuoteInput & { docNumber?: string; reuseLatest?: boolean }
+): Promise<ConfirmedQuoteExportDto> {
+  return apiFetch<ConfirmedQuoteExportDto>(`/customers/${encodeURIComponent(customerId)}/quote/confirm`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export type QuoteFormat = "docx" | "pdf";
+
+/** Tải file của một lần đã cấp số báo giá (DOCX/PDF cùng số). */
+export async function downloadQuoteFile(
+  customerId: string,
+  exportId: string,
+  format: QuoteFormat
+): Promise<Blob> {
+  const token = getToken();
+  let res: Response;
+  try {
+    res = await fetch(
+      `${API_BASE_URL}/customers/${encodeURIComponent(customerId)}/quote/file?exportId=${encodeURIComponent(exportId)}&format=${format}`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+    );
+  } catch {
+    throw new Error("Không kết nối được máy chủ. Vui lòng thử lại.");
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.message || `Lỗi tải file (${res.status})`);
+  }
+  return res.blob();
+}
+
+export function listQuoteExports(customerId: string): Promise<QuoteExportRecordDto[]> {
+  return apiFetch<QuoteExportRecordDto[]>(`/customers/${encodeURIComponent(customerId)}/quote/exports`);
+}
+
+/** Toàn bộ báo giá đã cấp số của mọi khách hàng — dùng cho trang "Báo giá". */
+export function listAllQuoteExports(): Promise<QuoteExportRecordDto[]> {
+  return apiFetch<QuoteExportRecordDto[]>("/customers/quote-exports");
 }

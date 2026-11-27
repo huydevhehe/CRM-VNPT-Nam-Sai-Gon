@@ -67,7 +67,8 @@ test.describe("API Lead / Hợp đồng / Hoa hồng gắn CTV và Phường", (
         ...(customer ? { customerId: customer.id } : {}),
         subscriberCodes: ["0901234567"],
         totalValue: 10000000,
-        channel: "Online",
+        channel: "Trực tiếp",
+        contractTemplate: "hoa_don_dien_tu",
         ...data,
       },
     });
@@ -276,14 +277,18 @@ test.describe("API Lead / Hợp đồng / Hoa hồng gắn CTV và Phường", (
         ).json()
       ).data;
 
-      const inherited = await postContract(request, { leadId: lead.id });
+      const inherited = await postContract(request, { leadId: lead.id, channel: "CTV giới thiệu" });
       expect(inherited.status()).toBe(201);
       const c1 = (await inherited.json()).data;
       expect(c1.leadId).toBe(lead.id);
       expect(c1.referredByCtvId).toBe(ctv.id);
       expect(c1.territoryId).toBe(wardA);
 
-      const overridden = await postContract(request, { leadId: lead.id, territoryId: wardB });
+      const overridden = await postContract(request, {
+        leadId: lead.id,
+        territoryId: wardB,
+        channel: "CTV giới thiệu",
+      });
       expect(overridden.status()).toBe(201);
       const c2 = (await overridden.json()).data;
       expect(c2.referredByCtvId).toBe(ctv.id);
@@ -303,7 +308,7 @@ test.describe("API Lead / Hợp đồng / Hoa hồng gắn CTV và Phường", (
           await postLead(request, leadPayload({ channel: "CTV giới thiệu", referredByCtvId: ctv.id }))
         ).json()
       ).data;
-      const res = await postContract(request, { leadId: lead.id, totalValue });
+      const res = await postContract(request, { leadId: lead.id, totalValue, channel: "CTV giới thiệu" });
       expect(res.status()).toBe(201);
       return (await res.json()).data;
     }
@@ -345,10 +350,16 @@ test.describe("API Lead / Hợp đồng / Hoa hồng gắn CTV và Phường", (
       expect(await commissionsOf(request, contract.id)).toHaveLength(1);
     });
 
-    test("HĐ không có CTV thì không sinh hoa hồng", async ({ request }) => {
+    test("HĐ không có CTV nhưng có AM bán hàng thì sinh hoa hồng nội bộ 5% giá trị đơn", async ({
+      request,
+    }) => {
       const contract = (await (await postContract(request, {})).json()).data;
       expect((await setDeployment(request, contract.id, "Hoàn tất")).status()).toBe(200);
-      expect(await commissionsOf(request, contract.id)).toHaveLength(0);
+      const rows = await commissionsOf(request, contract.id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].ctvId).toBeFalsy();
+      expect(rows[0].type).toBe("Hoa hồng nội bộ");
+      expect(rows[0].amount).toBe(500000);
     });
 
     test("đổi totalValue khi còn Chờ chi thì tính lại, khi đã Đã chi thì giữ nguyên", async ({

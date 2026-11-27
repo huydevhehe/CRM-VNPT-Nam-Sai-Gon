@@ -88,7 +88,8 @@ test.describe("API Import dịch vụ khách đang dùng (POST /api/services/imp
         customerId: orderCustomer.id,
         subscriberCodes: [orderCode],
         totalValue: 100000,
-        channel: "Online",
+        channel: "Trực tiếp",
+        contractTemplate: "hoa_don_dien_tu",
       },
     });
     expect(orderRes.status()).toBe(201);

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const { initDatabase, query, run } = await import("./db.js");
-const { ensureColumn, runMigrationOnce } = await import("./schema-extensions.js");
+const { ensureColumn, runMigrationOnce, relinkOrphanCommissions } = await import("./schema-extensions.js");
 
 async function columnExists(table: string, column: string): Promise<boolean> {
   const rows = await query(
@@ -112,6 +112,79 @@ test("backfill runs only once: a deliberately cleared territory_id stays NULL ac
   assert.equal(await leadTerritory("LEAD-01"), null);
 
   await run("UPDATE leads SET territory_id = 'TB-01' WHERE id = 'LEAD-01'");
+});
+
+test("initDatabase seeds the 'Gói dịch vụ Internet/Fiber' custom list once, with price per package", async () => {
+  await initDatabase();
+
+  const lists = await query<{ id: string }>("SELECT id FROM custom_lists WHERE name = ?", [
+    "Gói dịch vụ Internet/Fiber",
+  ]);
+  assert.equal(lists.length, 1, "danh mục phải tồn tại đúng 1 lần");
+
+  const items = await query<{ value: string; price: number | string | null }>(
+    "SELECT value, price FROM custom_list_items WHERE list_id = ? ORDER BY sort_order",
+    [lists[0].id]
+  );
+  assert.equal(items.length, 22);
+  const fiberXtra2 = items.find((i) => i.value === "Fiber Xtra 2");
+  assert.equal(Number(fiberXtra2?.price), 500000);
+
+  // Admin xóa bớt/sửa dữ liệu -> initDatabase chạy lại KHÔNG được tự thêm lại.
+  await run("DELETE FROM custom_list_items WHERE list_id = ?", [lists[0].id]);
+  await initDatabase();
+  const afterRestart = await query("SELECT id FROM custom_list_items WHERE list_id = ?", [lists[0].id]);
+  assert.equal(afterRestart.length, 0, "migration chỉ chạy 1 lần, không ghi đè dữ liệu Admin đã sửa");
+});
+
+test("relinkOrphanCommissions: gắn lại contract_id khi transaction_code khớp đúng 1 đơn hàng, bỏ qua khi không khớp", async () => {
+  await initDatabase();
+  const suffix = Date.now();
+
+  const contractId = `CTR-RELINK-${suffix}`;
+  const txCode = `GD-RELINK-${suffix}`;
+  await run(
+    `INSERT INTO contracts (id, transaction_code, customer_name, subscriber_codes, total_value, channel)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [contractId, txCode, `Khách Relink ${suffix}`, JSON.stringify(["TB-RELINK"]), 10000000, "Trực tiếp"]
+  );
+
+  const matchedComId = `HH-RELINK-MATCH-${suffix}`;
+  await run(
+    `INSERT INTO commissions (id, recipient_name, type, transaction_code, amount, status, date)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [matchedComId, "Nguyễn Thị Tình", "Hoa hồng nội bộ", txCode, 500000, "Chờ nhận", "2026-11-20"]
+  );
+
+  const unmatchedComId = `HH-RELINK-NOMATCH-${suffix}`;
+  const unmatchedTxCode = `GD-RELINK-NOMATCH-${suffix}`;
+  await run(
+    `INSERT INTO commissions (id, recipient_name, type, transaction_code, amount, status, date)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [unmatchedComId, "Nguyễn Đức Tiến", "Hoa hồng nội bộ", unmatchedTxCode, 300000, "Chờ nhận", "2026-11-20"]
+  );
+
+  const result = await relinkOrphanCommissions();
+  assert.ok(result.relinked >= 1);
+  assert.ok(result.unmatchedCount >= 1);
+
+  const matchedRow = await query<{ contract_id: string | null }>(
+    "SELECT contract_id FROM commissions WHERE id = ?",
+    [matchedComId]
+  );
+  assert.equal(matchedRow[0].contract_id, contractId);
+
+  const unmatchedRow = await query<{ contract_id: string | null }>(
+    "SELECT contract_id FROM commissions WHERE id = ?",
+    [unmatchedComId]
+  );
+  assert.equal(unmatchedRow[0].contract_id, null);
+
+  const auditRows = await query<{ details: string }>(
+    "SELECT details FROM audit_logs WHERE action = 'Gắn lại hoa hồng mồ côi theo mã giao dịch' ORDER BY id DESC LIMIT 1"
+  );
+  assert.equal(auditRows.length, 1);
+  assert.match(auditRows[0].details, /xử lý tay/);
 });
 
 test("runMigrationOnce runs fn only once per key", async () => {

@@ -11,6 +11,7 @@ import {
 import { GroupSettingsError, ReminderGroupSettingsService } from "./reminder-group-settings.service.js";
 import { query } from "../../database/db.js";
 import { todayVn } from "../../utils/date-vn.js";
+import { fixMulterFileEncoding } from "../../utils/fix-upload-filename.js";
 
 export const reminderRouter = Router();
 
@@ -41,6 +42,7 @@ function handleUpload(req: Request, res: Response, next: NextFunction) {
       res.status(400).json({ success: false, message });
       return;
     }
+    fixMulterFileEncoding(req.file);
     next();
   });
 }

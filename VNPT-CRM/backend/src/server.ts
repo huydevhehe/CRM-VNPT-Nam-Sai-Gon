@@ -18,12 +18,16 @@ import { staffRouter } from "./modules/staff/staff.controller.js";
 import { taskRouter } from "./modules/task/task.controller.js";
 import { reportRouter } from "./modules/report/report.controller.js";
 import { settingsRouter } from "./modules/settings/settings.controller.js";
+import { customListRouter } from "./modules/custom-list/custom-list.controller.js";
+import { documentRegistryRouter } from "./modules/document-registry/document-registry.controller.js";
 import { ctvRouter } from "./modules/ctv/ctv.controller.js";
 import { ctvAccountsRouter } from "./modules/ctv/ctv-accounts.controller.js";
 import { publicRouter } from "./modules/public/public.controller.js";
 import { kpiRouter } from "./modules/kpi/kpi.controller.js";
 import { reminderRouter } from "./modules/reminder/reminder.controller.js";
 import { startReminderScheduler } from "./modules/reminder/reminder-scheduler.js";
+import { dataRetentionRouter } from "./modules/data-retention/data-retention.controller.js";
+import { startDataRetentionScheduler } from "./modules/data-retention/data-retention-scheduler.js";
 import { requireAuth } from "./middleware/require-auth.js";
 import { requireAdmin, requireCtv, requireStaff } from "./middleware/require-role.js";
 
@@ -91,8 +95,13 @@ app.use("/api/staff", requireAuth, requireStaff, staffRouter);
 app.use("/api/tasks", requireAuth, requireStaff, taskRouter);
 app.use("/api/reports", requireAuth, requireAdmin, reportRouter);
 app.use("/api/settings", requireAuth, requireAdmin, settingsRouter);
+// Đọc (GET) mở cho mọi nhân viên đăng nhập — cần để chọn "Gói dịch vụ" khi lập
+// Báo giá; các thao tác sửa/xóa vẫn chỉ Admin (gắn requireAdmin trong từng route).
+app.use("/api/custom-lists", requireAuth, customListRouter);
+app.use("/api/document-registry", requireAuth, requireAdmin, documentRegistryRouter);
 app.use("/api/kpi", requireAuth, requireStaff, kpiRouter);
 app.use("/api/reminders", requireAuth, requireAdmin, reminderRouter);
+app.use("/api/data-retention", requireAuth, requireStaff, dataRetentionRouter);
 
 // Khu vực CTV và quản lý tài khoản CTV.
 app.use("/api/ctv", requireAuth, requireCtv, ctvRouter);
@@ -103,6 +112,7 @@ async function start() {
   try {
     await initDatabase();
     startReminderScheduler();
+    startDataRetentionScheduler();
     app.listen(config.port, () => {
       console.log(`[VNPT CRM Backend] Server is running on http://localhost:${config.port}`);
     });

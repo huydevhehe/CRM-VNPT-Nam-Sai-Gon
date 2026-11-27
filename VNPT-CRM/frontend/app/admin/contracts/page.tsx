@@ -710,6 +710,8 @@ export default function ContractsPage() {
     {
       header: "Mã giao dịch",
       accessorKey: "transactionCode",
+      sticky: true,
+      width: 130,
       cell: (item) => (
         <span className="font-mono font-bold text-vnpt">{item.transactionCode}</span>
       ),
@@ -717,9 +719,13 @@ export default function ContractsPage() {
     {
       header: "Khách hàng",
       accessorKey: "customerName",
+      sticky: true,
+      width: 260,
       cell: (item) => (
         <div>
-          <span className="font-bold text-slate-900 block">{item.customerName}</span>
+          <span className="block truncate font-bold text-slate-900" title={item.customerName}>
+            {item.customerName}
+          </span>
           {item.taxCode && (
             <span className="text-[11px] text-slate-500 font-mono block">MST: {item.taxCode}</span>
           )}
@@ -735,6 +741,8 @@ export default function ContractsPage() {
     {
       header: "AM phát triển",
       accessorKey: "amStaff",
+      sticky: true,
+      width: 150,
       cell: (item) =>
         item.amStaff ? (
           <span className="font-medium text-slate-800">{item.amStaff}</span>
@@ -757,15 +765,20 @@ export default function ContractsPage() {
     {
       header: "Gói cước",
       accessorKey: "packageName",
+      width: 210,
       cell: (item) => {
         const items = item.items ?? [];
         const serviceCount = items.filter((i) => i.lineType === "service").length;
         const deviceCount = items.filter((i) => i.lineType === "device").length;
         return (
           <div>
-            <span className="font-medium text-slate-800 block">{item.packageName || "—"}</span>
+            <span className="block truncate font-medium text-slate-800" title={item.packageName || undefined}>
+              {item.packageName || "—"}
+            </span>
             {item.serviceName && (
-              <span className="text-[11px] text-slate-500 block">{item.serviceName}</span>
+              <span className="block truncate text-[11px] text-slate-500" title={item.serviceName}>
+                {item.serviceName}
+              </span>
             )}
             {items.length > 0 && (
               <span className="mt-0.5 block text-[11px] font-semibold text-sky-700">
@@ -773,7 +786,10 @@ export default function ContractsPage() {
               </span>
             )}
             {item.subscriberCodes.length > 0 && (
-              <span className="block text-[11px] text-slate-400" title={item.subscriberCodes.join(", ")}>
+              <span
+                className="block truncate text-[11px] text-slate-400"
+                title={item.subscriberCodes.join(", ")}
+              >
                 Mã TB: {item.subscriberCodes.join(", ")}
               </span>
             )}
@@ -801,6 +817,7 @@ export default function ContractsPage() {
     {
       header: "Đã thu / Giá trị",
       accessorKey: "totalValue",
+      width: 150,
       cell: (item) => {
         const collected = item.collectedAmount || 0;
         return (
@@ -828,6 +845,7 @@ export default function ContractsPage() {
     {
       header: "Chi tiết kênh",
       accessorKey: "channelSourceId",
+      width: 170,
       cell: (item) => {
         const ctvName = item.referredByCtvId ? (ctvNameById.get(item.referredByCtvId) ?? item.referredByCtvId) : null;
         const text = formatChannelDetail(item.channel, item.channelSourceName, ctvName);
@@ -841,6 +859,7 @@ export default function ContractsPage() {
     {
       header: "Triển khai",
       accessorKey: "deploymentStatus",
+      width: 175,
       cell: (item) => (
         <StatusSelect
           value={item.deploymentStatus}
@@ -858,6 +877,7 @@ export default function ContractsPage() {
     {
       header: "Thanh toán",
       accessorKey: "paymentStatus",
+      width: 175,
       cell: (item) => (
         <StatusSelect
           value={item.paymentStatus}
@@ -874,6 +894,7 @@ export default function ContractsPage() {
     {
       header: "Thao tác",
       accessorKey: "id",
+      width: 420,
       cell: (item) => (
         <div className="flex items-center gap-1.5">
           <button
@@ -933,7 +954,7 @@ export default function ContractsPage() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-xl font-bold tracking-tight text-slate-900">
-            Quản lý đơn hàng
+            Quản lý hợp đồng
           </h2>
           <p className="text-xs text-slate-500">
             Quản lý theo mã giao dịch nguồn, AM phát triển, nhóm dịch vụ và tình trạng thanh toán
@@ -1143,6 +1164,7 @@ export default function ContractsPage() {
           subtitle="Theo dõi tiến độ triển khai kỹ thuật, AM phát triển, nhóm dịch vụ và thanh toán"
           columns={columns}
           data={visibleData}
+          resizableColumns
           searchPlaceholder="Tìm theo mã giao dịch, khách hàng, AM, mã thuê bao..."
           exportFileName="vnpt_don_hang"
         />

@@ -49,6 +49,7 @@ export interface RenewalRecord {
   failureReason?: RenewalFailureReason;
   expiryDate?: string | null; // Ngày hết hạn dịch vụ (YYYY-MM-DD)
   renewedAt?: string | null; // Ngày gia hạn thành công (YYYY-MM-DD)
+  createdAt?: string; // Thời điểm tạo bản ghi — dùng để nhóm theo tháng
 }
 
 // 3. Customer
@@ -84,6 +85,12 @@ export interface CustomerRecord {
   referredByCtvCode?: string;
   channelSourceId?: string | null;
   channelSourceName?: string | null;
+  /** Người đại diện pháp luật — chỉ dùng để điền mẫu hợp đồng, không bắt buộc nhập. */
+  representativeName?: string;
+  representativeTitle?: string;
+  representativeIdNumber?: string;
+  representativeIdIssuedAt?: string;
+  representativeIdIssuedPlace?: string;
 }
 
 // 4. Service & Alert

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { RotateCw, UploadCloud, Clock, CheckCircle, AlertTriangle, Pencil, X } from "lucide-react";
 import KpiCard from "@/components/admin/shared/KpiCard";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
+import RetentionWarningBanner from "@/components/admin/shared/RetentionWarningBanner";
 import {
   RenewalRecord,
   RenewalStatus,
@@ -135,10 +136,19 @@ export default function RenewalsPage() {
     return item.cohort === selectedCohort;
   });
 
+  function monthLabel(item: RenewalRecord): string {
+    const source = item.createdAt || item.expiryDate;
+    if (!source) return "Chưa rõ tháng";
+    const ym = source.slice(0, 7);
+    return /^\d{4}-\d{2}$/.test(ym) ? `Tháng ${ym}` : "Chưa rõ tháng";
+  }
+
   const columns: Column<RenewalRecord>[] = [
     {
       header: "Mã giao dịch",
       accessorKey: "transactionCode",
+      sticky: true,
+      width: 150,
       cell: (item) => (
         <span className="font-mono font-bold text-vnpt">
           {item.transactionCode}
@@ -155,10 +165,13 @@ export default function RenewalsPage() {
     {
       header: "Khách hàng & Địa chỉ",
       accessorKey: "customerName",
+      width: 240,
       cell: (item) => (
         <div>
-          <div className="font-semibold text-slate-900">{item.customerName}</div>
-          <div className="text-[11px] text-slate-400">
+          <div className="truncate font-semibold text-slate-900" title={item.customerName}>
+            {item.customerName}
+          </div>
+          <div className="truncate text-[11px] text-slate-400" title={item.installationAddress}>
             {item.installationAddress}
           </div>
         </div>
@@ -210,6 +223,7 @@ export default function RenewalsPage() {
     {
       header: "Trạng thái",
       accessorKey: "status",
+      width: 190,
       cell: (item) => (
         <div className="flex flex-col gap-1">
           <StatusSelect
@@ -218,7 +232,7 @@ export default function RenewalsPage() {
             onChange={(next) => handleStatusChange(item, next)}
           />
           {item.failureReason && (
-            <span className="text-[10px] text-rose-500 font-medium">
+            <span className="truncate text-[10px] text-rose-500 font-medium" title={item.failureReason}>
               Lý do: {item.failureReason}
             </span>
           )}
@@ -358,6 +372,9 @@ export default function RenewalsPage() {
         </button>
       </div>
 
+      {/* Cảnh báo dữ liệu sắp tự động xóa (quá 1 năm lưu trữ) */}
+      {selectedCohort !== "KPI" && <RetentionWarningBanner type="renewal" />}
+
       {/* Data Table */}
       {selectedCohort === "KPI" ? (
         <StaffKpiTable kpiKeys={["ghtt_t", "ghtt_t1"]} />
@@ -376,9 +393,12 @@ export default function RenewalsPage() {
       ) : (
         <DataTable
           title="Danh sách giao dịch gia hạn trả trước"
-          subtitle="Quản lý chống trùng mã giao dịch theo từng thuê bao"
+          subtitle="Quản lý chống trùng mã giao dịch theo từng thuê bao — nhóm theo tháng"
           columns={columns}
           data={filteredData}
+          pagination
+          resizableColumns
+          groupBy={monthLabel}
           filters={[
             ...(isAdmin
               ? [

@@ -1,60 +1,60 @@
 /**
  * T10 (STT 11) — bộ mẫu hợp đồng cố định theo sheet "Hợp đồng" của khách. Mỗi
- * Mã giao dịch phải gắn đúng 1 mẫu trong danh sách này. 3 mẫu CHƯA có file
- * docx mẫu (Fiber Mẫu 05, BHXH, Chữ ký số + BHXH) -> `available: false`, FE
- * hiển thị "Chưa có mẫu" và vô hiệu hóa nút xuất, KHÔNG tự bịa nội dung.
- * "Đề nghị thanh toán" là văn bản riêng (đã có ở T2), KHÔNG nằm trong danh
- * sách này.
+ * Mã giao dịch phải gắn đúng 1 mẫu trong danh sách này. "Đề nghị thanh toán"
+ * là văn bản riêng (đã có ở T2), KHÔNG nằm trong danh sách này.
+ *
+ * Mỗi mẫu luôn có `file` cố định (kể cả 3 mẫu ban đầu chưa có file thật) —
+ * Admin upload file mẫu qua `/admin/system-settings` (xem
+ * `contract-template-registry.service.ts`) sẽ ghi đè đúng file này; tên hiển
+ * thị (`label`) mặc định ở đây cũng có thể bị Admin đổi tên, xem registry.
  */
-export interface ContractTemplateDef {
+export interface ContractTemplateBaseDef {
   key: string;
   label: string;
-  available: boolean;
-  /** Đường dẫn tương đối trong backend/templates/contracts, chỉ có khi available. */
-  file?: string;
+  /** Đường dẫn tương đối trong backend/templates/contracts. */
+  file: string;
   /** Mẫu có bảng "Dịch vụ/Số lượng/Đơn giá/Thành tiền" lặp theo dòng (STT 10) hay không. */
   supportsItemsTable?: boolean;
 }
 
-export const CONTRACT_TEMPLATES: readonly ContractTemplateDef[] = [
-  { key: "fiber_mau_05", label: "Fiber (Mẫu 05)", available: false },
-  { key: "bhxh", label: "BHXH", available: false },
-  { key: "cks_bhxh", label: "Chữ ký số + BHXH", available: false },
+export const CONTRACT_TEMPLATE_DEFS: readonly ContractTemplateBaseDef[] = [
+  { key: "fiber_mau_05", label: "Fiber (Mẫu 05)", file: "fiber-mau-05.docx", supportsItemsTable: false },
+  { key: "bhxh", label: "BHXH", file: "bhxh.docx", supportsItemsTable: false },
+  { key: "cks_bhxh", label: "Chữ ký số + BHXH", file: "cks-bhxh.docx", supportsItemsTable: false },
   {
     key: "cks_smartca_cn_dn",
     label: "CKS SmartCA CN thuộc DN",
-    available: true,
     file: "cks-smartca-cn-thuoc-dn.docx",
     supportsItemsTable: false,
   },
   {
     key: "cks_token_smartca_dn",
     label: "Chữ ký số TOKEN, SMARTCA DN",
-    available: true,
     file: "cks-token-smartca-dn.docx",
     supportsItemsTable: false,
   },
   {
     key: "hoa_don_dien_tu",
     label: "Hóa đơn điện tử",
-    available: true,
     file: "hoa-don-dien-tu.docx",
     supportsItemsTable: true,
   },
   {
     key: "combo_hoa_don_cks",
     label: "Combo (Hóa đơn + CKS)",
-    available: true,
     file: "combo-hoa-don-cks.docx",
     supportsItemsTable: false,
   },
 ] as const;
 
-export const CONTRACT_TEMPLATE_KEYS = CONTRACT_TEMPLATES.map((t) => t.key);
+export const CONTRACT_TEMPLATE_KEYS = CONTRACT_TEMPLATE_DEFS.map((t) => t.key);
 
-export function findContractTemplate(key: string | null | undefined): ContractTemplateDef | undefined {
+/** Tra cứu định nghĩa TĨNH (key/label mặc định/file/supportsItemsTable) — dùng
+ * để kiểm tra 1 key có hợp lệ hay không. Không phản ánh tên đã đổi hay file
+ * đã upload — dùng `ContractTemplateRegistryService` cho việc đó. */
+export function findContractTemplate(key: string | null | undefined): ContractTemplateBaseDef | undefined {
   if (!key) return undefined;
-  return CONTRACT_TEMPLATES.find((t) => t.key === key);
+  return CONTRACT_TEMPLATE_DEFS.find((t) => t.key === key);
 }
 
 export const CONTRACT_TEMPLATE_REQUIRED_MESSAGE = "Vui lòng chọn mẫu hợp đồng";
