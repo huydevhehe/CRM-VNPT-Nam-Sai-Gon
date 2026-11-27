@@ -24,6 +24,7 @@ import {
   Network,
   ListPlus,
   BookText,
+  Calculator,
   X,
 } from "lucide-react";
 
@@ -52,9 +53,14 @@ const NAV_SECTIONS = [
         icon: Target,
       },
       {
-        name: "Đơn hàng",
+        name: "Hợp đồng",
         href: "/admin/contracts",
         icon: FileText,
+      },
+      {
+        name: "Báo giá",
+        href: "/admin/quotes",
+        icon: Calculator,
       },
       {
         name: "Đề nghị thanh toán",
