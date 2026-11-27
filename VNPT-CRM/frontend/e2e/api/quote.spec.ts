@@ -76,6 +76,15 @@ test.describe("API Báo giá (POST /api/customers/:id/quote/preview, /confirm, G
     });
     const list = (await exportsRes.json()).data;
     expect(list).toHaveLength(2);
+
+    const allRes = await request.get(`${API_URL}/customers/quote-exports`, {
+      headers: bearer(adminToken),
+    });
+    expect(allRes.status()).toBe(200);
+    const allList = (await allRes.json()).data as any[];
+    expect(allList.length).toBeGreaterThanOrEqual(2);
+    expect(allList.some((e) => e.id === firstRecord.id)).toBe(true);
+    expect(allList.some((e) => e.id === secondRecord.id)).toBe(true);
   });
 
   test("confirm với khách hàng không tồn tại trả lỗi 400", async ({ request }) => {

@@ -38,7 +38,8 @@ export default function ContractExportPreviewModal({
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState<ContractExportPreviewDto | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"text" | "pdf">("text");
+  /** Mặc định mở bản in (PDF) để xem trước, giống hợp đồng in thật; "Xem dạng chữ" chỉ là chế độ phụ. */
+  const [viewMode, setViewMode] = useState<"text" | "pdf">("pdf");
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [downloading, setDownloading] = useState<ContractExportFormat | null>(null);
@@ -81,6 +82,13 @@ export default function ContractExportPreviewModal({
     }
   }
 
+  useEffect(() => {
+    // Chỉ tự tải bản in khi bản xem trước dạng chữ đã tải thành công (còn lỗi,
+    // vd thiếu mẫu hợp đồng, thì gọi thêm PDF cũng chỉ lỗi tiếp, không ích gì).
+    if (!loading && preview) handleViewPdf();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, preview]);
+
   async function handleDownload(format: ContractExportFormat) {
     setDownloading(format);
     setError(null);
@@ -121,13 +129,26 @@ export default function ContractExportPreviewModal({
 
         {loading ? (
           <div className="py-8 text-center text-xs text-slate-400">Đang chuẩn bị bản xem trước...</div>
+        ) : !preview ? (
+          <div className="space-y-4">
+            <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">{error}</p>
+            <div className="flex justify-end border-t pt-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-xl border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
         ) : (
           <div className="space-y-4">
             {error && (
               <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">{error}</p>
             )}
 
-            {preview && preview.missingFields.length > 0 && (
+            {preview.missingFields.length > 0 && (
               <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                 <div>

@@ -109,6 +109,17 @@ customerRouter.get("/ctv-options", async (_req: Request, res: Response) => {
   }
 });
 
+// GET /api/customers/quote-exports — toàn bộ báo giá đã cấp số của mọi khách hàng (trang "Báo giá").
+// Đặt TRƯỚC "/:id" để không bị route "/:id" nuốt mất.
+customerRouter.get("/quote-exports", requireAuth, async (_req: Request, res: Response) => {
+  try {
+    const list = await quoteService.listExports();
+    res.json({ success: true, data: list });
+  } catch (error: any) {
+    sendQuoteError(res, error);
+  }
+});
+
 customerRouter.post("/", requireAuth, async (req: Request, res: Response) => {
   try {
     const operator = { name: req.user?.name ?? req.user?.id ?? "Admin", role: req.user?.role ?? "" };

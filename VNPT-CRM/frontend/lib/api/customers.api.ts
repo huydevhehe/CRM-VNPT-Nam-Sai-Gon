@@ -469,3 +469,8 @@ export async function downloadQuoteFile(
 export function listQuoteExports(customerId: string): Promise<QuoteExportRecordDto[]> {
   return apiFetch<QuoteExportRecordDto[]>(`/customers/${encodeURIComponent(customerId)}/quote/exports`);
 }
+
+/** Toàn bộ báo giá đã cấp số của mọi khách hàng — dùng cho trang "Báo giá". */
+export function listAllQuoteExports(): Promise<QuoteExportRecordDto[]> {
+  return apiFetch<QuoteExportRecordDto[]>("/customers/quote-exports");
+}

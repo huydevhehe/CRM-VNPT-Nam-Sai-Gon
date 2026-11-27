@@ -155,8 +155,13 @@ export default function CustomListsPage() {
       <div>
         <h1 className="text-lg font-bold text-slate-900">Danh mục tùy biến</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Tự tạo các danh sách lựa chọn mới (ví dụ: Kênh bán, Lĩnh vực kinh doanh...) mà không cần
-          dev sửa code.
+          Nơi Admin tự thêm/sửa các danh sách lựa chọn dùng ở nơi khác trong hệ thống — không cần
+          dev sửa code. Ví dụ đang dùng: danh mục{" "}
+          <span className="font-semibold text-slate-700">&quot;Gói dịch vụ Internet/Fiber&quot;</span>{" "}
+          bên dưới có kèm giá — khi nhân viên lập{" "}
+          <span className="font-semibold text-slate-700">Báo giá</span>, chọn nhanh 1 gói trong danh
+          mục này sẽ tự điền tên gói và đơn giá. Thêm gói mới hoặc sửa giá ở đây là áp dụng ngay cho
+          Báo giá, không cần chờ dev.
         </p>
       </div>
 
