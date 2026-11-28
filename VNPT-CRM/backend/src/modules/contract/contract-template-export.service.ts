@@ -143,7 +143,12 @@ export class ContractTemplateExportService {
       if (!field.value) missingFields.push(field.label);
     }
     const nguoiDaiDien = customer.representative_name || BLANK_MARK;
-    const chucVu = customer.representative_title || BLANK_MARK;
+    // In hoa chức vụ bên A cho đồng bộ với "GIÁM ĐỐC VNPT NAM SÀI GÒN" (chữ
+    // in hoa cố định) bên B trong văn bản — feedback khách: nhập thường thì
+    // văn bản hiện thường, không đồng bộ 2 bên.
+    const chucVu = customer.representative_title
+      ? customer.representative_title.toLocaleUpperCase("vi")
+      : BLANK_MARK;
     const cccd = customer.representative_id_number || BLANK_MARK;
     const ngayCapCCCD = customer.representative_id_issued_at || BLANK_MARK;
     const noiCapCCCD = customer.representative_id_issued_place || BLANK_MARK;

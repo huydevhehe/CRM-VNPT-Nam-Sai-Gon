@@ -225,7 +225,7 @@ test("buildPreview: điền đúng dữ liệu người đại diện khi Khách
   const text = preview.lines.join(" ");
 
   assert.ok(text.includes("Nguyễn Văn Đại Diện"), "Phải chứa tên người đại diện");
-  assert.ok(text.includes("Giám đốc"), "Phải chứa chức vụ người đại diện");
+  assert.ok(text.includes("GIÁM ĐỐC"), "Phải chứa chức vụ người đại diện (in hoa, đồng bộ với bên B)");
   assert.ok(text.includes("079094005678"), "Phải chứa số CCCD người đại diện");
   assert.ok(text.includes("15/03/2021"), "Phải chứa ngày cấp CCCD");
   assert.ok(text.includes("Cục Cảnh sát QLHC về TTXH"), "Phải chứa nơi cấp CCCD");
