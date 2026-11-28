@@ -560,6 +560,13 @@ export default function LeadsPage() {
 
   const isEdit = Boolean(editTarget);
 
+  const totalLeads = data.length;
+  const contactedLeads = data.filter((l) => l.status !== "Mới tiếp nhận").length;
+  const closedLeads = data.filter((l) => l.status === "Chốt thành công").length;
+  const consultingLeads = data.filter((l) => l.status === "Đang tư vấn").length;
+  const contactRate = totalLeads > 0 ? ((contactedLeads / totalLeads) * 100).toFixed(1) : "0.0";
+  const closeRate = totalLeads > 0 ? ((closedLeads / totalLeads) * 100).toFixed(1) : "0.0";
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -598,25 +605,25 @@ export default function LeadsPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           title="CƠ HỘI ĐƯỢC GIAO"
-          value="320"
-          subtitle="Trong kỳ tháng T"
+          value={loading ? "..." : String(totalLeads)}
+          subtitle="Tổng số cơ hội đang quản lý"
           icon={Target}
         />
         <KpiCard
           title="ĐÃ LIÊN HỆ"
-          value="278"
-          subtitle="Tỷ lệ tiếp cận: 86.9%"
+          value={loading ? "..." : String(contactedLeads)}
+          subtitle={`Tỷ lệ tiếp cận: ${contactRate}%`}
           icon={PhoneCall}
         />
         <KpiCard
           title="CHỐT THÀNH CÔNG"
-          value="126"
-          subtitle="Tỷ lệ chốt: 39.4%"
+          value={loading ? "..." : String(closedLeads)}
+          subtitle={`Tỷ lệ chốt: ${closeRate}%`}
           icon={CheckCircle2}
         />
         <KpiCard
           title="ĐANG TƯ VẤN"
-          value="84"
+          value={loading ? "..." : String(consultingLeads)}
           subtitle="Đang chăm sóc bám sát"
           icon={TrendingUp}
         />

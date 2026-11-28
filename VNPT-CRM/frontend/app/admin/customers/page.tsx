@@ -668,6 +668,19 @@ export default function CustomersPage() {
       : []),
   ];
 
+  const totalCustomers = data.length;
+  const ptmCustomers = data.filter((c) => c.group === "Tự phát triển").length;
+  const assignedEnterpriseCustomers = data.filter(
+    (c) => c.type === "Doanh nghiệp" && Boolean(c.amCaringStaff)
+  ).length;
+  const expiringSoonCustomers = data.filter((c) => {
+    if (!c.nearestExpiration) return false;
+    const expiry = new Date(c.nearestExpiration);
+    if (Number.isNaN(expiry.getTime())) return false;
+    const diffDays = Math.ceil((expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    return diffDays <= 30;
+  }).length;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -729,25 +742,25 @@ export default function CustomersPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           title="TỔNG KHÁCH HÀNG"
-          value="1.284"
+          value={loading ? "..." : totalCustomers.toLocaleString("vi-VN")}
           subtitle="Hồ sơ quản lý trên CRM"
           icon={Users}
         />
         <KpiCard
           title="KH PTM"
-          value="386"
-          subtitle="Bán mới trong các kỳ"
+          value={loading ? "..." : ptmCustomers.toLocaleString("vi-VN")}
+          subtitle="Thuộc nhóm KH PTM"
           icon={UserPlus}
         />
         <KpiCard
           title="KHDN CHĂM ĐƯỢC GIAO"
-          value="898"
+          value={loading ? "..." : assignedEnterpriseCustomers.toLocaleString("vi-VN")}
           subtitle="Giao cho AM & AM Bán chăm"
           icon={Building2}
         />
         <KpiCard
           title="SẮP HẾT HẠN (30 NGÀY)"
-          value="38"
+          value={loading ? "..." : expiringSoonCustomers.toLocaleString("vi-VN")}
           subtitle="Cần liên hệ gia hạn ngay"
           icon={ShieldAlert}
         />
