@@ -49,9 +49,11 @@ export class DashboardService {
     };
 
     const collectionRateImmediate =
-      totalImmediate > 0 ? Number(((totalCollected / totalImmediate) * 100).toFixed(1)) : 98.0;
+      totalImmediate > 0 ? Number(((totalCollected / totalImmediate) * 100).toFixed(1)) : 0;
     const collectionRateCumulative =
-      totalCumulative > 0 ? Number(((totalCollected / (totalImmediate + totalCumulative)) * 100).toFixed(1)) : 78.0;
+      totalImmediate + totalCumulative > 0
+        ? Number(((totalCollected / (totalImmediate + totalCumulative)) * 100).toFixed(1))
+        : 0;
 
     const collectionRateCumulativeTarget = await getCumulativeCollectionTarget(month);
 
@@ -72,11 +74,11 @@ export class DashboardService {
     const renewalRateT =
       renewalT[0]?.total > 0
         ? Number(((renewalT[0].completed / renewalT[0].total) * 100).toFixed(1))
-        : 57.0;
+        : 0;
     const renewalRateT1 =
       renewalT1[0]?.total > 0
         ? Number(((renewalT1[0].completed / renewalT1[0].total) * 100).toFixed(1))
-        : 65.0;
+        : 0;
 
     // 3. Staff stats — doanh thu tính từ đơn hàng (Đợt 5), không còn đọc số cố định
     // revenue_executed. Xếp hạng theo doanh thu "đã chốt" của tháng đang xem.
@@ -102,8 +104,8 @@ export class DashboardService {
         totalCumulativeDebtRemaining: totalCumulative,
         renewalRateT,
         renewalRateT1,
-        renewalCompletedT: renewalT[0]?.completed || 684,
-        renewalTotalT: renewalT[0]?.total || 1200,
+        renewalCompletedT: Number(renewalT[0]?.completed ?? 0),
+        renewalTotalT: Number(renewalT[0]?.total ?? 0),
       },
       territorySummary: territoryRes[0],
       staffList,
