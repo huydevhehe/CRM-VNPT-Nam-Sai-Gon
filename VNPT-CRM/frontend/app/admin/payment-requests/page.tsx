@@ -278,6 +278,7 @@ export default function PaymentRequestsPage() {
             data={visibleExports}
             searchPlaceholder="Tìm theo số văn bản, mã giao dịch, khách hàng..."
             exportFileName="nhat_ky_de_nghi_thanh_toan"
+            pagination
           />
         )}
       </div>

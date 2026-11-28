@@ -810,6 +810,7 @@ export default function CustomersPage() {
           subtitle="Hỗ trợ lọc theo loại khách, team, địa bàn, kênh bán, AM phụ trách/chăm sóc"
           columns={columns}
           data={data}
+          pagination
           filters={[
             {
               id: "group",

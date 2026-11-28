@@ -257,6 +257,7 @@ export default function SettingsPage() {
           filters={logFilters}
           searchPlaceholder="Tìm theo người dùng, hành động..."
           exportFileName="vnpt_audit_log"
+          pagination
         />
       )}
     </div>

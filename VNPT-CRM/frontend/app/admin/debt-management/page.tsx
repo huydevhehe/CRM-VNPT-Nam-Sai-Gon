@@ -1,13 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Receipt, UploadCloud, CheckCircle2, AlertCircle, Plus, X } from "lucide-react";
+import { Receipt, UploadCloud, CheckCircle2, AlertCircle, Plus, X, Trash2 } from "lucide-react";
 import KpiCard from "@/components/admin/shared/KpiCard";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
 import StatusBadge from "@/components/admin/shared/StatusBadge";
 import RetentionWarningBanner from "@/components/admin/shared/RetentionWarningBanner";
 import { DebtRecord, StaffRecord } from "@/lib/crm/types/crm.types";
-import { createDebt, getDebts, importDebtsExcel } from "@/lib/api/debts.api";
+import {
+  createDebt,
+  deleteDebt,
+  deleteDebtsByMonth,
+  getDebts,
+  importDebtsExcel,
+} from "@/lib/api/debts.api";
 import { getStaff } from "@/lib/api/staff.api";
 import { useAuth } from "@/lib/auth/auth-context";
 import StaffKpiTable from "@/components/admin/kpi/StaffKpiTable";
@@ -42,6 +48,9 @@ export default function DebtManagementPage() {
   const [createForm, setCreateForm] = useState(EMPTY_FORM);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [monthToDelete, setMonthToDelete] = useState("");
+  const [deletingMonth, setDeletingMonth] = useState(false);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -129,6 +138,47 @@ export default function DebtManagementPage() {
     b.month.localeCompare(a.month)
   );
 
+  const availableMonths = Array.from(new Set(data.map((d) => d.month))).sort(
+    (a, b) => b.localeCompare(a)
+  );
+
+  async function handleDeleteRow(item: DebtRecord) {
+    if (!confirm(`Xóa bản ghi nợ của thuê bao ${item.subscriberCode} (${item.customerName})?`)) {
+      return;
+    }
+    setDeletingId(item.id);
+    try {
+      await deleteDebt(item.id);
+      setData((prev) => prev.filter((row) => row.id !== item.id));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Xóa bản ghi thất bại. Vui lòng thử lại.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function handleDeleteMonth() {
+    if (!monthToDelete) return;
+    if (
+      !confirm(
+        `Xóa TOÀN BỘ dữ liệu công nợ tháng ${monthToDelete}? Hành động này không thể hoàn tác.`
+      )
+    ) {
+      return;
+    }
+    setDeletingMonth(true);
+    try {
+      const removedCount = await deleteDebtsByMonth(monthToDelete);
+      alert(`Đã xóa ${removedCount} bản ghi tháng ${monthToDelete}.`);
+      setMonthToDelete("");
+      await loadDebts();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Xóa dữ liệu thất bại. Vui lòng thử lại.");
+    } finally {
+      setDeletingMonth(false);
+    }
+  }
+
   const columns: Column<DebtRecord>[] = [
     {
       header: "Mã thuê bao",
@@ -197,6 +247,23 @@ export default function DebtManagementPage() {
       accessorKey: "status",
       cell: (item) => <StatusBadge status={item.status} />,
     },
+    ...(isAdmin
+      ? [
+          {
+            header: "",
+            cell: (item: DebtRecord) => (
+              <button
+                onClick={() => handleDeleteRow(item)}
+                disabled={deletingId === item.id}
+                title="Xóa bản ghi"
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            ),
+          } as Column<DebtRecord>,
+        ]
+      : []),
   ];
 
   return (
@@ -212,7 +279,7 @@ export default function DebtManagementPage() {
           </p>
         </div>
         {isAdmin && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <input
               ref={fileInputRef}
               type="file"
@@ -226,6 +293,30 @@ export default function DebtManagementPage() {
                 e.target.value = "";
               }}
             />
+            {availableMonths.length > 0 && (
+              <div className="flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50/60 px-2 py-1">
+                <select
+                  value={monthToDelete}
+                  onChange={(e) => setMonthToDelete(e.target.value)}
+                  className="rounded-lg border border-rose-200 bg-white px-2 py-1 text-xs font-semibold text-rose-700 focus:outline-none"
+                >
+                  <option value="">-- Chọn tháng cần xóa --</option>
+                  {availableMonths.map((m) => (
+                    <option key={m} value={m}>
+                      Tháng {m}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleDeleteMonth}
+                  disabled={!monthToDelete || deletingMonth}
+                  className="flex h-7 items-center gap-1 rounded-lg bg-rose-600 px-2.5 text-[11px] font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {deletingMonth ? "Đang xóa..." : "Xóa cả tháng"}
+                </button>
+              </div>
+            )}
             <button
               onClick={() => setShowCreateModal(true)}
               className="flex h-9 items-center gap-1.5 rounded-xl border border-vnpt/30 bg-white px-3.5 text-xs font-bold text-vnpt shadow-xs hover:bg-blue-50"

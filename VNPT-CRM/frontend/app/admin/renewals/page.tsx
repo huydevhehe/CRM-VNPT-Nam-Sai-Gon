@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { RotateCw, UploadCloud, Clock, CheckCircle, AlertTriangle, Pencil, X } from "lucide-react";
+import { RotateCw, UploadCloud, Clock, CheckCircle, AlertTriangle, Pencil, X, Trash2 } from "lucide-react";
 import KpiCard from "@/components/admin/shared/KpiCard";
 import DataTable, { Column } from "@/components/admin/shared/DataTable";
 import RetentionWarningBanner from "@/components/admin/shared/RetentionWarningBanner";
@@ -10,6 +10,8 @@ import {
   RenewalStatus,
 } from "@/lib/crm/types/crm.types";
 import {
+  deleteRenewal,
+  deleteRenewalsByCohort,
   getRenewals,
   importRenewalsExcel,
   updateRenewalDates,
@@ -41,6 +43,9 @@ export default function RenewalsPage() {
   const [dateForm, setDateForm] = useState({ expiryDate: "", renewedAt: "" });
   const [dateError, setDateError] = useState<string | null>(null);
   const [savingDates, setSavingDates] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [cohortToDelete, setCohortToDelete] = useState("");
+  const [deletingCohort, setDeletingCohort] = useState(false);
 
   async function loadRenewals() {
     setLoading(true);
@@ -135,6 +140,45 @@ export default function RenewalsPage() {
     if (selectedCohort === "ALL") return true;
     return item.cohort === selectedCohort;
   });
+
+  const availableCohorts = Array.from(new Set(data.map((d) => d.cohort))).sort();
+
+  async function handleDeleteRow(item: RenewalRecord) {
+    if (!confirm(`Xóa bản ghi gia hạn ${item.transactionCode} (${item.customerName})?`)) {
+      return;
+    }
+    setDeletingId(item.id);
+    try {
+      await deleteRenewal(item.id);
+      setData((prev) => prev.filter((row) => row.id !== item.id));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Xóa bản ghi thất bại. Vui lòng thử lại.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function handleDeleteCohort() {
+    if (!cohortToDelete) return;
+    if (
+      !confirm(
+        `Xóa TOÀN BỘ dữ liệu gia hạn đợt "${cohortToDelete}"? Hành động này không thể hoàn tác.`
+      )
+    ) {
+      return;
+    }
+    setDeletingCohort(true);
+    try {
+      const removedCount = await deleteRenewalsByCohort(cohortToDelete);
+      alert(`Đã xóa ${removedCount} bản ghi đợt "${cohortToDelete}".`);
+      setCohortToDelete("");
+      await loadRenewals();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Xóa dữ liệu thất bại. Vui lòng thử lại.");
+    } finally {
+      setDeletingCohort(false);
+    }
+  }
 
   function monthLabel(item: RenewalRecord): string {
     const source = item.createdAt || item.expiryDate;
@@ -244,13 +288,23 @@ export default function RenewalsPage() {
           {
             header: "",
             cell: (item: RenewalRecord) => (
-              <button
-                onClick={() => openDateEdit(item)}
-                title="Sửa ngày hết hạn / gia hạn"
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-vnpt"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => openDateEdit(item)}
+                  title="Sửa ngày hết hạn / gia hạn"
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-vnpt"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => handleDeleteRow(item)}
+                  disabled={deletingId === item.id}
+                  title="Xóa bản ghi"
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
             ),
           } as Column<RenewalRecord>,
         ]
@@ -270,7 +324,7 @@ export default function RenewalsPage() {
           </p>
         </div>
         {isAdmin && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <input
               ref={fileInputRef}
               type="file"
@@ -284,6 +338,30 @@ export default function RenewalsPage() {
                 e.target.value = "";
               }}
             />
+            {availableCohorts.length > 0 && (
+              <div className="flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50/60 px-2 py-1">
+                <select
+                  value={cohortToDelete}
+                  onChange={(e) => setCohortToDelete(e.target.value)}
+                  className="rounded-lg border border-rose-200 bg-white px-2 py-1 text-xs font-semibold text-rose-700 focus:outline-none"
+                >
+                  <option value="">-- Chọn đợt cần xóa --</option>
+                  {availableCohorts.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleDeleteCohort}
+                  disabled={!cohortToDelete || deletingCohort}
+                  className="flex h-7 items-center gap-1 rounded-lg bg-rose-600 px-2.5 text-[11px] font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {deletingCohort ? "Đang xóa..." : "Xóa cả đợt"}
+                </button>
+              </div>
+            )}
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={importing}

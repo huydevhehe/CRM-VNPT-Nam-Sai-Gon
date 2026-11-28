@@ -342,6 +342,7 @@ export default function ServicesPage() {
           filters={serviceFilters}
           searchPlaceholder="Tìm theo tên dịch vụ, khách hàng, mã thuê bao..."
           exportFileName="vnpt_dich_vu_canh_bao"
+          pagination
         />
       )}
 

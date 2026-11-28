@@ -10,6 +10,7 @@ export interface ContractTemplateInfo {
   available: boolean;
   file: string;
   supportsItemsTable?: boolean;
+  dollarDelimiters?: boolean;
 }
 
 const TEMPLATE_DIR = path.resolve(process.cwd(), "templates/contracts");
@@ -33,6 +34,7 @@ export class ContractTemplateRegistryService {
       label: overrideMap.get(def.key) ?? def.label,
       file: def.file,
       supportsItemsTable: def.supportsItemsTable,
+      dollarDelimiters: def.dollarDelimiters,
       available: fs.existsSync(path.join(this.templateDir, def.file)),
     }));
   }

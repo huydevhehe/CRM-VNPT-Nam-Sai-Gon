@@ -15,10 +15,26 @@ export interface ContractTemplateBaseDef {
   file: string;
   /** Mẫu có bảng "Dịch vụ/Số lượng/Đơn giá/Thành tiền" lặp theo dòng (STT 10) hay không. */
   supportsItemsTable?: boolean;
+  /** true nếu file .docx viết biến dạng `${ten}` (có dấu $, theo đúng sheet biến
+   * ID khách đưa) thay vì `{Ten}` như 4 mẫu cũ — quyết định delimiter khi render. */
+  dollarDelimiters?: boolean;
 }
 
 export const CONTRACT_TEMPLATE_DEFS: readonly ContractTemplateBaseDef[] = [
-  { key: "fiber_mau_05", label: "Fiber (Mẫu 05)", file: "fiber-mau-05.docx", supportsItemsTable: false },
+  {
+    key: "fiber_mau_05",
+    label: "Fiber (Mẫu 05)",
+    file: "fiber-mau-05.docx",
+    supportsItemsTable: false,
+    dollarDelimiters: true,
+  },
+  {
+    key: "brcd_mau_06",
+    label: "Mẫu 06 (BRCĐ trả hàng tháng, ngắn hạn)",
+    file: "brcd-mau-06.docx",
+    supportsItemsTable: false,
+    dollarDelimiters: true,
+  },
   { key: "bhxh", label: "BHXH", file: "bhxh.docx", supportsItemsTable: false },
   { key: "cks_bhxh", label: "Chữ ký số + BHXH", file: "cks-bhxh.docx", supportsItemsTable: false },
   {

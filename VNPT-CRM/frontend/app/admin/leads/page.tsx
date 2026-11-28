@@ -687,6 +687,7 @@ export default function LeadsPage() {
           filters={leadFilters}
           searchPlaceholder="Tìm theo tên khách hàng, SĐT, kênh phát triển..."
           exportFileName="vnpt_leads"
+          pagination
         />
       )}
 

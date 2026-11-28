@@ -539,6 +539,7 @@ export default function CommissionsPage() {
             filters={filters}
             searchPlaceholder="Tìm theo người giới thiệu, khách hàng, mã giao dịch..."
             exportFileName="vnpt_hoa_hong"
+            pagination
           />
         )
       ) : summaryError ? (
@@ -561,6 +562,7 @@ export default function CommissionsPage() {
           data={summaryData}
           searchPlaceholder="Tìm theo tên người giới thiệu..."
           exportFileName="vnpt_hoa_hong_thong_ke_nguoi_gioi_thieu"
+          pagination
         />
       )}
 

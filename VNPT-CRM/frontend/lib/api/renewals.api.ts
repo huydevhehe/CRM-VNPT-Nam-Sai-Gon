@@ -151,3 +151,30 @@ export async function updateRenewalDates(
   });
   return mapRenewalRow(row);
 }
+
+/** Xóa 1 bản ghi gia hạn. Gọi `DELETE /api/renewals/:id` (Admin only). */
+export async function deleteRenewal(id: string): Promise<void> {
+  await apiFetchRaw<{ success: boolean; message?: string }>(
+    `/renewals/${id}`,
+    { method: "DELETE" }
+  );
+}
+
+/**
+ * Xóa toàn bộ dữ liệu gia hạn của 1 đợt (cohort) — upload nhầm, cần xóa
+ * sạch để nhập lại. Gọi `DELETE /api/renewals?cohort=...` (Admin only).
+ * Trả về số bản ghi đã xóa.
+ */
+export async function deleteRenewalsByCohort(cohort: string): Promise<number> {
+  const payload = await apiFetchRaw<{
+    success: boolean;
+    removedCount?: number;
+    message?: string;
+  }>(`/renewals?cohort=${encodeURIComponent(cohort)}`, {
+    method: "DELETE",
+  });
+  if (!payload || payload.success === false) {
+    throw new Error(payload?.message || "Xóa dữ liệu thất bại");
+  }
+  return payload.removedCount ?? 0;
+}

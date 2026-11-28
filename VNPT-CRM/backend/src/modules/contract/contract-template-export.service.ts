@@ -102,13 +102,17 @@ export class ContractTemplateExportService {
       name: string;
       identity_code: string | null;
       address: string | null;
+      phone: string | null;
+      contact_email: string | null;
+      customer_code: string | null;
       representative_name: string | null;
       representative_title: string | null;
       representative_id_number: string | null;
       representative_id_issued_at: string | null;
       representative_id_issued_place: string | null;
     }>(
-      `SELECT name, identity_code, address, representative_name, representative_title,
+      `SELECT name, identity_code, address, phone, contact_email, customer_code,
+        representative_name, representative_title,
         representative_id_number, representative_id_issued_at, representative_id_issued_place
        FROM customers WHERE id = ?`,
       [contract.customer_id]
@@ -178,6 +182,10 @@ export class ContractTemplateExportService {
             },
           ];
 
+    // 2 tên biến song song cho cùng 1 giá trị: tên cũ (SoHopDong, TenKhachHang...)
+    // giữ cho 4 mẫu .docx đang chạy ổn; tên theo đúng chuẩn khách đưa (maHopDong,
+    // tenDoanhNghiepA...) cho các mẫu mới (Mẫu 05, Mẫu 06...) — không đụng vào
+    // file .docx cũ, chỉ thêm key mới vào cùng object data.
     const data: Record<string, string | ItemRow[]> = {
       Ngay: ngay,
       Thang: thang,
@@ -196,12 +204,40 @@ export class ContractTemplateExportService {
       ThueVAT: money(vat),
       GiaTriHopDong: money(total),
       BangChu: numberToVietnameseWords(total),
+
+      ngayKy: ngay,
+      thangKy: thang,
+      namKy: nam,
+      maHopDong: soHopDong,
+      maGiaoDich: contract.transaction_code,
+      maKhachHang: customer.customer_code || taxCode,
+      tenDoanhNghiepA: customerName,
+      maSoThueA: taxCode,
+      diaChiA: address,
+      dienThoaiA: customer.phone || BLANK_MARK,
+      emailA: customer.contact_email || BLANK_MARK,
+      nguoiDaiDienA: nguoiDaiDien,
+      chucVuDaiDienA: chucVu,
+      soGiayToDaiDienA: cccd,
+      ngayGiayToDaiDienA: ngayCapCCCD,
+      noiCapGiayToDaiDienA: noiCapCCCD,
+      hoTenNhanVien: contract.am_staff || BLANK_MARK,
+      // Chưa có chỗ nhập trong CRM — để trống có đánh dấu, không tự bịa.
+      ngayCapMaSoThueA: BLANK_MARK,
+      noiCapMaSoThueA: BLANK_MARK,
+      soTaiKhoanA: BLANK_MARK,
+      diaChiTaiKhoanA: BLANK_MARK,
+      soGiayUyQuyenA: BLANK_MARK,
+      ngayGiayUyQuyenA: BLANK_MARK,
+      donViUyQuyenA: BLANK_MARK,
+      tongGiaTriHopDong: money(total),
+      tongGiaTriHopDongBangChu: numberToVietnameseWords(total),
     };
 
     return { tpl, data, missingFields };
   }
 
-  private renderDocxFile(filePath: string, data: Record<string, unknown>): Buffer {
+  private renderDocxFile(filePath: string, data: Record<string, unknown>, dollarDelimiters?: boolean): Buffer {
     if (!fs.existsSync(filePath)) {
       throw new ContractTemplateExportError(`Không tìm thấy file mẫu: ${filePath}`, 501);
     }
@@ -211,13 +247,14 @@ export class ContractTemplateExportService {
       paragraphLoop: true,
       linebreaks: true,
       nullGetter: () => BLANK_MARK,
+      ...(dollarDelimiters ? { delimiters: { start: "${", end: "}" } } : {}),
     });
     doc.render(data);
     return doc.getZip().generate({ type: "nodebuffer", compression: "DEFLATE" });
   }
 
   private render(tpl: ContractTemplateInfo, data: Record<string, unknown>): Buffer {
-    return this.renderDocxFile(path.join(this.templateDir, tpl.file as string), data);
+    return this.renderDocxFile(path.join(this.templateDir, tpl.file as string), data, tpl.dollarDelimiters);
   }
 
   /** Render hợp đồng chính và gộp thêm các phụ lục (nếu mẫu có khai báo trong
@@ -229,7 +266,7 @@ export class ContractTemplateExportService {
       return mainDocx;
     }
     const appendixDocxs = appendixFiles.map((fileName) =>
-      this.renderDocxFile(path.join(this.templateDir, "appendix", fileName), data)
+      this.renderDocxFile(path.join(this.templateDir, "appendix", fileName), data, tpl.dollarDelimiters)
     );
     return mergeDocxWithAltChunkAppendices(mainDocx, appendixDocxs);
   }

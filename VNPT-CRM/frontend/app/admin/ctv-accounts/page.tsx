@@ -329,6 +329,7 @@ export default function CtvAccountsPage() {
           data={visible}
           searchPlaceholder="Tìm theo tên, tên đăng nhập, số điện thoại..."
           exportFileName="vnpt_ctv_accounts"
+          pagination
         />
       )}
 

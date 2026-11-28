@@ -5,6 +5,15 @@ export interface SendZaloMessageResult {
   reason?: string;
 }
 
+/** API gửi tin nhắn theo mẫu (ZNS) của Zalo OA — xem https://zns.zalo.me (Zalo Notification Service). */
+const ZNS_SEND_URL = "https://business.openapi.zalo.me/message/template";
+
+interface ZnsResponseBody {
+  error?: number;
+  message?: string;
+  data?: unknown;
+}
+
 export const ZaloService = {
   async sendZaloMessage(
     phone: string,
@@ -19,8 +28,31 @@ export const ZaloService = {
       return { sent: false, reason: "not_configured" };
     }
 
-    // Chưa có tài khoản/token Zalo OA thật để kiểm thử — không gọi network thật ở đây.
-    console.warn("[Zalo] Đã có ZALO_OA_TOKEN nhưng chưa triển khai gọi API Zalo OA thật.");
-    return { sent: false, reason: "not_implemented" };
+    try {
+      const res = await fetch(ZNS_SEND_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          access_token: zalo.oaToken,
+        },
+        body: JSON.stringify({
+          phone,
+          template_id: templateId,
+          template_data: params,
+        }),
+      });
+      const body: ZnsResponseBody | null = await res.json().catch(() => null);
+      // Zalo ZNS trả error = 0 khi thành công, khác 0 kèm message khi lỗi (token hết hạn, sai template...).
+      if (!res.ok || body?.error !== 0) {
+        const reason = body?.message ? String(body.message) : `http_${res.status}`;
+        console.warn(`[Zalo] Gửi ZNS thất bại tới ${phone} (template=${templateId}): ${reason}`);
+        return { sent: false, reason };
+      }
+      return { sent: true };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "network_error";
+      console.warn(`[Zalo] Lỗi gọi API Zalo OA tới ${phone}: ${reason}`);
+      return { sent: false, reason };
+    }
   },
 };

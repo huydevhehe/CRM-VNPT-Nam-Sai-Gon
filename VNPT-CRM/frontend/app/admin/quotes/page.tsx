@@ -210,6 +210,7 @@ export default function QuotesPage() {
             data={exportsList}
             searchPlaceholder="Tìm theo số báo giá, khách hàng..."
             exportFileName="lich_su_bao_gia"
+            pagination
           />
         )}
       </div>

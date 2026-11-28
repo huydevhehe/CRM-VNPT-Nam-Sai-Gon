@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState, useRef, ChangeEvent } from "react";
-import { Download, Trash2, UploadCloud, FileText } from "lucide-react";
+import { Download, Trash2, UploadCloud, FileText, Eye, X } from "lucide-react";
 import {
   CustomerDocumentRecord,
   getCustomerDocuments,
   uploadCustomerDocument,
   deleteCustomerDocument,
   downloadCustomerDocument,
+  fetchCustomerDocumentPreviewPdf,
 } from "@/lib/api/customers.api";
 import { DocumentType } from "@/lib/crm/types/crm.types";
 import { DOCUMENT_TYPES, DOCUMENT_TYPE_LABEL } from "@/lib/crm/constants/org.constants";
@@ -30,6 +31,10 @@ export default function CustomerDocuments({ customerId, canDelete }: CustomerDoc
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploadingType, setUploadingType] = useState<DocumentType | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<CustomerDocumentRecord | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const fileInputs = useRef<Record<DocumentType, HTMLInputElement | null>>({
     GPKD: null,
     CCCD: null,
@@ -99,6 +104,28 @@ export default function CustomerDocuments({ customerId, canDelete }: CustomerDoc
     }
   }
 
+  async function handlePreview(doc: CustomerDocumentRecord) {
+    setPreviewDoc(doc);
+    setPreviewUrl(null);
+    setPreviewError(null);
+    setPreviewLoading(true);
+    try {
+      const blob = await fetchCustomerDocumentPreviewPdf(doc.id);
+      setPreviewUrl(URL.createObjectURL(blob));
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : "Không xem trước được file này");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  function closePreview() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewDoc(null);
+    setPreviewUrl(null);
+    setPreviewError(null);
+  }
+
   if (loading) {
     return <p className="text-xs text-slate-400">Đang tải danh sách giấy tờ...</p>;
   }
@@ -160,6 +187,14 @@ export default function CustomerDocuments({ customerId, canDelete }: CustomerDoc
                     <div className="flex items-center gap-1 shrink-0">
                       <button
                         type="button"
+                        onClick={() => handlePreview(doc)}
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-vnpt"
+                        title="Xem trước"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleDownload(doc)}
                         className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-vnpt"
                         title="Tải về"
@@ -184,6 +219,36 @@ export default function CustomerDocuments({ customerId, canDelete }: CustomerDoc
           </div>
         );
       })}
+
+      {previewDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 py-6">
+          <div className="flex h-full w-full max-w-3xl flex-col rounded-2xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <h3 className="truncate text-sm font-bold text-slate-900">{previewDoc.originalName}</h3>
+              <button
+                type="button"
+                onClick={closePreview}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden rounded-b-2xl bg-slate-50">
+              {previewLoading ? (
+                <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                  Đang tải bản xem trước...
+                </div>
+              ) : previewError ? (
+                <div className="flex h-full items-center justify-center px-6 text-center text-sm font-medium text-rose-600">
+                  {previewError}
+                </div>
+              ) : previewUrl ? (
+                <iframe src={previewUrl} title={previewDoc.originalName} className="h-full w-full" />
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
