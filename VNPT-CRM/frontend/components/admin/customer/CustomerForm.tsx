@@ -38,6 +38,7 @@ export interface CustomerFormValues {
   phone: string; // SĐT liên hệ
   contactName: string;
   contactEmail: string;
+  contactTitle: string;
   billingName: string;
   billingPhone: string;
   billingEmail: string;
@@ -67,6 +68,7 @@ export const EMPTY_CUSTOMER_FORM: CustomerFormValues = {
   phone: "",
   contactName: "",
   contactEmail: "",
+  contactTitle: "",
   billingName: "",
   billingPhone: "",
   billingEmail: "",
@@ -97,6 +99,7 @@ export function customerToFormValues(customer: CustomerRecord): CustomerFormValu
     phone: customer.phone || "",
     contactName: customer.contactName || "",
     contactEmail: customer.contactEmail || "",
+    contactTitle: customer.contactTitle || "",
     billingName: customer.billingName || "",
     billingPhone: customer.billingPhone || "",
     billingEmail: customer.billingEmail || "",
@@ -484,7 +487,7 @@ export default function CustomerForm({
             <h4 className="text-xs font-bold uppercase tracking-wide text-slate-400">
               Thông tin liên hệ
             </h4>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-4 gap-3">
               <div>
                 <label htmlFor="cf-contact-name" className={labelClass}>
                   Họ tên
@@ -493,6 +496,17 @@ export default function CustomerForm({
                   id="cf-contact-name"
                   value={values.contactName}
                   onChange={(e) => set("contactName", e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label htmlFor="cf-contact-title" className={labelClass}>
+                  Chức vụ
+                </label>
+                <input
+                  id="cf-contact-title"
+                  value={values.contactTitle}
+                  onChange={(e) => set("contactTitle", e.target.value)}
                   className={inputClass}
                 />
               </div>

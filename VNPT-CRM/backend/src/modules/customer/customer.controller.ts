@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from "express";
 import fs from "fs";
+import path from "path";
 import multer from "multer";
 import * as XLSX from "xlsx";
 import { requireAuth } from "../../middleware/require-auth.js";
@@ -9,6 +10,7 @@ import { CustomerDocumentService, CustomerDocumentServiceError } from "./custome
 import { ServiceService } from "../service/service.service.js";
 import { CustomerImportService, CustomerImportServiceError } from "./customer-import/customer-import.service.js";
 import { fixMulterFileEncoding } from "../../utils/fix-upload-filename.js";
+import { asciiSafeFilename } from "../../utils/http-filename.js";
 import {
   QuoteService,
   QuoteBlockedError,
@@ -282,7 +284,7 @@ async function sendQuoteFile(
   disposition: "attachment" | "inline" = "attachment"
 ): Promise<void> {
   const docx = quoteService.render(data);
-  const baseName = `Bao-gia_${data.soBaoGia}`;
+  const baseName = asciiSafeFilename(`Bao-gia_${data.soBaoGia}`);
   if (format === "pdf") {
     const pdf = await convertDocxToPdf(docx);
     res.setHeader("Content-Type", "application/pdf");
@@ -317,6 +319,20 @@ customerRouter.post("/:id/quote/preview", requireAuth, async (req: Request, res:
     const docNumber = req.query.docNumber ? String(req.query.docNumber) : undefined;
     const preview = await quoteService.buildPreview(id, readQuoteInput(req.body), docNumber);
     res.json({ success: true, data: { ...preview, pdfAvailable: isPdfConversionAvailable() } });
+  } catch (error: any) {
+    sendQuoteError(res, error);
+  }
+});
+
+// POST /api/customers/:id/quote/preview-file?docNumber= — xem trước bản in (PDF), không cấp số.
+customerRouter.post("/:id/quote/preview-file", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const docNumber = req.query.docNumber ? String(req.query.docNumber) : undefined;
+    const suggested = await quoteService.suggestNextDocNumber(new Date().getFullYear());
+    const shown = docNumber?.trim() || suggested || "…";
+    const data = await quoteService.buildData(id, shown, readQuoteInput(req.body));
+    await sendQuoteFile(res, data, "pdf", "inline");
   } catch (error: any) {
     sendQuoteError(res, error);
   }
@@ -431,6 +447,50 @@ customerRouter.get(
         `attachment; filename*=UTF-8''${encodeURIComponent(file.originalName)}`
       );
       res.sendFile(file.path);
+    } catch (error: any) {
+      sendDocError(res, error);
+    }
+  }
+);
+
+// GET /api/customers/documents/:docId/view — xem trước giấy tờ dạng PDF
+// ngay trên trình duyệt (không ép tải xuống). File .pdf gốc trả thẳng; file
+// .doc/.docx được đổi sang PDF qua LibreOffice (dùng lại convertDocxToPdf
+// của module hợp đồng). Yêu cầu đăng nhập, mọi nhân viên đều xem được.
+customerRouter.get(
+  "/documents/:docId/view",
+  requireAuth,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const file = await customerDocumentService.getFile(req.params.docId);
+      if (!fs.existsSync(file.path)) {
+        res.status(404).json({ success: false, message: "Không tìm thấy file trên server" });
+        return;
+      }
+
+      const ext = path.extname(file.path).toLowerCase();
+      let pdfBuffer: Buffer;
+      if (ext === ".pdf") {
+        pdfBuffer = fs.readFileSync(file.path);
+      } else {
+        try {
+          pdfBuffer = await convertDocxToPdf(fs.readFileSync(file.path));
+        } catch (error: any) {
+          if (error instanceof PdfConverterUnavailableError) {
+            res.status(503).json({ success: false, message: PDF_UNAVAILABLE_MESSAGE });
+            return;
+          }
+          throw error;
+        }
+      }
+
+      const previewName = `${path.parse(file.originalName).name}.pdf`;
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename*=UTF-8''${encodeURIComponent(previewName)}`
+      );
+      res.send(pdfBuffer);
     } catch (error: any) {
       sendDocError(res, error);
     }

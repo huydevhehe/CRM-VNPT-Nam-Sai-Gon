@@ -129,6 +129,9 @@ export default function CustomersPage() {
     queueMicrotask(() => {
       setCreatePrefill({
         name: prefillName,
+        // "Thông tin liên hệ > Họ tên" đọc contactName (không phải name), nên
+        // phải đổ cả 2 field thì mục Thông tin liên hệ mới thực sự hiện tên.
+        contactName: prefillName,
         phone: params.get("prefillPhone") || "",
         contactEmail: params.get("prefillEmail") || "",
       });
@@ -308,6 +311,7 @@ export default function CustomersPage() {
         note: values.note || undefined,
         contactName: values.contactName || undefined,
         contactEmail: values.contactEmail || undefined,
+        contactTitle: values.contactTitle || undefined,
         billingName: values.billingName || undefined,
         billingPhone: values.billingPhone || undefined,
         billingEmail: values.billingEmail || undefined,
@@ -356,6 +360,7 @@ export default function CustomersPage() {
         note: values.note || undefined,
         contactName: values.contactName || undefined,
         contactEmail: values.contactEmail || undefined,
+        contactTitle: values.contactTitle || undefined,
         billingName: values.billingName || undefined,
         billingPhone: values.billingPhone || undefined,
         billingEmail: values.billingEmail || undefined,
@@ -810,6 +815,7 @@ export default function CustomersPage() {
           subtitle="Hỗ trợ lọc theo loại khách, team, địa bàn, kênh bán, AM phụ trách/chăm sóc"
           columns={columns}
           data={data}
+          pagination
           filters={[
             {
               id: "group",

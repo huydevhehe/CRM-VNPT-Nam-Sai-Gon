@@ -401,6 +401,7 @@ export default function TerritoryDetailPage({
             filters={contactFilters}
             searchPlaceholder="Tìm theo đơn vị, phòng ban, họ tên, chức..."
             exportFileName={`vnpt_dau_moi_${detail.territory.wardName}`}
+            pagination
             actionButton={
               canEdit ? (
                 <button

@@ -128,3 +128,29 @@ export async function importDebtsExcel(
 
   return payload as ImportDebtsResult;
 }
+
+/** Xóa 1 bản ghi nợ lẻ. Gọi `DELETE /api/debts/:id` (Admin only). */
+export async function deleteDebt(id: string): Promise<void> {
+  await apiFetchRaw<{ success: boolean; message?: string }>(`/debts/${id}`, {
+    method: "DELETE",
+  });
+}
+
+/**
+ * Xóa toàn bộ dữ liệu nợ của 1 tháng (upload nhầm, cần xóa sạch để nhập
+ * lại). Gọi `DELETE /api/debts?month=YYYY-MM` (Admin only). Trả về số bản
+ * ghi đã xóa.
+ */
+export async function deleteDebtsByMonth(month: string): Promise<number> {
+  const payload = await apiFetchRaw<{
+    success: boolean;
+    removedCount?: number;
+    message?: string;
+  }>(`/debts?month=${encodeURIComponent(month)}`, {
+    method: "DELETE",
+  });
+  if (!payload || payload.success === false) {
+    throw new Error(payload?.message || "Xóa dữ liệu thất bại");
+  }
+  return payload.removedCount ?? 0;
+}

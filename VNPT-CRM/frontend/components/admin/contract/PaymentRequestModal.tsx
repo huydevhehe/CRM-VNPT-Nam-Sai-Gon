@@ -99,6 +99,29 @@ export default function PaymentRequestModal({
     };
   }, [pdfPreviewUrl]);
 
+  // Mặc định hiện luôn bản in (PDF) thay vì bắt bấm thêm nút — theo đúng yêu cầu
+  // khách: "Xem trước là yêu cầu dạng bản in". Tự chạy lại mỗi khi preview đổi
+  // (lần đầu tải xong, hoặc sau khi sửa số văn bản/số EO).
+  useEffect(() => {
+    if (!preview || !preview.pdfAvailable || pdfPreviewUrl || pdfPreviewLoading) return;
+    let cancelled = false;
+    setPdfPreviewLoading(true);
+    fetchPaymentRequestPreviewPdf(order.id, numberEdited ? docNumber : undefined)
+      .then((blob) => {
+        if (!cancelled) setPdfPreviewUrl(window.URL.createObjectURL(blob));
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Không thể tạo bản xem trước PDF.");
+      })
+      .finally(() => {
+        if (!cancelled) setPdfPreviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview]);
+
   const refreshPreview = useCallback(
     (nextNumber: string, nextEoNumber: string) => {
       if (refreshTimer.current) clearTimeout(refreshTimer.current);

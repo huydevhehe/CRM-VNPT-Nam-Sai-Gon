@@ -13,6 +13,16 @@ import {
   type CustomList,
 } from "@/lib/api/custom-lists.api";
 
+/**
+ * Chỉ danh mục đúng tên này mới thực sự được nơi khác trong hệ thống đọc dữ
+ * liệu (QuoteModal.tsx dùng làm "chọn nhanh gói dịch vụ"). Mọi danh mục khác
+ * Admin tự đặt tên chỉ là CRUD trần trụi, KHÔNG tự áp dụng ở đâu — cần báo
+ * dev code thêm chỗ đọc nếu muốn dùng (feedback khách: "chỉnh sửa thêm xóa
+ * không thấy có tác dụng và ứng dụng ở mục nào").
+ */
+const WIRED_LIST_NAME = "Gói dịch vụ Internet/Fiber";
+const WIRED_LIST_USAGE = "Báo giá";
+
 export default function CustomListsPage() {
   const [lists, setLists] = useState<CustomList[]>([]);
   const [loading, setLoading] = useState(true);
@@ -156,12 +166,16 @@ export default function CustomListsPage() {
         <h1 className="text-lg font-bold text-slate-900">Danh mục tùy biến</h1>
         <p className="mt-1 text-sm text-slate-500">
           Nơi Admin tự thêm/sửa các danh sách lựa chọn dùng ở nơi khác trong hệ thống — không cần
-          dev sửa code. Ví dụ đang dùng: danh mục{" "}
-          <span className="font-semibold text-slate-700">&quot;Gói dịch vụ Internet/Fiber&quot;</span>{" "}
-          bên dưới có kèm giá — khi nhân viên lập{" "}
-          <span className="font-semibold text-slate-700">Báo giá</span>, chọn nhanh 1 gói trong danh
-          mục này sẽ tự điền tên gói và đơn giá. Thêm gói mới hoặc sửa giá ở đây là áp dụng ngay cho
-          Báo giá, không cần chờ dev.
+          dev sửa code. Hiện tại chỉ đúng 1 danh mục{" "}
+          <span className="font-semibold text-slate-700">&quot;{WIRED_LIST_NAME}&quot;</span>{" "}
+          là đang thực sự được dùng: khi nhân viên lập{" "}
+          <span className="font-semibold text-slate-700">{WIRED_LIST_USAGE}</span>, chọn nhanh 1 gói
+          trong danh mục này sẽ tự điền tên gói và đơn giá. Thêm gói mới hoặc sửa giá ở đây là áp
+          dụng ngay, không cần chờ dev.
+        </p>
+        <p className="mt-1 text-xs text-amber-700">
+          Lưu ý: nếu tự tạo thêm 1 danh mục khác với tên khác, danh mục đó <strong>chưa</strong> tự
+          hiện ra ở đâu cả — cần báo dev code thêm chỗ đọc (giống xem badge bên dưới mỗi danh mục).
         </p>
       </div>
 
@@ -211,7 +225,18 @@ export default function CustomListsPage() {
                         onClick={() => setSelectedId(l.id)}
                         className="flex-1 text-left"
                       >
-                        {l.name} <span className="text-xs text-slate-400">({l.items.length})</span>
+                        <div>
+                          {l.name} <span className="text-xs text-slate-400">({l.items.length})</span>
+                        </div>
+                        {l.name === WIRED_LIST_NAME ? (
+                          <span className="mt-0.5 inline-block rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                            Đang dùng tại: {WIRED_LIST_USAGE}
+                          </span>
+                        ) : (
+                          <span className="mt-0.5 inline-block rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
+                            Chưa áp dụng ở đâu
+                          </span>
+                        )}
                       </button>
                       <div className="flex items-center gap-0.5">
                         <button

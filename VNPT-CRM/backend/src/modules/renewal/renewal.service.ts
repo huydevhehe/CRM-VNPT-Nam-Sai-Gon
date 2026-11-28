@@ -166,6 +166,40 @@ export class RenewalService {
     };
   }
 
+  /** Xóa 1 bản ghi gia hạn — dùng khi nhập nhầm. */
+  async remove(id: string, operator: string = "Admin"): Promise<void> {
+    const existing = await this.getById(id);
+    if (!existing) {
+      throw new HttpError(404, "Không tìm thấy giao dịch gia hạn");
+    }
+    await run("DELETE FROM renewals WHERE id = ?", [id]);
+    await run(
+      'INSERT INTO audit_logs (id, "user", action, details) VALUES (?, ?, ?, ?)',
+      [
+        `LOG-${Date.now()}`,
+        operator,
+        "Xóa gia hạn",
+        `Xóa bản ghi gia hạn thuê bao ${existing.subscriber_code} (${existing.customer_name}), mã GD ${existing.transaction_code}`,
+      ]
+    );
+  }
+
+  /** Xóa toàn bộ dữ liệu gia hạn của 1 đợt (cohort) — dùng khi upload nhầm file, cần xóa sạch để upload lại. */
+  async removeByCohort(cohort: string, operator: string = "Admin"): Promise<number> {
+    const rows = await query<{ id: string }>("SELECT id FROM renewals WHERE cohort = ?", [cohort]);
+    await run("DELETE FROM renewals WHERE cohort = ?", [cohort]);
+    await run(
+      'INSERT INTO audit_logs (id, "user", action, details) VALUES (?, ?, ?, ?)',
+      [
+        `LOG-${Date.now()}`,
+        operator,
+        "Xóa cả đợt gia hạn",
+        `Xóa ${rows.length} bản ghi gia hạn đợt "${cohort}" để nhập lại từ Excel`,
+      ]
+    );
+    return rows.length;
+  }
+
   async updateStatus(id: string, status: string, failureReason?: string, operator: string = "Admin") {
     const existing = await query<RenewalRow>("SELECT * FROM renewals WHERE id = ?", [id]);
     if (!existing.length) {

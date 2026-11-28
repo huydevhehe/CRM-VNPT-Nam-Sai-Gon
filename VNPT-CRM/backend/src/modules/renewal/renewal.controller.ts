@@ -85,6 +85,35 @@ renewalRouter.post("/import", requireAuth, requireAdmin, handleUpload, async (re
   }
 });
 
+// DELETE /api/renewals?cohort=... — xóa cả đợt (upload nhầm, cần xóa sạch để nhập lại). Chỉ Admin.
+renewalRouter.delete("/", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const cohort = req.query.cohort as string;
+    if (!cohort) {
+      res.status(400).json({ success: false, message: "Thiếu tham số đợt (cohort)" });
+      return;
+    }
+    const operator = req.user?.name ?? req.user?.id ?? "Admin";
+    const removedCount = await renewalService.removeByCohort(cohort, operator);
+    res.json({ success: true, removedCount });
+  } catch (error: any) {
+    const statusCode = error instanceof HttpError ? error.status : 400;
+    res.status(statusCode).json({ success: false, message: error.message });
+  }
+});
+
+// DELETE /api/renewals/:id — xóa 1 bản ghi gia hạn. Chỉ Admin.
+renewalRouter.delete("/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const operator = req.user?.name ?? req.user?.id ?? "Admin";
+    await renewalService.remove(req.params.id, operator);
+    res.json({ success: true });
+  } catch (error: any) {
+    const statusCode = error instanceof HttpError ? error.status : 400;
+    res.status(statusCode).json({ success: false, message: error.message });
+  }
+});
+
 // PATCH /api/renewals/:id/status
 renewalRouter.patch("/:id/status", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {

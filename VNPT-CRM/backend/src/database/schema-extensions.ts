@@ -45,6 +45,8 @@ export async function applySchemaExtensions(): Promise<void> {
   await ensureColumn("customers", "sales_channel", "TEXT");
   await ensureColumn("customers", "contact_name", "TEXT");
   await ensureColumn("customers", "contact_email", "TEXT");
+  // Chức vụ người liên hệ (vd "Kế toán trưởng") — chỉ để ghi chú thêm, không bắt buộc.
+  await ensureColumn("customers", "contact_title", "TEXT");
   await ensureColumn("customers", "billing_name", "TEXT");
   await ensureColumn("customers", "billing_phone", "TEXT");
   await ensureColumn("customers", "billing_email", "TEXT");
@@ -619,6 +621,23 @@ export async function backfillRelations(): Promise<void> {
   // T8 (STT 10): tách mỗi đơn cũ (chưa có contract_items) thành các dòng
   // contract_items theo subscriber_codes hiện có, đánh dấu legacy = TRUE.
   await runMigrationOnce("contract_items_from_legacy_v1", backfillContractItemsFromLegacy);
+
+  // Dữ liệu nợ cước cũ bị nhập/import với nhiều định dạng tháng khác nhau
+  // (vd "11/2026" thay vì "2026-11") khiến bảng công nợ bị tách nhóm theo
+  // tháng sai. Chuẩn hóa về đúng YYYY-MM 1 lần duy nhất; import mới đã được
+  // chặn validate ở DebtService.importExcel().
+  await runMigrationOnce("debts_month_format_normalize_v1", async () => {
+    const rows = await query<{ id: string; month: string }>(
+      "SELECT id, month FROM debts WHERE month !~ '^\\d{4}-\\d{2}$'"
+    );
+    for (const row of rows) {
+      const slashMatch = /^(\d{1,2})\/(\d{4})$/.exec((row.month || "").trim());
+      if (slashMatch) {
+        const normalized = `${slashMatch[2]}-${slashMatch[1].padStart(2, "0")}`;
+        await run("UPDATE debts SET month = ? WHERE id = ?", [normalized, row.id]);
+      }
+    }
+  });
 }
 
 /**

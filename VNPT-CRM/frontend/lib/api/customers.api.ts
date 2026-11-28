@@ -33,6 +33,7 @@ interface CustomerApiRow {
   sales_channel?: string | null;
   contact_name?: string | null;
   contact_email?: string | null;
+  contact_title?: string | null;
   billing_name?: string | null;
   billing_phone?: string | null;
   billing_email?: string | null;
@@ -78,6 +79,7 @@ function mapCustomerRow(row: CustomerApiRow): CustomerRecord {
     salesChannel: row.sales_channel || undefined,
     contactName: row.contact_name || undefined,
     contactEmail: row.contact_email || undefined,
+    contactTitle: row.contact_title || undefined,
     billingName: row.billing_name || undefined,
     billingPhone: row.billing_phone || undefined,
     billingEmail: row.billing_email || undefined,
@@ -126,6 +128,7 @@ export interface CreateCustomerInput {
   salesChannel?: string;
   contactName?: string;
   contactEmail?: string;
+  contactTitle?: string;
   billingName?: string;
   billingPhone?: string;
   billingEmail?: string;
@@ -376,6 +379,30 @@ export async function downloadCustomerDocument(
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Lấy nội dung PDF để xem trước ngay trên trang (không tải xuống). File
+ * .pdf gốc trả thẳng; .doc/.docx được server đổi sang PDF qua LibreOffice.
+ * Cần header Authorization nên fetch thủ công thay vì `<iframe src>` trực
+ * tiếp — nơi gọi tự tạo Blob URL để gán vào `<iframe>`.
+ */
+export async function fetchCustomerDocumentPreviewPdf(documentId: string): Promise<Blob> {
+  const token = getToken();
+  let res: Response;
+  try {
+    res = await fetch(
+      `${API_BASE_URL}/customers/documents/${encodeURIComponent(documentId)}/view`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
+    );
+  } catch {
+    throw new Error("Không kết nối được máy chủ. Vui lòng thử lại.");
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.message || `Lỗi tải file xem trước (${res.status})`);
+  }
+  return res.blob();
+}
+
 export interface QuoteInput {
   serviceType: string;
   packageName: string;
@@ -428,6 +455,37 @@ export function getQuotePreview(
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+/** Xem trước bản in (PDF) báo giá, KHÔNG cấp số. */
+export async function fetchQuotePreviewPdf(
+  customerId: string,
+  input: QuoteInput,
+  docNumber?: string
+): Promise<Blob> {
+  const query = docNumber?.trim() ? `?docNumber=${encodeURIComponent(docNumber.trim())}` : "";
+  const token = getToken();
+  let res: Response;
+  try {
+    res = await fetch(
+      `${API_BASE_URL}/customers/${encodeURIComponent(customerId)}/quote/preview-file${query}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(input),
+      }
+    );
+  } catch {
+    throw new Error("Không kết nối được máy chủ. Vui lòng thử lại.");
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.message || `Lỗi tải file (${res.status})`);
+  }
+  return res.blob();
 }
 
 /** Xác nhận lấy số báo giá (điểm duy nhất tiêu số). */

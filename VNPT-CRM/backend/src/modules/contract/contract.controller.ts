@@ -30,6 +30,7 @@ import {
   PDF_UNAVAILABLE_MESSAGE,
 } from "./docx-to-pdf.js";
 import { ContractImportService, ContractImportServiceError } from "./contract-import/contract-import.service.js";
+import { asciiSafeFilename } from "../../utils/http-filename.js";
 
 function contractErrorStatus(error: unknown, notFound = "Không tìm thấy Hợp đồng"): number {
   if (error instanceof ContractForbiddenError) return 403;
@@ -489,7 +490,7 @@ async function sendPaymentRequestFile(
   disposition: "attachment" | "inline" = "attachment"
 ): Promise<void> {
   const docx = paymentRequestService.render(data);
-  const baseName = `De-nghi-thanh-toan_${data.MaGD}`;
+  const baseName = asciiSafeFilename(`De-nghi-thanh-toan_${data.MaGD}`);
   if (format === "pdf") {
     const pdf = await convertDocxToPdf(docx);
     res.setHeader("Content-Type", "application/pdf");

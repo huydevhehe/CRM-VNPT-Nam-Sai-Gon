@@ -140,6 +140,11 @@ export class DebtService {
   }
 
   async importExcel(fileBuffer: Buffer, month: string, operator: string = "Admin") {
+    // Cùng 1 quy tắc định dạng tháng với createSingle (YYYY-MM) — tránh lưu
+    // 2 định dạng khác nhau cho cùng 1 tháng khiến bảng nhóm theo tháng bị tách đôi.
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      throw new HttpError(400, "Tháng phải theo định dạng YYYY-MM");
+    }
     const workbook = XLSX.read(fileBuffer, { type: "buffer" });
     
     // Prioritize sheet named 'THU NGAY , LŨY KẾ' or use the first sheet
@@ -214,6 +219,43 @@ export class DebtService {
       skippedCount,
       errors,
     };
+  }
+
+  /** Xóa 1 bản ghi nợ lẻ — dùng khi nhập tay sai hoặc 1 dòng Excel bị lỗi. */
+  async remove(id: string, operator: string = "Admin"): Promise<void> {
+    const existing = await this.getById(id);
+    if (!existing) {
+      throw new HttpError(404, "Không tìm thấy bản ghi công nợ");
+    }
+    await run("DELETE FROM debts WHERE id = ?", [id]);
+    await run(
+      'INSERT INTO audit_logs (id, "user", action, details) VALUES (?, ?, ?, ?)',
+      [
+        `LOG-${Date.now()}`,
+        operator,
+        "Xóa nợ",
+        `Xóa bản ghi nợ thuê bao ${existing.subscriber_code} (${existing.customer_name}) tháng ${existing.month}`,
+      ]
+    );
+  }
+
+  /** Xóa toàn bộ dữ liệu nợ của 1 tháng — dùng khi upload nhầm file, cần xóa sạch để upload lại. */
+  async removeByMonth(month: string, operator: string = "Admin"): Promise<number> {
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      throw new HttpError(400, "Tháng phải theo định dạng YYYY-MM");
+    }
+    const rows = await query<{ id: string }>("SELECT id FROM debts WHERE month = ?", [month]);
+    await run("DELETE FROM debts WHERE month = ?", [month]);
+    await run(
+      'INSERT INTO audit_logs (id, "user", action, details) VALUES (?, ?, ?, ?)',
+      [
+        `LOG-${Date.now()}`,
+        operator,
+        "Xóa cả tháng công nợ",
+        `Xóa ${rows.length} bản ghi nợ tháng ${month} để nhập lại từ Excel`,
+      ]
+    );
+    return rows.length;
   }
 
   async gachNo(id: string, amount: number, documentRef?: string, operator: string = "Admin") {

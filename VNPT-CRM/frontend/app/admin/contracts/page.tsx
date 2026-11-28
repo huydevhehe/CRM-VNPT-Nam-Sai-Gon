@@ -954,7 +954,7 @@ export default function ContractsPage() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-xl font-bold tracking-tight text-slate-900">
-            Quản lý hợp đồng
+            Quản lý đơn hàng
           </h2>
           <p className="text-xs text-slate-500">
             Quản lý theo mã giao dịch nguồn, AM phát triển, nhóm dịch vụ và tình trạng thanh toán
@@ -1167,6 +1167,7 @@ export default function ContractsPage() {
           resizableColumns
           searchPlaceholder="Tìm theo mã giao dịch, khách hàng, AM, mã thuê bao..."
           exportFileName="vnpt_don_hang"
+          pagination
         />
       )}
 

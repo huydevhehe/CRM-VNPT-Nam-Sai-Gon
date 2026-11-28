@@ -87,6 +87,7 @@ test.describe("Dashboard CTV chạy dữ liệu thật", () => {
         totalValue: CONTRACT_VALUE,
         channel: "CTV giới thiệu",
         leadId: first.id,
+        contractTemplate: "hoa_don_dien_tu",
       },
     });
     expect(created.status()).toBe(201);

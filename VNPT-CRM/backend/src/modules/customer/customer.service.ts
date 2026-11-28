@@ -187,6 +187,7 @@ export class CustomerService {
       salesChannel?: string;
       contactName?: string;
       contactEmail?: string;
+      contactTitle?: string;
       billingName?: string;
       billingPhone?: string;
       billingEmail?: string;
@@ -261,10 +262,10 @@ export class CustomerService {
       `INSERT INTO customers (
         id, name, identity_code, type, customer_group, phone, address, services, am_staff, am_caring_staff,
         handover_batch, handover_date, territory_id, customer_code, status, team_id, sales_channel,
-        contact_name, contact_email, billing_name, billing_phone, billing_email, note, referred_by_ctv_id,
+        contact_name, contact_email, contact_title, billing_name, billing_phone, billing_email, note, referred_by_ctv_id,
         channel_source_id, representative_name, representative_title, representative_id_number,
         representative_id_issued_at, representative_id_issued_place
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         data.name,
@@ -285,6 +286,7 @@ export class CustomerService {
         data.salesChannel || null,
         data.contactName || null,
         data.contactEmail || null,
+        data.contactTitle || null,
         data.billingName || null,
         data.billingPhone || null,
         data.billingEmail || null,
@@ -393,6 +395,7 @@ export class CustomerService {
       salesChannel: "sales_channel",
       contactName: "contact_name",
       contactEmail: "contact_email",
+      contactTitle: "contact_title",
       billingName: "billing_name",
       billingPhone: "billing_phone",
       billingEmail: "billing_email",

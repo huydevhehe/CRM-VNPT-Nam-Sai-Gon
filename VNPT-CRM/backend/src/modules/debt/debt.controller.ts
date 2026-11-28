@@ -97,6 +97,35 @@ debtRouter.post("/import", requireAuth, requireAdmin, handleUpload, async (req: 
   }
 });
 
+// DELETE /api/debts?month=YYYY-MM — xóa cả tháng (upload nhầm, cần xóa sạch để nhập lại). Chỉ Admin.
+debtRouter.delete("/", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const month = req.query.month as string;
+    if (!month) {
+      res.status(400).json({ success: false, message: "Thiếu tham số tháng (month)" });
+      return;
+    }
+    const operator = req.user?.name ?? req.user?.id ?? "Admin";
+    const removedCount = await debtService.removeByMonth(month, operator);
+    res.json({ success: true, removedCount });
+  } catch (error: any) {
+    const statusCode = error instanceof HttpError ? error.status : 400;
+    res.status(statusCode).json({ success: false, message: error.message });
+  }
+});
+
+// DELETE /api/debts/:id — xóa 1 bản ghi nợ lẻ. Chỉ Admin.
+debtRouter.delete("/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const operator = req.user?.name ?? req.user?.id ?? "Admin";
+    await debtService.remove(req.params.id, operator);
+    res.json({ success: true });
+  } catch (error: any) {
+    const statusCode = error instanceof HttpError ? error.status : 400;
+    res.status(statusCode).json({ success: false, message: error.message });
+  }
+});
+
 // PATCH /api/debts/:id/gach-no
 debtRouter.patch("/:id/gach-no", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {

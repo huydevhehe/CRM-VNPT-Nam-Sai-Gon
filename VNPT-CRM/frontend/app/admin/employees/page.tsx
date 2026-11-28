@@ -769,6 +769,7 @@ export default function EmployeesPage() {
             filters={staffFilters}
             searchPlaceholder="Tìm theo tên nhân viên, mã NV, SĐT, địa bàn..."
             exportFileName="vnpt_nhan_vien"
+            pagination
           />
           <p className="text-[11px] text-slate-400">
             Đã chốt = giá trị đơn hàng; Đã thu = tiền đã ghi nhận thu. Cột &quot;Tháng&quot;

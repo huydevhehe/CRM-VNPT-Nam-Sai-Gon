@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle, Download, X } from "lucide-react";
 import {
   confirmQuote,
   downloadQuoteFile,
+  fetchQuotePreviewPdf,
   getQuotePreview,
   type ConfirmedQuoteExportDto,
   type QuoteFormat,
@@ -69,6 +70,8 @@ export default function QuoteModal({ customerId, customerName, onClose }: Readon
   const [confirmed, setConfirmed] = useState<ConfirmedQuoteExportDto | null>(null);
   const [downloading, setDownloading] = useState<QuoteFormat | null>(null);
   const [catalogItems, setCatalogItems] = useState<CustomListItem[]>([]);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfPreviewLoading, setPdfPreviewLoading] = useState(false);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -107,9 +110,56 @@ export default function QuoteModal({ customerId, customerName, onClose }: Readon
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (pdfPreviewUrl) window.URL.revokeObjectURL(pdfPreviewUrl);
+    };
+  }, [pdfPreviewUrl]);
+
+  // Mặc định hiện luôn bản in (PDF) thay vì chữ thuần — theo đúng yêu cầu khách:
+  // "Xem trước là yêu cầu dạng bản in". Tự chạy lại mỗi khi preview đổi (nhập
+  // xong đủ trường bắt buộc, hoặc sửa thông tin dịch vụ).
+  useEffect(() => {
+    if (!preview || !preview.pdfAvailable || pdfPreviewUrl || pdfPreviewLoading) return;
+    let cancelled = false;
+    setPdfPreviewLoading(true);
+    fetchQuotePreviewPdf(customerId, input, preview.suggestedDocNumber)
+      .then((blob) => {
+        if (!cancelled) setPdfPreviewUrl(window.URL.createObjectURL(blob));
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Không thể tạo bản xem trước PDF.");
+      })
+      .finally(() => {
+        if (!cancelled) setPdfPreviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview]);
+
+  async function handleTogglePdfPreview() {
+    if (pdfPreviewUrl) {
+      setPdfPreviewUrl(null);
+      return;
+    }
+    setPdfPreviewLoading(true);
+    setError(null);
+    try {
+      const blob = await fetchQuotePreviewPdf(customerId, input, preview?.suggestedDocNumber);
+      setPdfPreviewUrl(window.URL.createObjectURL(blob));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Không thể tạo bản xem trước PDF.");
+    } finally {
+      setPdfPreviewLoading(false);
+    }
+  }
+
   function updateField<K extends keyof QuoteInput>(key: K, value: QuoteInput[K]) {
     const next = { ...input, [key]: value };
     setInput(next);
+    setPdfPreviewUrl(null);
     refreshPreview(next);
   }
 
@@ -125,6 +175,7 @@ export default function QuoteModal({ customerId, customerName, onClose }: Readon
       unitPrice: item.price,
     };
     setInput(next);
+    setPdfPreviewUrl(null);
     refreshPreview(next);
   }
 
@@ -243,6 +294,13 @@ export default function QuoteModal({ customerId, customerName, onClose }: Readon
           </div>
         ) : (
           <div className="space-y-4">
+            <p className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-800">
+              Mỗi dòng dịch vụ: chọn nhanh từ danh mục có sẵn (tự điền tên gói + đơn giá) hoặc tự
+              gõ tay nếu dịch vụ chưa có trong danh mục — danh mục chỉnh được tại{" "}
+              <span className="font-semibold">Danh mục tùy biến</span>. Số văn bản để trống thì hệ
+              thống tự cấp số kế tiếp khi xác nhận; Số EO là ô nhập tay tùy chọn, hệ thống{" "}
+              <span className="font-semibold">không</span> tự sinh.
+            </p>
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
                 <label className="mb-1 block text-xs font-semibold text-slate-700">Loại hình dịch vụ</label>
@@ -365,21 +423,47 @@ export default function QuoteModal({ customerId, customerName, onClose }: Readon
             )}
 
             <div>
-              <h4 className="mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-700">
-                Xem trước nội dung (chưa cấp số)
-              </h4>
-              <div
-                data-testid="quo-preview"
-                className="max-h-[260px] space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-4 text-[13px] leading-relaxed text-slate-800"
-              >
-                {previewLoading ? (
-                  <p className="text-slate-400">Đang cập nhật bản xem trước...</p>
-                ) : preview?.lines?.length ? (
-                  preview.lines.map((line, i) => <p key={`${i}-${line.slice(0, 20)}`}>{line}</p>)
-                ) : (
-                  <p className="text-slate-400">Nhập đủ thông tin dịch vụ để xem trước nội dung báo giá.</p>
+              <div className="mb-1.5 flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Xem trước nội dung (chưa cấp số)
+                </h4>
+                {pdfAvailable && preview && (
+                  <button
+                    type="button"
+                    data-testid="quo-pdf-preview-toggle"
+                    onClick={handleTogglePdfPreview}
+                    disabled={pdfPreviewLoading}
+                    className="text-xs font-bold text-vnpt hover:underline disabled:opacity-60"
+                  >
+                    {pdfPreviewLoading
+                      ? "Đang tạo bản in..."
+                      : pdfPreviewUrl
+                        ? "Xem dạng chữ"
+                        : "Xem bản in (PDF)"}
+                  </button>
                 )}
               </div>
+              {pdfPreviewUrl ? (
+                <iframe
+                  title="Bản in báo giá"
+                  data-testid="quo-pdf-frame"
+                  src={pdfPreviewUrl}
+                  className="h-[320px] w-full rounded-xl border border-slate-200"
+                />
+              ) : (
+                <div
+                  data-testid="quo-preview"
+                  className="max-h-[260px] space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-4 text-[13px] leading-relaxed text-slate-800"
+                >
+                  {previewLoading || pdfPreviewLoading ? (
+                    <p className="text-slate-400">Đang cập nhật bản xem trước...</p>
+                  ) : preview?.lines?.length ? (
+                    preview.lines.map((line, i) => <p key={`${i}-${line.slice(0, 20)}`}>{line}</p>)
+                  ) : (
+                    <p className="text-slate-400">Nhập đủ thông tin dịch vụ để xem trước nội dung báo giá.</p>
+                  )}
+                </div>
+              )}
               {preview?.suggestedDocNumber && (
                 <p className="mt-1 text-[11px] text-slate-500">
                   Số báo giá kế tiếp dự kiến: {preview.suggestedDocNumber}. Số chỉ thật sự được cấp khi bạn bấm{" "}

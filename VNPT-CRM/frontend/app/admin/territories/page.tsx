@@ -475,6 +475,7 @@ export default function TerritoriesPage() {
             filters={territoryFilters}
             searchPlaceholder="Tìm theo tên phường, nhân viên, lãnh đạo..."
             exportFileName="vnpt_dia_ban"
+            pagination
           />
         ))}
 

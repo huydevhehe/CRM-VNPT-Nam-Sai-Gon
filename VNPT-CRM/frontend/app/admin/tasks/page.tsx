@@ -291,6 +291,7 @@ export default function TasksPage() {
           filters={taskFilters}
           searchPlaceholder="Tìm theo tên công việc, khách hàng, người xử lý..."
           exportFileName="vnpt_cong_viec"
+          pagination
         />
       )}
 
