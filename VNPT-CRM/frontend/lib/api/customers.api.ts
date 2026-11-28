@@ -33,6 +33,7 @@ interface CustomerApiRow {
   sales_channel?: string | null;
   contact_name?: string | null;
   contact_email?: string | null;
+  contact_title?: string | null;
   billing_name?: string | null;
   billing_phone?: string | null;
   billing_email?: string | null;
@@ -78,6 +79,7 @@ function mapCustomerRow(row: CustomerApiRow): CustomerRecord {
     salesChannel: row.sales_channel || undefined,
     contactName: row.contact_name || undefined,
     contactEmail: row.contact_email || undefined,
+    contactTitle: row.contact_title || undefined,
     billingName: row.billing_name || undefined,
     billingPhone: row.billing_phone || undefined,
     billingEmail: row.billing_email || undefined,
@@ -126,6 +128,7 @@ export interface CreateCustomerInput {
   salesChannel?: string;
   contactName?: string;
   contactEmail?: string;
+  contactTitle?: string;
   billingName?: string;
   billingPhone?: string;
   billingEmail?: string;

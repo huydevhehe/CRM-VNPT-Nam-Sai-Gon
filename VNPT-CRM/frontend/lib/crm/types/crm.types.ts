@@ -76,6 +76,7 @@ export interface CustomerRecord {
   salesChannel?: string;
   contactName?: string;
   contactEmail?: string;
+  contactTitle?: string;
   billingName?: string;
   billingPhone?: string;
   billingEmail?: string;

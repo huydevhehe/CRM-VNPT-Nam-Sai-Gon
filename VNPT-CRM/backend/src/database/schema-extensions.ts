@@ -45,6 +45,8 @@ export async function applySchemaExtensions(): Promise<void> {
   await ensureColumn("customers", "sales_channel", "TEXT");
   await ensureColumn("customers", "contact_name", "TEXT");
   await ensureColumn("customers", "contact_email", "TEXT");
+  // Chức vụ người liên hệ (vd "Kế toán trưởng") — chỉ để ghi chú thêm, không bắt buộc.
+  await ensureColumn("customers", "contact_title", "TEXT");
   await ensureColumn("customers", "billing_name", "TEXT");
   await ensureColumn("customers", "billing_phone", "TEXT");
   await ensureColumn("customers", "billing_email", "TEXT");

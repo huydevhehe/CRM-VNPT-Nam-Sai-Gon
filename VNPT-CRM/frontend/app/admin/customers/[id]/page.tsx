@@ -140,6 +140,7 @@ export default function CustomerDetailPage() {
         note: values.note || undefined,
         contactName: values.contactName || undefined,
         contactEmail: values.contactEmail || undefined,
+        contactTitle: values.contactTitle || undefined,
         billingName: values.billingName || undefined,
         billingPhone: values.billingPhone || undefined,
         billingEmail: values.billingEmail || undefined,
@@ -357,6 +358,7 @@ export default function CustomerDetailPage() {
           <h3 className="mb-3 text-sm font-bold text-slate-900">Thông tin liên hệ</h3>
           <div className="space-y-2 text-xs">
             <InfoItem label="Họ tên" value={customer.contactName} />
+            <InfoItem label="Chức vụ" value={customer.contactTitle} />
             <InfoItem label="Số điện thoại" value={customer.phone} />
             <InfoItem label="Email" value={customer.contactEmail} />
           </div>

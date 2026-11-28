@@ -294,6 +294,13 @@ export default function QuoteModal({ customerId, customerName, onClose }: Readon
           </div>
         ) : (
           <div className="space-y-4">
+            <p className="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-800">
+              Mỗi dòng dịch vụ: chọn nhanh từ danh mục có sẵn (tự điền tên gói + đơn giá) hoặc tự
+              gõ tay nếu dịch vụ chưa có trong danh mục — danh mục chỉnh được tại{" "}
+              <span className="font-semibold">Danh mục tùy biến</span>. Số văn bản để trống thì hệ
+              thống tự cấp số kế tiếp khi xác nhận; Số EO là ô nhập tay tùy chọn, hệ thống{" "}
+              <span className="font-semibold">không</span> tự sinh.
+            </p>
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
                 <label className="mb-1 block text-xs font-semibold text-slate-700">Loại hình dịch vụ</label>
