@@ -492,7 +492,7 @@ async function seedInitialData() {
   ];
   for (const w of wards) {
     await run(
-      "INSERT INTO territories (id, ward_name, quarter_count, household_count, opportunity_count, deployed_count, staff_name, leadership_contact) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO territories (id, ward_name, quarter_count, household_count, opportunity_count, deployed_count, staff_name, leadership_contact) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING",
       w
     );
   }
@@ -509,7 +509,7 @@ async function seedInitialData() {
   ];
   for (const s of staffMembers) {
     await run(
-      "INSERT INTO staff (id, code, name, role, territory, assigned_customers, monthly_leads, monthly_contracts, revenue_executed, collection_rate, renewal_rate, status, email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO staff (id, code, name, role, territory, assigned_customers, monthly_leads, monthly_contracts, revenue_executed, collection_rate, renewal_rate, status, email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING",
       s
     );
   }
@@ -523,7 +523,7 @@ async function seedInitialData() {
   ];
   for (const d of debts) {
     await run(
-      "INSERT INTO debts (id, staff_name, service_group, payment_code, subscriber_code, customer_name, installation_address, immediate_debt, cumulative_debt, collected_amount, status, document_ref, month) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO debts (id, staff_name, service_group, payment_code, subscriber_code, customer_name, installation_address, immediate_debt, cumulative_debt, collected_amount, status, document_ref, month) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING",
       d
     );
   }
@@ -537,7 +537,7 @@ async function seedInitialData() {
   ];
   for (const r of renewals) {
     await run(
-      "INSERT INTO renewals (id, transaction_code, subscriber_code, customer_name, payment_code, installation_address, staff_name, term_amount, duration_months, cohort, status, failure_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO renewals (id, transaction_code, subscriber_code, customer_name, payment_code, installation_address, staff_name, term_amount, duration_months, cohort, status, failure_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING",
       r
     );
   }
@@ -545,7 +545,7 @@ async function seedInitialData() {
   // Seed initial audit log
   // Cột "user" đặt trong dấu ngoặc kép vì là từ khóa dành riêng trong Postgres.
   await run(
-    'INSERT INTO audit_logs (id, "user", action, details) VALUES (?, ?, ?, ?)',
+    'INSERT INTO audit_logs (id, "user", action, details) VALUES (?, ?, ?, ?) ON CONFLICT (id) DO NOTHING',
     ["LOG-INIT", "System", "Khởi tạo CSDL", "Hệ thống VNPT CRM Nam Sài Gòn V2 được khởi tạo thành công"]
   );
 
