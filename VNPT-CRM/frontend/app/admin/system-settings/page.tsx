@@ -9,6 +9,7 @@ import {
   sendTestEmail,
   listTemplates,
   uploadTemplate,
+  downloadTemplate,
   SystemSettings,
   SmtpMode,
   TemplateInfo,
@@ -30,6 +31,7 @@ function TemplateUploadSection() {
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploadingKey, setUploadingKey] = useState<TemplateKey | null>(null);
+  const [downloadingKey, setDownloadingKey] = useState<TemplateKey | null>(null);
   const [message, setMessage] = useState<{ key: TemplateKey; text: string; isError: boolean } | null>(null);
 
   function reload() {
@@ -40,6 +42,29 @@ function TemplateUploadSection() {
   }
 
   useEffect(reload, []);
+
+  async function handleDownload(key: TemplateKey) {
+    setDownloadingKey(key);
+    setMessage(null);
+    try {
+      const blob = await downloadTemplate(key);
+      const fileName = templates.find((t) => t.key === key)?.fileName || `${key}.docx`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setMessage({
+        key,
+        text: err instanceof Error ? err.message : "Tải file mẫu thất bại.",
+        isError: true,
+      });
+    } finally {
+      setDownloadingKey(null);
+    }
+  }
 
   async function handleUpload(key: TemplateKey, file: File) {
     if (!file.name.toLowerCase().endsWith(".docx")) {
@@ -94,7 +119,16 @@ function TemplateUploadSection() {
                     </p>
                   )}
                 </div>
-                <label className="flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl border border-vnpt px-3.5 text-xs font-bold text-vnpt hover:bg-sky-50">
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={!info?.exists || downloadingKey !== null}
+                    onClick={() => handleDownload(key)}
+                    className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 px-3.5 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {downloadingKey === key ? "Đang tải..." : "Tải file mẫu hiện tại"}
+                  </button>
+                  <label className="flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl border border-vnpt px-3.5 text-xs font-bold text-vnpt hover:bg-sky-50">
                   {uploadingKey === key ? "Đang tải lên..." : "Thay file mẫu"}
                   <input
                     type="file"
@@ -107,15 +141,18 @@ function TemplateUploadSection() {
                       e.target.value = "";
                     }}
                   />
-                </label>
+                  </label>
+                </div>
               </div>
             );
           })}
         </div>
       )}
       <p className="mt-3 text-xs text-slate-400">
-        Chỉ thay nguyên file mẫu Word — không sửa nội dung/placeholder trong trình duyệt. File mới phải giữ đúng
-        các biến dạng <code>{"{Ten}"}</code> hoặc <code>{"${ten}"}</code> như file cũ thì hệ thống mới điền được dữ liệu.
+        Nên bấm <strong>Tải file mẫu hiện tại</strong> trước, chỉnh sửa trực tiếp trên file đó rồi upload lại — không
+        soạn file hoàn toàn mới. Chỉ thay nguyên file mẫu Word — không sửa nội dung/placeholder trong trình duyệt. File
+        mới phải giữ đúng các biến dạng <code>{"{Ten}"}</code> hoặc <code>{"${ten}"}</code> như file cũ thì hệ thống
+        mới điền được dữ liệu.
       </p>
     </div>
   );
