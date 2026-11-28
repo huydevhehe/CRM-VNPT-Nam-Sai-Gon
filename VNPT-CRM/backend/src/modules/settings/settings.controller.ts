@@ -36,6 +36,22 @@ settingsRouter.get("/templates", requireAuth, async (_req: Request, res: Respons
   res.json({ success: true, data });
 });
 
+// GET /api/settings/templates/:key/download — tải file mẫu .docx hiện tại, để
+// Admin chỉnh sửa giữ đúng placeholder rồi upload lại (thay vì soạn file mới từ đầu).
+settingsRouter.get("/templates/:key/download", requireAuth, async (req: Request, res: Response) => {
+  const fileName = TEMPLATE_FILES[req.params.key];
+  if (!fileName) {
+    res.status(400).json({ success: false, message: "Loại biểu mẫu không hợp lệ" });
+    return;
+  }
+  const filePath = path.resolve(process.cwd(), "templates", fileName);
+  if (!fs.existsSync(filePath)) {
+    res.status(404).json({ success: false, message: "Chưa có file mẫu" });
+    return;
+  }
+  res.download(filePath, fileName);
+});
+
 // POST /api/settings/templates/:key — thay file mẫu .docx (field "file").
 // Chỉ thay nguyên file, không chỉnh nội dung/placeholder trong trình duyệt.
 settingsRouter.post(

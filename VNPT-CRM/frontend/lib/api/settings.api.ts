@@ -1,4 +1,4 @@
-import { apiFetch } from "./client";
+import { apiFetch, API_BASE_URL, getToken } from "./client";
 
 export const SMTP_MODES = ["normal", "domain"] as const;
 export type SmtpMode = (typeof SMTP_MODES)[number];
@@ -94,4 +94,21 @@ export function uploadTemplate(key: TemplateKey, file: File): Promise<TemplateIn
     method: "POST",
     body: formData,
   });
+}
+
+export async function downloadTemplate(key: TemplateKey): Promise<Blob> {
+  const token = getToken();
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/settings/templates/${key}/download`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+  } catch {
+    throw new Error("Không kết nối được máy chủ. Vui lòng thử lại.");
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.message || `Lỗi tải file mẫu (${res.status})`);
+  }
+  return res.blob();
 }
